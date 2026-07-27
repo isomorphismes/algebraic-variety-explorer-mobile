@@ -1,0 +1,2 @@
+First Android release with exact polynomial rendering, touch rotation, pinch
+zoom, six example varieties, and PNG export.

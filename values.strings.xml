@@ -1,0 +1,21 @@
+<resources>
+    <string name="app_name">Algebraic Variety Explorer</string>
+    <string name="app_subtitle">Adapted from IMAGINARY’s SURFER</string>
+    <string name="formula_label">Polynomial in x, y, z</string>
+    <string name="formula_hint">x^2+y^2+z^2-1</string>
+    <string name="render">Render</string>
+    <string name="examples">Examples</string>
+    <string name="save">Save PNG</string>
+    <string name="about">About</string>
+    <string name="render_view_description">Rendered real zero set of the entered polynomial</string>
+    <string name="initial_status">Drag to rotate. Pinch to zoom.</string>
+    <string name="rendering_status">Rendering %1$d × %2$d…</string>
+    <string name="complete_status">Degree %1$d · %2$d ms · drag to rotate, pinch to zoom</string>
+    <string name="save_surface_title">Save rendered variety</string>
+    <string name="save_success">PNG saved</string>
+    <string name="save_failed">Could not save PNG</string>
+    <string name="nothing_to_save">Render a surface first</string>
+    <string name="invalid_formula">Formula error: %1$s</string>
+    <string name="about_title">Algebraic Variety Explorer</string>
+    <string name="about_body">A mobile explorer for real algebraic surfaces.\n\nAdapted from IMAGINARY’s SURFER. The original jsurf ray-tracing core was written by Christian Stussak for the Mathematisches Forschungsinstitut Oberwolfach.\n\nApp and jsurf source: Apache License 2.0. Uses the ANTLR runtime (BSD 3-Clause) and Java Vecmath (GPL 2.0 with Classpath Exception).\n\nEnter a polynomial in x, y, and z. The app draws its real zero set inside a sphere.</string>
+</resources>
