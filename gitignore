@@ -1,0 +1,7 @@
+.build/
+.dependencies/
+.debug.keystore
+.idea/
+*.iml
+*.apk
+*.aab
