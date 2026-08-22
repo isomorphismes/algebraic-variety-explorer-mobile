@@ -34,10 +34,10 @@ jobs:
         run: sdkmanager "platforms;android-35" "build-tools;35.0.1"
 
       - name: Run source tests
-        run: ./build.sh test
+        run: bash ./build.sh test
 
       - name: Build unsigned release APK
-        run: ./build.sh release
+        run: bash ./build.sh release
 
       - name: Verify F-Droid release output
         run: |
