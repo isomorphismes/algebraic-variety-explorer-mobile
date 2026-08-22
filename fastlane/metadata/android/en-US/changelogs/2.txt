@@ -1,0 +1,2 @@
+Rebuilt with the official Android 35 toolchain and added a readable startup
+diagnostic for initialization failures.
