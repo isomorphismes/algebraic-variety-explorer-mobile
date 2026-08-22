@@ -1,0 +1,11 @@
+Enter a polynomial in x, y, and z and explore its real zero set as a shaded
+three-dimensional surface.
+
+Drag to rotate, pinch to zoom, load classic example varieties, and export the
+current rendering as a PNG.
+
+Algebraic Variety Explorer is adapted from IMAGINARY's SURFER and uses the
+original Apache-licensed jsurf ray-tracing core by Christian Stussak.
+
+The app works entirely offline and includes no ads, analytics, accounts, or
+network permissions.
