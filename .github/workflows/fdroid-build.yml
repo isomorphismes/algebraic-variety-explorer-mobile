@@ -1,0 +1,54 @@
+name: F-Droid release build
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/fdroid-build.yml'
+      - '*.java'
+      - '*.xml'
+      - 'build.sh'
+      - 'dependencies.lock'
+      - 'fdroid.README.md'
+      - 'org.algebraicvarietyexplorer.yml.template'
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+
+jobs:
+  release-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android build inputs
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.1"
+
+      - name: Run source tests
+        run: bash ./build.sh test
+
+      - name: Build unsigned release APK
+        run: bash ./build.sh release
+
+      - name: Verify F-Droid release output
+        run: |
+          apk=.build/Algebraic-Variety-Explorer-0.1.1-unsigned.apk
+          test -s "$apk"
+          unzip -t "$apk"
+          "$ANDROID_HOME/build-tools/35.0.1/aapt" dump badging "$apk" > "$RUNNER_TEMP/ave-release-badging.txt"
+          grep -Fq "package: name='org.algebraicvarietyexplorer' versionCode='2' versionName='0.1.1'" "$RUNNER_TEMP/ave-release-badging.txt"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: algebraic-variety-explorer-fdroid-unsigned
+          path: .build/Algebraic-Variety-Explorer-0.1.1-unsigned.apk
+          if-no-files-found: error

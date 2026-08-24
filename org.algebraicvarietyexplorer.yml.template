@@ -1,24 +1,26 @@
 Categories:
   - Science & Education
 License: Apache-2.0
-SourceCode: REPOSITORY_URL
-IssueTracker: REPOSITORY_URL/issues
+SourceCode: https://github.com/isomorphisms/algebraic-variety-explorer-mobile
+IssueTracker: https://github.com/isomorphisms/algebraic-variety-explorer-mobile/issues
 
 RepoType: git
-Repo: REPOSITORY_URL
+Repo: https://github.com/isomorphisms/algebraic-variety-explorer-mobile.git
 
 Builds:
   - versionName: 0.1.1
     versionCode: 2
     commit: FULL_COMMIT_HASH
-    extlibs:
-      - antlr-runtime-3.4.jar
-      - vecmath-1.5.2.jar
+    sudo:
+      - apt-get update
+      - apt-get install -y openjdk-17-jdk-headless curl zip unzip
+    prebuild:
+      - sdkmanager "platforms;android-35" "build-tools;35.0.1"
     build:
-      - ANDROID_SDK_ROOT=$$SDK$$ ANTLR_JAR=libs/antlr-runtime-3.4.jar VECMATH_JAR=libs/vecmath-1.5.2.jar ./build.sh release
+      - ANDROID_SDK_ROOT=$$SDK$$ bash ./build.sh release
     output: .build/Algebraic-Variety-Explorer-0.1.1-unsigned.apk
 
 AutoUpdateMode: Version
-UpdateCheckMode: Tags
+UpdateCheckMode: Tags ^v[0-9]+\.[0-9]+\.[0-9]+$
 CurrentVersion: 0.1.1
 CurrentVersionCode: 2
