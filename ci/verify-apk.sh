@@ -42,12 +42,11 @@ fi
 if grep -Eq '^lib/[^/]+/' "$scratch/files"; then
     fail "this Java-only release unexpectedly contains native ABI libraries"
 fi
-if grep -Eq '^META-INF/.*\.(RSA|DSA|EC|SF)$' "$scratch/files"; then
-    fail "APK contains JAR signing entries"
-fi
-
 "$ZIPALIGN" -c -p 4 "$apk"
 if [[ "$mode" == unsigned ]]; then
+    if grep -Eq '^META-INF/.*\.(RSA|DSA|EC|SF)$' "$scratch/files"; then
+        fail "unsigned APK contains JAR signing entries"
+    fi
     if "$APKSIGNER" verify "$apk" >/dev/null 2>&1; then
         fail "F-Droid input APK is unexpectedly signed"
     fi

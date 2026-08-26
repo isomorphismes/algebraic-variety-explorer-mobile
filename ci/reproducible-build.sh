@@ -7,7 +7,7 @@ source "$REPO_ROOT/ci/release-values.sh"
 readonly OUTPUT_DIR_INPUT="${1:-$REPO_ROOT/build/reproducible-fdroid}"
 readonly SOURCE_REVISION_INPUT="${SOURCE_REVISION:-HEAD}"
 readonly SOURCE_REVISION="$(git -C "$REPO_ROOT" rev-parse --verify "$SOURCE_REVISION_INPUT^{commit}")"
-readonly SOURCE_DATE_EPOCH="$(git -C "$REPO_ROOT" show -s --format=%ct "$SOURCE_REVISION")"
+readonly REPRODUCIBLE_SOURCE_DATE_EPOCH="$(git -C "$REPO_ROOT" show -s --format=%ct "$SOURCE_REVISION")"
 readonly WORK_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/ave-reproducible.XXXXXX")"
 trap 'rm -rf "$WORK_ROOT"' EXIT
 
@@ -23,7 +23,7 @@ build_once() {
     git -C "$REPO_ROOT" archive "$SOURCE_REVISION" | tar -x -C "$source_dir"
     (
         cd "$source_dir"
-        SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" bash ./build.sh release
+        SOURCE_DATE_EPOCH="$REPRODUCIBLE_SOURCE_DATE_EPOCH" bash ./build.sh release
     )
     cp "$source_dir/.build/$AVE_RELEASE_APK_NAME" "$result"
     "$REPO_ROOT/ci/verify-apk.sh" unsigned "$result"
@@ -34,7 +34,7 @@ build_once 2
 
 {
     printf 'source_revision\t%s\n' "$SOURCE_REVISION"
-    printf 'source_date_epoch\t%s\n' "$SOURCE_DATE_EPOCH"
+    printf 'source_date_epoch\t%s\n' "$REPRODUCIBLE_SOURCE_DATE_EPOCH"
     sha256sum "$OUTPUT_DIR/run-1.apk" "$OUTPUT_DIR/run-2.apk"
 } > "$OUTPUT_DIR/reproducibility.txt"
 
