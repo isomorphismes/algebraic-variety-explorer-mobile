@@ -2,8 +2,6 @@ name: Idris shader dogfood
 
 on:
   push:
-    branches:
-      - main
     paths:
       - '.github/workflows/idris-shader-dogfood.yml'
       - 'ci/check-idris-shader-dogfood.sh'
