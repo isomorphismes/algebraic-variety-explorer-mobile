@@ -278,7 +278,7 @@ compile_apk() {
     cp "$resource_apk" "$unaligned_apk"
     (
         cd "$dex"
-        zip -q -j "$unaligned_apk" classes.dex
+        zip -q -X -j "$unaligned_apk" classes.dex
     )
 
     unzip -q "$VECMATH_JAR" \
@@ -289,7 +289,7 @@ compile_apk() {
     find "$java_resources" -exec touch -t "$ZIP_ENTRY_TIMESTAMP" {} +
     (
         cd "$java_resources"
-        zip -q -r "$unaligned_apk" .
+        zip -q -X -r "$unaligned_apk" .
     )
 
     "$ZIPALIGN" -p -f 4 "$unaligned_apk" "$aligned_apk"
