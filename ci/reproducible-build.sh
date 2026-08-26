@@ -16,9 +16,10 @@ readonly OUTPUT_DIR="$(cd "$OUTPUT_DIR_INPUT" && pwd)"
 
 build_once() {
     local run="$1"
-    local source_dir="$WORK_ROOT/source-$run"
+    local source_dir="$WORK_ROOT/source"
     local result="$OUTPUT_DIR/run-$run.apk"
 
+    rm -rf "$source_dir"
     mkdir -p "$source_dir"
     git -C "$REPO_ROOT" archive "$SOURCE_REVISION" | tar -x -C "$source_dir"
     (
@@ -39,6 +40,17 @@ build_once 2
 } > "$OUTPUT_DIR/reproducibility.txt"
 
 if ! cmp -s "$OUTPUT_DIR/run-1.apk" "$OUTPUT_DIR/run-2.apk"; then
+    unzip -lv "$OUTPUT_DIR/run-1.apk" > "$OUTPUT_DIR/run-1.zip-listing.txt"
+    unzip -lv "$OUTPUT_DIR/run-2.apk" > "$OUTPUT_DIR/run-2.zip-listing.txt"
+    diff -u \
+        "$OUTPUT_DIR/run-1.zip-listing.txt" \
+        "$OUTPUT_DIR/run-2.zip-listing.txt" \
+        > "$OUTPUT_DIR/zip-listing.diff" || true
+    mkdir -p "$WORK_ROOT/extracted-1" "$WORK_ROOT/extracted-2"
+    unzip -q "$OUTPUT_DIR/run-1.apk" -d "$WORK_ROOT/extracted-1"
+    unzip -q "$OUTPUT_DIR/run-2.apk" -d "$WORK_ROOT/extracted-2"
+    diff -qr "$WORK_ROOT/extracted-1" "$WORK_ROOT/extracted-2" \
+        > "$OUTPUT_DIR/extracted-content.diff" || true
     if command -v diffoscope >/dev/null 2>&1; then
         diffoscope "$OUTPUT_DIR/run-1.apk" "$OUTPUT_DIR/run-2.apk" \
             > "$OUTPUT_DIR/diffoscope.txt" || true
