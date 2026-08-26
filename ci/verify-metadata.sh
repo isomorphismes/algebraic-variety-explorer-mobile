@@ -27,6 +27,8 @@ readonly CHANGELOG="$LOCALE/changelogs/$AVE_VERSION_CODE.txt"
     fail "F-Droid build commit must be v$AVE_VERSION_NAME"
 [[ "$(field 's/^    output: \(.*\)$/\1/p' "$METADATA" | tail -n 1)" == ".build/$AVE_RELEASE_APK_NAME" ]] ||
     fail "F-Droid output does not match build.sh"
+grep -Fxq '      - apt-get install -y openjdk-21-jdk-headless curl zip unzip' "$METADATA" ||
+    fail "F-Droid sudo dependencies must match the pinned buildserver distribution"
 grep -Fxq '    prebuild: sdkmanager "platforms;android-35" "build-tools;35.0.1"' "$METADATA" ||
     fail "F-Droid prebuild must install the pinned SDK and build tools"
 grep -Fxq '    build: ANDROID_SDK_ROOT=$$SDK$$ bash ./build.sh release' "$METADATA" ||

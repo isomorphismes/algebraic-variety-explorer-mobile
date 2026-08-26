@@ -13,7 +13,7 @@ Builds:
     commit: v0.1.1
     sudo:
       - apt-get update
-      - apt-get install -y openjdk-17-jdk-headless curl zip unzip
+      - apt-get install -y openjdk-21-jdk-headless curl zip unzip
     output: .build/Algebraic-Variety-Explorer-0.1.1-unsigned.apk
     prebuild: sdkmanager "platforms;android-35" "build-tools;35.0.1"
     build: ANDROID_SDK_ROOT=$$SDK$$ bash ./build.sh release
