@@ -58,7 +58,7 @@ apt-get install -y --no-install-recommends \
 
 fdroid lint "$APP_ID"
 fdroid rewritemeta "$APP_ID"
-cmp "$ORIGINAL_METADATA" "metadata/$APP_ID.yml"
+diff -u "$ORIGINAL_METADATA" "metadata/$APP_ID.yml"
 
 python3 -m pip install --quiet --break-system-packages check-jsonschema
 check-jsonschema --schemafile schemas/metadata.json "metadata/$APP_ID.yml"

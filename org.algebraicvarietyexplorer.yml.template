@@ -14,11 +14,11 @@ Builds:
     sudo:
       - apt-get update
       - apt-get install -y openjdk-17-jdk-headless curl zip unzip
+    output: .build/Algebraic-Variety-Explorer-0.1.1-unsigned.apk
     prebuild:
       - sdkmanager "platforms;android-35" "build-tools;35.0.1"
     build:
       - ANDROID_SDK_ROOT=$$SDK$$ bash ./build.sh release
-    output: .build/Algebraic-Variety-Explorer-0.1.1-unsigned.apk
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags ^v[0-9]+\.[0-9]+\.[0-9]+$

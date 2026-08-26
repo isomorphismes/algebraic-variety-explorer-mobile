@@ -3,6 +3,8 @@ import hashlib
 import sys
 from pathlib import Path
 
+EXPECTED_SHA256 = "35fe31809bf931cbdedf5cd8af130c54849707de90df4392cb8097a0f7352db5"
+
 
 def fail(message: str) -> None:
     raise SystemExit(f"preview: {message}")
@@ -32,4 +34,6 @@ if len(colors) < 64:
     fail(f"renderer produced only {len(colors)} distinct colors")
 
 digest = hashlib.sha256(data).hexdigest()
+if digest != EXPECTED_SHA256:
+    fail(f"pixel regression: expected {EXPECTED_SHA256}, got {digest}")
 print(f"preview: 256x256, {len(colors)} colors, sha256 {digest}")
