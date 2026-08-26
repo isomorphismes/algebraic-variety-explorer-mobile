@@ -284,7 +284,9 @@ compile_apk() {
     unzip -q "$VECMATH_JAR" \
         javax/vecmath/ExceptionStrings.properties \
         -d "$java_resources"
-    find "$java_resources" -type f -exec touch -t "$ZIP_ENTRY_TIMESTAMP" {} +
+    # `zip -r` emits directory entries as well as files. Normalize every staged
+    # path so those directory headers do not retain the build's wall-clock time.
+    find "$java_resources" -exec touch -t "$ZIP_ENTRY_TIMESTAMP" {} +
     (
         cd "$java_resources"
         zip -q -r "$unaligned_apk" .
