@@ -1,0 +1,162 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-and-renderer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Install JDK 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Verify source and release metadata
+        run: ci/verify-metadata.sh
+
+      - name: Prove source and preview verifiers fail closed
+        run: ci/self-test.sh
+
+      - name: Run parser and ray-tracer tests
+        run: bash ./build.sh test
+
+      - name: Render and inspect deterministic JVM preview
+        run: |
+          bash ./build.sh preview .build/ci-preview.ppm
+          ci/verify-preview.py .build/ci-preview.ppm
+
+      - name: Retain renderer evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: algebraic-variety-renderer-evidence
+          path: .build/ci-preview.ppm
+          if-no-files-found: error
+          retention-days: 14
+
+  signed-smoke-apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Install JDK 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install pinned Android SDK inputs
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.1'
+
+      - name: Build and inspect signed smoke APK
+        run: |
+          bash ./build.sh debug
+          source ci/release-values.sh
+          ci/verify-apk.sh signed ".build/$AVE_DEBUG_APK_NAME"
+          if ci/verify-apk.sh unsigned ".build/$AVE_DEBUG_APK_NAME"; then
+            echo 'signed smoke APK passed the unsigned F-Droid policy' >&2
+            exit 1
+          fi
+
+      - name: Retain signed smoke APK
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: algebraic-variety-signed-smoke-apk
+          path: .build/*-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  emulator-smoke:
+    needs: signed-smoke-apk
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - device: min-sdk-phone
+            api: 23
+          - device: target-sdk-phone
+            api: 35
+
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Install JDK 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Download exact signed smoke APK
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: algebraic-variety-signed-smoke-apk
+          path: artifacts
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install, launch, and exercise ${{ matrix.device }}
+        uses: reactivecircus/android-emulator-runner@4c44018e59b437e86cdfc41da381398f93ed8808
+        with:
+          api-level: ${{ matrix.api }}
+          target: default
+          arch: x86_64
+          profile: pixel_2
+          ram-size: 1536M
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-save -no-metrics
+          script: |
+            adb shell wm size 360x640
+            adb shell wm density 160
+            apk="$(find artifacts -type f -name '*-debug.apk' -print -quit)"
+            test -n "$apk"
+            ci/emulator-smoke.sh "$apk" "evidence/${{ matrix.device }}"
+
+      - name: Retain emulator evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: algebraic-variety-${{ matrix.device }}-evidence
+          path: evidence/${{ matrix.device }}/
+          if-no-files-found: warn
+          retention-days: 14

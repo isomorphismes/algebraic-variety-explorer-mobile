@@ -1,6 +1,8 @@
 .build/
+build/
 .dependencies/
 .debug.keystore
+__pycache__/
 .idea/
 *.iml
 *.apk

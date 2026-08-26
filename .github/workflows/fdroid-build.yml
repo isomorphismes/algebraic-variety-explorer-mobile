@@ -2,53 +2,92 @@ name: F-Droid release build
 
 on:
   pull_request:
-    paths:
-      - '.github/workflows/fdroid-build.yml'
-      - '*.java'
-      - '*.xml'
-      - 'build.sh'
-      - 'dependencies.lock'
-      - 'fdroid.README.md'
-      - 'org.algebraicvarietyexplorer.yml.template'
   push:
+    branches:
+      - main
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: fdroid-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   release-apk:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out exact source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
 
-      - uses: actions/setup-java@v4
+      - name: Install JDK 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
         with:
           distribution: temurin
           java-version: '17'
 
-      - uses: android-actions/setup-android@v3
+      - name: Install pinned Android SDK inputs
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.1'
 
-      - name: Install Android build inputs
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.1"
+      - name: Verify source and release metadata
+        run: ci/verify-metadata.sh
 
       - name: Run source tests
         run: bash ./build.sh test
 
-      - name: Build unsigned release APK
-        run: bash ./build.sh release
+      - name: Build twice and require byte-identical unsigned APKs
+        env:
+          SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: ci/reproducible-build.sh build/reproducible-fdroid
 
-      - name: Verify F-Droid release output
+      - name: Prove APK policy rejects forbidden native payloads
         run: |
-          apk=.build/Algebraic-Variety-Explorer-0.1.1-unsigned.apk
-          test -s "$apk"
-          unzip -t "$apk"
-          "$ANDROID_HOME/build-tools/35.0.1/aapt" dump badging "$apk" > "$RUNNER_TEMP/ave-release-badging.txt"
-          grep -Fq "package: name='org.algebraicvarietyexplorer' versionCode='2' versionName='0.1.1'" "$RUNNER_TEMP/ave-release-badging.txt"
+          source ci/release-values.sh
+          ci/self-test-apk.sh "build/reproducible-fdroid/$AVE_RELEASE_APK_NAME"
 
-      - uses: actions/upload-artifact@v4
+      - name: Retain reproducibility evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: algebraic-variety-explorer-fdroid-unsigned
-          path: .build/Algebraic-Variety-Explorer-0.1.1-unsigned.apk
+          path: build/reproducible-fdroid/
           if-no-files-found: error
+          retention-days: 14
+
+  fdroiddata-recipe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify source and release metadata
+        run: ci/verify-metadata.sh
+
+      - name: Run F-Droid metadata, scanner, and production build tests
+        run: fdroid/run-fdroiddata-tests.sh
+
+      - name: Retain production-like F-Droid artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: algebraic-variety-explorer-fdroiddata
+          path: build/fdroiddata/
+          if-no-files-found: error
+          retention-days: 14

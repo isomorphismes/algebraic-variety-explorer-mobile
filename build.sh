@@ -7,10 +7,16 @@ readonly DEPENDENCY_DIR="$PROJECT_DIR/.dependencies"
 
 readonly APPLICATION_ID="org.algebraicvarietyexplorer"
 readonly COMPILE_SDK="35"
+readonly BUILD_TOOLS_VERSION="35.0.1"
 readonly MIN_SDK="23"
 readonly TARGET_SDK="35"
 readonly VERSION_CODE="2"
 readonly VERSION_NAME="0.1.1"
+
+# ZIP stores local timestamps. Fix the timezone and the timestamps of files we
+# add after aapt2 so two clean builds of one source tree produce identical APKs.
+export TZ=UTC
+readonly ZIP_ENTRY_TIMESTAMP="198001010000.00"
 
 readonly ANTLR_URL="https://repo.maven.apache.org/maven2/org/antlr/antlr-runtime/3.4/antlr-runtime-3.4.jar"
 readonly ANTLR_SHA256="5b7cf53b7b30b034023f58030c8147c433f2bee0fe7dec8fae6bebf3708c5a63"
@@ -164,9 +170,6 @@ java_tools() {
 }
 
 android_tools() {
-    local candidate
-    local newest
-
     SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
     [[ -n "$SDK_ROOT" ]] ||
         fail "set ANDROID_SDK_ROOT to an Android SDK containing platform 35"
@@ -178,32 +181,16 @@ android_tools() {
     if [[ -n "${ANDROID_BUILD_TOOLS:-}" ]]; then
         BUILD_TOOLS="$ANDROID_BUILD_TOOLS"
     else
-        BUILD_TOOLS=""
-        for candidate in "$SDK_ROOT/build-tools/35.0.1" "$SDK_ROOT/build-tools/35.0.0"; do
-            if [[ -x "$candidate/aapt2" ]]; then
-                BUILD_TOOLS="$candidate"
-                break
-            fi
-        done
-
-        if [[ -z "$BUILD_TOOLS" && -d "$SDK_ROOT/build-tools" ]]; then
-            newest="$(
-                find "$SDK_ROOT/build-tools" -mindepth 1 -maxdepth 1 -type d \
-                    -exec test -x '{}/aapt2' ';' -print |
-                    sort -V |
-                    tail -n 1
-            )"
-            BUILD_TOOLS="$newest"
-        fi
+        BUILD_TOOLS="$SDK_ROOT/build-tools/$BUILD_TOOLS_VERSION"
     fi
 
-    [[ -n "$BUILD_TOOLS" ]] || fail "Android build tools were not found"
     AAPT2="$BUILD_TOOLS/aapt2"
     R8_JAR="$BUILD_TOOLS/lib/d8.jar"
     ZIPALIGN="$BUILD_TOOLS/zipalign"
     APKSIGNER="$BUILD_TOOLS/apksigner"
 
-    [[ -x "$AAPT2" ]] || fail "aapt2 was not found in $BUILD_TOOLS"
+    [[ -x "$AAPT2" ]] ||
+        fail "Android build tools $BUILD_TOOLS_VERSION were not found in $BUILD_TOOLS"
     [[ -f "$R8_JAR" ]] || fail "R8 was not found in $BUILD_TOOLS"
     [[ -x "$ZIPALIGN" ]] || fail "zipalign was not found in $BUILD_TOOLS"
     [[ -x "$APKSIGNER" ]] || fail "apksigner was not found in $BUILD_TOOLS"
@@ -286,6 +273,8 @@ compile_apk() {
         --output "$dex" \
         "$class_jar" "$ANTLR_JAR" "$VECMATH_JAR"
 
+    find "$dex" -type f -exec touch -t "$ZIP_ENTRY_TIMESTAMP" {} +
+
     cp "$resource_apk" "$unaligned_apk"
     (
         cd "$dex"
@@ -295,6 +284,7 @@ compile_apk() {
     unzip -q "$VECMATH_JAR" \
         javax/vecmath/ExceptionStrings.properties \
         -d "$java_resources"
+    find "$java_resources" -type f -exec touch -t "$ZIP_ENTRY_TIMESTAMP" {} +
     (
         cd "$java_resources"
         zip -q -r "$unaligned_apk" .
@@ -423,6 +413,10 @@ compile_tests() {
     mkdir -p "$test_classes"
     stage_test_sources
     list_core_sources | sort > "$source_list"
+    printf '%s\n' \
+        "$PROJECT_DIR/SurfaceExample.java" \
+        "$PROJECT_DIR/SurfaceExamples.java" \
+        >> "$source_list"
     find "$test_work/sources" -type f -name '*.java' -print | sort >> "$source_list"
     "$JAVAC" \
         --release 11 \
