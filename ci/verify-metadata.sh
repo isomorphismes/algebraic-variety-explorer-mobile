@@ -27,6 +27,10 @@ readonly CHANGELOG="$LOCALE/changelogs/$AVE_VERSION_CODE.txt"
     fail "F-Droid build commit must be v$AVE_VERSION_NAME"
 [[ "$(field 's/^    output: \(.*\)$/\1/p' "$METADATA" | tail -n 1)" == ".build/$AVE_RELEASE_APK_NAME" ]] ||
     fail "F-Droid output does not match build.sh"
+grep -Fxq '    prebuild: sdkmanager "platforms;android-35" "build-tools;35.0.1"' "$METADATA" ||
+    fail "F-Droid prebuild must install the pinned SDK and build tools"
+grep -Fxq '    build: ANDROID_SDK_ROOT=$$SDK$$ bash ./build.sh release' "$METADATA" ||
+    fail "F-Droid build command must use the F-Droid SDK and release target"
 [[ "$(field 's/^CurrentVersion: \(.*\)$/\1/p' "$METADATA")" == "$AVE_VERSION_NAME" ]] ||
     fail "CurrentVersion does not match build.sh"
 [[ "$(field 's/^CurrentVersionCode: \([0-9][0-9]*\)$/\1/p' "$METADATA")" == "$AVE_VERSION_CODE" ]] ||

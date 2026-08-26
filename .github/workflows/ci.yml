@@ -149,9 +149,7 @@ jobs:
           script: |
             adb shell wm size 360x640
             adb shell wm density 160
-            apk="$(find artifacts -type f -name '*-debug.apk' -print -quit)"
-            test -n "$apk"
-            ci/emulator-smoke.sh "$apk" "evidence/${{ matrix.device }}"
+            apk="$(find artifacts -type f -name '*-debug.apk' -print -quit)"; test -n "$apk"; ci/emulator-smoke.sh "$apk" "evidence/${{ matrix.device }}"
 
       - name: Retain emulator evidence
         if: always()
