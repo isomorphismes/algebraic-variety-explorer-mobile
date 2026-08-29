@@ -1,0 +1,125 @@
+module SurferF16Sketch
+
+%default total
+
+-- Human-readable design probe for the SURFER port.
+-- Float16 is deliberate here.  The source spelling and backend ABI are still
+-- under design; this file is not yet an ARM/Thumb acceptance fixture.
+
+public export
+Scalar : Type
+Scalar = Float16
+
+public export
+data Vec3 = V3 Scalar Scalar Scalar
+
+public export
+data Ray = MkRay Vec3 Vec3
+
+public export
+v3_add : Vec3 → Vec3 → Vec3
+v3_add (V3 ax ay az) (V3 bx by bz) =
+  V3 (ax + bx) (ay + by) (az + bz)
+
+public export
+v3_scale : Scalar → Vec3 → Vec3
+v3_scale k (V3 x y z) = V3 (k * x) (k * y) (k * z)
+
+-- Ray.java: origin + t * direction
+public export
+ray_at : Ray → Scalar → Vec3
+ray_at (MkRay origin direction) t =
+  v3_add origin (v3_scale t direction)
+
+public export
+square : Scalar → Scalar
+square x = x * x
+
+public export
+cube : Scalar → Scalar
+cube x = x * x * x
+
+-- The sample surfaces currently exposed by the mobile app, written as
+-- numerical kernels instead of strings interpreted through a Double visitor.
+
+public export
+sphere : Vec3 → Scalar
+sphere (V3 x y z) =
+  square x + square y + square z - 0.64
+
+public export
+torus : Vec3 → Scalar
+torus (V3 x y z) =
+  let radial = square x + square y
+      shell = radial + square z + 0.36
+  in square shell - 1.69 * radial
+
+public export
+cayley_cubic : Vec3 → Scalar
+cayley_cubic (V3 x y z) =
+  square x + square y + square z + 2 * x * y * z - 1
+
+public export
+whitney_umbrella : Vec3 → Scalar
+whitney_umbrella (V3 x y z) =
+  square x - square y * z
+
+public export
+roman_surface : Vec3 → Scalar
+roman_surface (V3 x y z) =
+  square x * square y
+    + square y * square z
+    + square z * square x
+    - x * y * z
+
+public export
+heart : Vec3 → Scalar
+heart (V3 x y z) =
+  let x_sq = square x
+      y_sq = square y
+      z_sq = square z
+      z_cube = cube z
+      shell = x_sq + 2.25 * y_sq + z_sq - 1
+  in cube shell - x_sq * z_cube - 0.1125 * y_sq * z_cube
+
+-- Two representative gradients.  These replace the old pattern of building
+-- a Double-valued visitor for each point.
+
+public export
+sphere_gradient : Vec3 → Vec3
+sphere_gradient (V3 x y z) =
+  V3 (2 * x) (2 * y) (2 * z)
+
+public export
+cayley_gradient : Vec3 → Vec3
+cayley_gradient (V3 x y z) =
+  V3
+    (2 * x + 2 * y * z)
+    (2 * y + 2 * x * z)
+    (2 * z + 2 * x * y)
+
+public export
+v3_norm_squared : Vec3 → Scalar
+v3_norm_squared (V3 x y z) =
+  square x + square y + square z
+
+public export
+v3_normalize : Vec3 → Vec3
+v3_normalize v =
+  let inverse_length = 1 / sqrt (v3_norm_squared v)
+  in v3_scale inverse_length v
+
+-- A fixed quartic shows the hot Horner step from UnivariatePolynomial without
+-- a heap array.  Coefficients are ordered a0 .. a4.
+
+public export
+data Quartic = Q4 Scalar Scalar Scalar Scalar Scalar
+
+public export
+quartic_at : Quartic → Scalar → Scalar
+quartic_at (Q4 a0 a1 a2 a3 a4) t =
+  ((((a4 * t) + a3) * t + a2) * t + a1) * t + a0
+
+public export
+surface_on_ray : (Vec3 → Scalar) → Ray → Scalar → Scalar
+surface_on_ray surface ray t = surface (ray_at ray t)
