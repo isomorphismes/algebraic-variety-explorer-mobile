@@ -8,6 +8,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.KeyEvent;
+import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
@@ -45,6 +46,7 @@ public final class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         try {
             setContentView(R.layout.activity_main);
+            applySystemBarInsets(findViewById(R.id.root));
             bindViews();
             createControllers();
             configureSurfaceInteraction();
@@ -84,6 +86,22 @@ public final class MainActivity extends Activity {
         surfaceView = findViewById(R.id.surface_view);
         formulaInput = findViewById(R.id.formula);
         status = findViewById(R.id.status);
+    }
+
+    private void applySystemBarInsets(View root) {
+        int paddingLeft = root.getPaddingLeft();
+        int paddingTop = root.getPaddingTop();
+        int paddingRight = root.getPaddingRight();
+        int paddingBottom = root.getPaddingBottom();
+        root.setOnApplyWindowInsetsListener((view, insets) -> {
+            view.setPadding(
+                    paddingLeft + insets.getStableInsetLeft(),
+                    paddingTop + insets.getStableInsetTop(),
+                    paddingRight + insets.getStableInsetRight(),
+                    paddingBottom + insets.getStableInsetBottom());
+            return insets;
+        });
+        root.requestApplyInsets();
     }
 
     private void createControllers() {
@@ -224,6 +242,7 @@ public final class MainActivity extends Activity {
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.WRAP_CONTENT));
         setContentView(scroller);
+        applySystemBarInsets(scroller);
     }
 
     private final class RenderListener implements SurfaceRenderController.Listener {

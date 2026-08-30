@@ -40,7 +40,7 @@ Requirements:
 - Bash, curl, zip, and unzip
 - JDK 17
 - Android SDK platform 35
-- Android build tools
+- Android build tools 35.0.1
 
 Set `ANDROID_SDK_ROOT` to the SDK directory, then run:
 
@@ -138,6 +138,12 @@ generator.
 ## F-Droid submission
 
 See `fdroid.README.md` and `org.algebraicvarietyexplorer.yml.template`.
+
+The repository has separate gates for source/renderer tests, signed emulator
+smoke tests on the minimum and target Android API levels, byte-identical clean
+unsigned builds, APK policy inspection, and a production-like F-Droid recipe
+run. These checks provide build evidence; they do not replace final testing of
+the exact candidate on real hardware or F-Droid's own review.
 
 ## Attribution and license
 
