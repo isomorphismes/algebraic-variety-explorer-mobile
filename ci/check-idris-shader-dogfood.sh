@@ -149,6 +149,8 @@ fi
 passed="$passed shader_validation"
 
 current_stage=invalid_width_rejection
+# Idris 2 can report a custom-codegen rejection while returning zero. The
+# fail-closed contract is the exact error diagnostic plus no output artifact.
 if (
     cd "$backend_root"
     "$backend" \
@@ -159,8 +161,12 @@ if (
         "$source_file" \
         -o surfer-f64
 ) > "$output_dir/surfer-f64.log" 2>&1; then
-    fail "unsupported f64 width unexpectedly compiled"
+    f64_status=0
+else
+    f64_status=$?
 fi
+grep -Fq 'Error:' "$output_dir/surfer-f64.log" ||
+    fail "f64 produced no compiler error diagnostic (status $f64_status)"
 grep -Fq 'float-width must be f16 or f32' "$output_dir/surfer-f64.log" ||
     fail "f64 was rejected for the wrong reason"
 [[ ! -e "$output_dir/surfer-f64.frag" ]] || fail "rejected f64 compilation wrote a shader"
@@ -174,6 +180,7 @@ passed="$passed invalid_width_rejection"
     printf 'f16_glsl\t%s\n' "$(sha256sum "$output_dir/surfer-f16.frag" | awk '{print $1}')"
     printf 'f32_ir\t%s\n' "$(sha256sum "$output_dir/surfer-f32.ir" | awk '{print $1}')"
     printf 'f32_glsl\t%s\n' "$(sha256sum "$output_dir/surfer-f32.frag" | awk '{print $1}')"
+    printf 'f64_process_status\t%s\n' "$f64_status"
 } > "$output_dir/evidence.tsv"
 
 current_stage=complete
