@@ -4,23 +4,23 @@ set -Eeuo pipefail
 backend_root="${1:?usage: check-idris-shader-dogfood.sh BACKEND_ROOT OUTPUT_DIR}"
 output_dir="${2:?usage: check-idris-shader-dogfood.sh BACKEND_ROOT OUTPUT_DIR}"
 backend_root="$(cd "$backend_root" && pwd)"
-mkdir -p "$output_dir"
-output_dir="$(cd "$output_dir" && pwd)"
-
 backend="$backend_root/build/exec/idris2-glsles"
 source_file="src/Example/SurferRootSearch.idr"
-receipt="$output_dir/current-head-receipt.tsv"
-log="$output_dir/current-head.log"
 current_stage=backend_build
 passed=backend_checkout
 diagnostic=none
-: > "$log"
 
 consumer_root=$(cd "$(dirname -- "$0")/.." && pwd)
 consumer_sha=$(git -C "$consumer_root" rev-parse HEAD)
 backend_sha=$(git -C "$backend_root" rev-parse HEAD)
 consumer_dirty=$(if git -C "$consumer_root" status --porcelain | grep -q .; then printf dirty; else printf clean; fi)
 backend_dirty=$(if git -C "$backend_root" status --porcelain | grep -q .; then printf dirty; else printf clean; fi)
+
+mkdir -p "$output_dir"
+output_dir="$(cd "$output_dir" && pwd)"
+receipt="$output_dir/current-head-receipt.tsv"
+log="$output_dir/current-head.log"
+: > "$log"
 
 write_receipt() {
     local outcome="$1"
