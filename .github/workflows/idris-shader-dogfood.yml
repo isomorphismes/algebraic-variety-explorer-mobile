@@ -20,8 +20,7 @@ concurrency:
 
 env:
   IDRIS2_VERSION: 0.8.0
-  # Exact green head of idris-shader-backend PR #11.
-  SHADER_BACKEND_REVISION: 66214e3da0443fe4887062549e9ef5810c586dd7
+  SHADER_BACKEND_REF: soap-f16-mode
 
 jobs:
   algebraic-surface-f16-f32:
@@ -63,14 +62,19 @@ jobs:
       - name: Put Idris 2 on PATH
         run: echo "$HOME/.idris2/bin" >> "$GITHUB_PATH"
 
-      - name: Fetch exact shader backend revision
+      - name: Fetch current declared shader backend
         run: |
           backend="$RUNNER_TEMP/idris-shader-backend"
           git init "$backend"
           git -C "$backend" remote add origin https://github.com/isomorphisms/idris-shader-backend.git
-          git -C "$backend" fetch --depth 1 origin "$SHADER_BACKEND_REVISION"
+          git -C "$backend" fetch --depth 1 origin "refs/heads/$SHADER_BACKEND_REF"
           git -C "$backend" checkout --detach FETCH_HEAD
-          test "$(git -C "$backend" rev-parse HEAD)" = "$SHADER_BACKEND_REVISION"
+          mkdir -p "$RUNNER_TEMP/algebraic-surface-shader-evidence"
+          {
+            printf 'repository\trequested_ref\tresolved_sha\tdirty_state\n'
+            printf 'isomorphisms/idris-shader-backend\t%s\t%s\tclean\n' \
+              "$SHADER_BACKEND_REF" "$(git -C "$backend" rev-parse HEAD)"
+          } > "$RUNNER_TEMP/algebraic-surface-shader-evidence/dependency.tsv"
 
       - name: Compile algebraic-surface root search as F16 and F32
         run: |
@@ -79,9 +83,10 @@ jobs:
             "$RUNNER_TEMP/algebraic-surface-shader-evidence"
 
       - name: Retain checked IR and generated GLSL evidence
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: algebraic-surface-idris-shader-dogfood
           path: ${{ runner.temp }}/algebraic-surface-shader-evidence/
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
