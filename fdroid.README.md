@@ -15,7 +15,7 @@ Android release build. Release acceptance has several distinct parts:
    path inside pinned fdroiddata and fdroidserver revisions and a buildserver
    image pinned by digest. An ordinary upstream APK build is not treated as
    proof that this recipe works.
-4. After merging, require fresh successful main-branch runs for the exact commit.
+4. After merging, require fresh successful runs on the `surfer` branch for the exact commit.
    Install the exact candidate on the intended real phone and tablet and verify
    startup, rendering, drag, pinch, formula editing, examples, and PNG export.
 5. Only then tag that unchanged commit `v0.1.1`. The metadata template already

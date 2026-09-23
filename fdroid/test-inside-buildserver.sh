@@ -60,7 +60,13 @@ fdroid lint "$APP_ID"
 fdroid rewritemeta "$APP_ID"
 diff -u "$ORIGINAL_METADATA" "metadata/$APP_ID.yml"
 
-python3 -m pip install --quiet --break-system-packages check-jsonschema
+# Pin the schema CLI and Click together. check-jsonschema 0.38.1 uses the
+# generic click.ParamType API added in Click 8.4; Debian's older system Click
+# otherwise satisfies the loose dependency but fails at import time. Ignore the
+# Debian package's missing pip RECORD instead of trying to uninstall it.
+python3 -m pip install --quiet --break-system-packages --ignore-installed \
+    check-jsonschema==0.38.1 \
+    click==8.4.2
 check-jsonschema --schemafile schemas/metadata.json "metadata/$APP_ID.yml"
 
 cp "metadata/$APP_ID.yml" "$WORK_ROOT/before-redirect.yml"
