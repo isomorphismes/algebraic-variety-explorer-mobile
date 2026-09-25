@@ -23,22 +23,43 @@
 typedef struct {
     double *coefficients;
     size_t length;
-} dense_polynomial;
+} univariate_polynomial;
 
 typedef enum {
-    SURFER_SMALLEST_ROOT,
-    SURFER_LARGEST_ROOT
-} root_order;
+    SMALLEST_ROOT,
+    LARGEST_ROOT
+} which_root;
 
+/*
+ * Stussak's DescartesRootFinder calls these PolyInterval candidates.
+ * The candidate carries the transformed polynomial together with the interval
+ * that transformation represents.
+ */
 typedef struct {
     double *coefficients;
     size_t length;
-    bool shift;
+    bool shift_by_one_when_used;
     double lower;
     double upper;
-} polynomial_interval;
+} descartes_interval;
 
-static surfer_vec3 vec3_add(surfer_vec3 left, surfer_vec3 right)
+typedef struct {
+    descartes_interval *items;
+    size_t length;
+    size_t capacity;
+} descartes_candidate_stack;
+
+typedef struct {
+    double half_u;
+    double half_v;
+    surfer_mat3 camera_to_surface;
+    surfer_mat3 surface_normal_to_camera;
+    surfer_vec3 surface_u;
+    surfer_vec3 surface_v;
+    surfer_vec3 surface_direction;
+} orthographic_view;
+
+static surfer_vec3 add_vectors(surfer_vec3 left, surfer_vec3 right)
 {
     surfer_vec3 result = {
         left.x + right.x,
@@ -48,7 +69,7 @@ static surfer_vec3 vec3_add(surfer_vec3 left, surfer_vec3 right)
     return result;
 }
 
-static surfer_vec3 vec3_subtract(surfer_vec3 left, surfer_vec3 right)
+static surfer_vec3 subtract_vectors(surfer_vec3 left, surfer_vec3 right)
 {
     surfer_vec3 result = {
         left.x - right.x,
@@ -58,7 +79,7 @@ static surfer_vec3 vec3_subtract(surfer_vec3 left, surfer_vec3 right)
     return result;
 }
 
-static surfer_vec3 vec3_scale(surfer_vec3 value, double scale)
+static surfer_vec3 scale_vector(surfer_vec3 value, double scale)
 {
     surfer_vec3 result = {
         value.x * scale,
@@ -68,31 +89,31 @@ static surfer_vec3 vec3_scale(surfer_vec3 value, double scale)
     return result;
 }
 
-static double vec3_dot(surfer_vec3 left, surfer_vec3 right)
+static double dot_product(surfer_vec3 left, surfer_vec3 right)
 {
     return left.x * right.x + left.y * right.y + left.z * right.z;
 }
 
-static double vec3_length(surfer_vec3 value)
+static double length_of_vector(surfer_vec3 value)
 {
-    return sqrt(vec3_dot(value, value));
+    return sqrt(dot_product(value, value));
 }
 
-static surfer_vec3 vec3_normalize(surfer_vec3 value)
+static surfer_vec3 normalize_vector(surfer_vec3 value)
 {
-    const double length = vec3_length(value);
+    const double length = length_of_vector(value);
     if (length == 0.0) {
         return value;
     }
-    return vec3_scale(value, 1.0 / length);
+    return scale_vector(value, 1.0 / length);
 }
 
-static surfer_vec3 ray_at(surfer_ray ray, double t)
+static surfer_vec3 point_on_ray_at_parameter(surfer_ray ray, double t)
 {
-    return vec3_add(ray.origin, vec3_scale(ray.direction, t));
+    return add_vectors(ray.origin, scale_vector(ray.direction, t));
 }
 
-static surfer_vec3 mat3_apply(surfer_mat3 matrix, surfer_vec3 value)
+static surfer_vec3 apply_matrix_to_vector(surfer_mat3 matrix, surfer_vec3 value)
 {
     surfer_vec3 result = {
         matrix.m00 * value.x + matrix.m01 * value.y + matrix.m02 * value.z,
@@ -102,7 +123,7 @@ static surfer_vec3 mat3_apply(surfer_mat3 matrix, surfer_vec3 value)
     return result;
 }
 
-static surfer_mat3 mat3_transpose(surfer_mat3 matrix)
+static surfer_mat3 transpose_matrix(surfer_mat3 matrix)
 {
     surfer_mat3 result = {
         matrix.m00, matrix.m10, matrix.m20,
@@ -112,7 +133,7 @@ static surfer_mat3 mat3_transpose(surfer_mat3 matrix)
     return result;
 }
 
-static surfer_mat3 view_rotation(double yaw, double pitch)
+static surfer_mat3 yaw_then_pitch_rotation(double yaw, double pitch)
 {
     const double cy = cos(yaw);
     const double sy = sin(yaw);
@@ -128,7 +149,7 @@ static surfer_mat3 view_rotation(double yaw, double pitch)
     return result;
 }
 
-static float clamp_float(float value, float lower, float upper)
+static float clamp_float_between(float value, float lower, float upper)
 {
     if (value < lower) {
         return lower;
@@ -139,7 +160,7 @@ static float clamp_float(float value, float lower, float upper)
     return value;
 }
 
-static surfer_color color_scale_add(
+static surfer_color add_scaled_color(
     surfer_color color,
     float scale,
     surfer_color addition)
@@ -152,7 +173,7 @@ static surfer_color color_scale_add(
     return result;
 }
 
-static surfer_color color_product(surfer_color left, surfer_color right)
+static surfer_color multiply_colors(surfer_color left, surfer_color right)
 {
     surfer_color result = {
         left.red * right.red,
@@ -162,7 +183,7 @@ static surfer_color color_product(surfer_color left, surfer_color right)
     return result;
 }
 
-static surfer_color color_scale(surfer_color color, float scale)
+static surfer_color scale_color(surfer_color color, float scale)
 {
     surfer_color result = {
         color.red * scale,
@@ -172,44 +193,44 @@ static surfer_color color_scale(surfer_color color, float scale)
     return result;
 }
 
-static surfer_color color_clamp_max(surfer_color color, float maximum)
+static surfer_color clamp_color_to_maximum(surfer_color color, float maximum)
 {
-    color.red = clamp_float(color.red, 0.0f, maximum);
-    color.green = clamp_float(color.green, 0.0f, maximum);
-    color.blue = clamp_float(color.blue, 0.0f, maximum);
+    color.red = clamp_float_between(color.red, 0.0f, maximum);
+    color.green = clamp_float_between(color.green, 0.0f, maximum);
+    color.blue = clamp_float_between(color.blue, 0.0f, maximum);
     return color;
 }
 
-static dense_polynomial dense_empty(void)
+static univariate_polynomial empty_univariate_polynomial(void)
 {
-    dense_polynomial result = {NULL, 0};
+    univariate_polynomial result = {NULL, 0};
     return result;
 }
 
-static void dense_free(dense_polynomial polynomial)
+static void free_univariate_polynomial(univariate_polynomial polynomial)
 {
     free(polynomial.coefficients);
 }
 
-static dense_polynomial dense_allocate(size_t length)
+static univariate_polynomial allocate_univariate_polynomial(size_t length)
 {
-    dense_polynomial result = dense_empty();
+    univariate_polynomial result = empty_univariate_polynomial();
     if (length == 0) {
         return result;
     }
     result.coefficients = calloc(length, sizeof(*result.coefficients));
     if (result.coefficients == NULL) {
-        return dense_empty();
+        return empty_univariate_polynomial();
     }
     result.length = length;
     return result;
 }
 
-static dense_polynomial dense_copy(const double *coefficients, size_t length)
+static univariate_polynomial copy_univariate_polynomial(const double *coefficients, size_t length)
 {
-    dense_polynomial result = dense_allocate(length);
+    univariate_polynomial result = allocate_univariate_polynomial(length);
     if (length != 0 && result.coefficients == NULL) {
-        return dense_empty();
+        return empty_univariate_polynomial();
     }
     if (length != 0) {
         memcpy(result.coefficients, coefficients, length * sizeof(*coefficients));
@@ -217,7 +238,7 @@ static dense_polynomial dense_copy(const double *coefficients, size_t length)
     return result;
 }
 
-static size_t dense_true_length(const dense_polynomial *polynomial)
+static size_t coefficient_count_without_trailing_zeroes(const univariate_polynomial *polynomial)
 {
     size_t length = polynomial->length;
     while (length > 1 && polynomial->coefficients[length - 1] == 0.0) {
@@ -226,12 +247,12 @@ static size_t dense_true_length(const dense_polynomial *polynomial)
     return length;
 }
 
-static dense_polynomial dense_shrink_copy(const dense_polynomial *polynomial)
+static univariate_polynomial copy_without_trailing_zeroes(const univariate_polynomial *polynomial)
 {
-    return dense_copy(polynomial->coefficients, dense_true_length(polynomial));
+    return copy_univariate_polynomial(polynomial->coefficients, coefficient_count_without_trailing_zeroes(polynomial));
 }
 
-static double dense_evaluate(const dense_polynomial *polynomial, double where)
+static double evaluate_univariate_polynomial_at(const univariate_polynomial *polynomial, double where)
 {
     if (polynomial->length == 0) {
         return 0.0;
@@ -251,13 +272,13 @@ static double dense_evaluate(const dense_polynomial *polynomial, double where)
     return result * pow(where, (double)(polynomial->length - 1));
 }
 
-static dense_polynomial dense_stretch(
-    const dense_polynomial *polynomial,
+static univariate_polynomial stretch_univariate_polynomial(
+    const univariate_polynomial *polynomial,
     double factor)
 {
-    dense_polynomial result = dense_allocate(polynomial->length);
+    univariate_polynomial result = allocate_univariate_polynomial(polynomial->length);
     if (polynomial->length != 0 && result.coefficients == NULL) {
-        return dense_empty();
+        return empty_univariate_polynomial();
     }
     double multiplier = 1.0;
     for (size_t i = 0; i < polynomial->length; ++i) {
@@ -267,7 +288,7 @@ static dense_polynomial dense_stretch(
     return result;
 }
 
-static double *deflate_zero(const double *coefficients, size_t length, size_t *new_length)
+static double *deflate_zero_root(const double *coefficients, size_t length, size_t *new_length)
 {
     if (length == 0) {
         *new_length = 0;
@@ -286,7 +307,7 @@ static double *deflate_zero(const double *coefficients, size_t length, size_t *n
     return result;
 }
 
-static double *shift_one(const double *coefficients, size_t length)
+static double *shift_univariate_polynomial_by_one(const double *coefficients, size_t length)
 {
     if (length == 0) {
         return NULL;
@@ -305,7 +326,7 @@ static double *shift_one(const double *coefficients, size_t length)
     return result;
 }
 
-static double *stretch_normalize_half(const double *coefficients, size_t length)
+static double *stretch_univariate_polynomial_to_half_interval(const double *coefficients, size_t length)
 {
     if (length == 0) {
         return NULL;
@@ -323,7 +344,7 @@ static double *stretch_normalize_half(const double *coefficients, size_t length)
     return result;
 }
 
-static int descartes_sign_changes_reverse_shift_one(
+static int descartes_sign_changes_reverse_shift_univariate_polynomial_by_one(
     const double *coefficients,
     size_t length)
 {
@@ -364,7 +385,7 @@ static int descartes_sign_changes_reverse_shift_one(
     return sign_changes;
 }
 
-static double next_power_of_two(double value)
+static double next_power_of_two_outward(double value)
 {
     uint64_t bits = 0;
     memcpy(&bits, &value, sizeof(bits));
@@ -378,8 +399,8 @@ static double next_power_of_two(double value)
     return result;
 }
 
-static double bisect(
-    const dense_polynomial *polynomial,
+static double bisect_root_interval(
+    const univariate_polynomial *polynomial,
     double lower,
     double upper,
     double lower_value,
@@ -405,19 +426,19 @@ static double bisect(
     return lower;
 }
 
-static double adjust_interval_and_bisect(
-    const dense_polynomial *polynomial,
+static double restrict_interval_and_bisect_root_root_interval(
+    const univariate_polynomial *polynomial,
     double lower,
     double upper,
     double strict_lower,
     double strict_upper)
 {
-    double lower_value = dense_evaluate(polynomial, lower);
+    double lower_value = evaluate_univariate_polynomial_at(polynomial, lower);
     if (lower < strict_lower) {
         if (upper < strict_lower) {
             return NAN;
         }
-        const double strict_value = dense_evaluate(polynomial, strict_lower);
+        const double strict_value = evaluate_univariate_polynomial_at(polynomial, strict_lower);
         if (lower_value * strict_value < 0.0 || lower_value == 0.0) {
             return NAN;
         }
@@ -425,12 +446,12 @@ static double adjust_interval_and_bisect(
         lower_value = strict_value;
     }
 
-    double upper_value = dense_evaluate(polynomial, upper);
+    double upper_value = evaluate_univariate_polynomial_at(polynomial, upper);
     if (strict_upper < upper) {
         if (strict_upper < lower) {
             return NAN;
         }
-        const double strict_value = dense_evaluate(polynomial, strict_upper);
+        const double strict_value = evaluate_univariate_polynomial_at(polynomial, strict_upper);
         if (upper_value * strict_value < 0.0 || upper_value == 0.0) {
             return NAN;
         }
@@ -439,65 +460,85 @@ static double adjust_interval_and_bisect(
     }
 
     if (lower_value * upper_value <= 0.0) {
-        return bisect(polynomial, lower, upper, lower_value, upper_value);
+        return bisect_root_interval(polynomial, lower, upper, lower_value, upper_value);
     }
     return NAN;
 }
 
-static void free_interval(polynomial_interval *interval)
+static void free_descartes_interval(descartes_interval *interval)
 {
     free(interval->coefficients);
     interval->coefficients = NULL;
     interval->length = 0;
 }
 
-static bool push_interval(
-    polynomial_interval **stack,
-    size_t *length,
-    size_t *capacity,
-    polynomial_interval interval)
+static descartes_candidate_stack empty_descartes_candidate_stack(void)
 {
-    if (*length == *capacity) {
-        const size_t new_capacity = *capacity == 0 ? 16 : 2 * *capacity;
-        polynomial_interval *new_stack = realloc(
-            *stack,
-            new_capacity * sizeof(*new_stack));
-        if (new_stack == NULL) {
-            free_interval(&interval);
+    descartes_candidate_stack result = {NULL, 0, 0};
+    return result;
+}
+
+static void free_descartes_candidate_stack(descartes_candidate_stack *stack)
+{
+    for (size_t i = 0; i < stack->length; ++i) {
+        free_descartes_interval(&stack->items[i]);
+    }
+    free(stack->items);
+    *stack = empty_descartes_candidate_stack();
+}
+
+static bool push_descartes_candidate(
+    descartes_candidate_stack *stack,
+    descartes_interval interval)
+{
+    if (stack->length == stack->capacity) {
+        const size_t new_capacity =
+            stack->capacity == 0 ? 16 : 2 * stack->capacity;
+        descartes_interval *new_items = realloc(
+            stack->items,
+            new_capacity * sizeof(*new_items));
+        if (new_items == NULL) {
+            free_descartes_interval(&interval);
             return false;
         }
-        *stack = new_stack;
-        *capacity = new_capacity;
+        stack->items = new_items;
+        stack->capacity = new_capacity;
     }
-    (*stack)[(*length)++] = interval;
+    stack->items[stack->length++] = interval;
     return true;
 }
 
-static double find_positive_root(
-    const dense_polynomial *source,
+static descartes_interval pop_descartes_candidate(
+    descartes_candidate_stack *stack)
+{
+    return stack->items[--stack->length];
+}
+
+static double find_positive_root_with_descartes(
+    const univariate_polynomial *source,
     double lower_bound,
     double upper_bound,
-    root_order order)
+    which_root order)
 {
-    if (upper_bound <= 0.0 || dense_true_length(source) <= 1) {
+    if (upper_bound <= 0.0 || coefficient_count_without_trailing_zeroes(source) <= 1) {
         return NAN;
     }
 
-    dense_polynomial shrunk = dense_shrink_copy(source);
+    univariate_polynomial shrunk = copy_without_trailing_zeroes(source);
     if (shrunk.coefficients == NULL) {
         return NAN;
     }
 
-    const double bound = next_power_of_two(upper_bound);
+    const double bound = next_power_of_two_outward(upper_bound);
     if (!(bound > 0.0) || !isfinite(bound)) {
-        dense_free(shrunk);
+        free_univariate_polynomial(shrunk);
         return NAN;
     }
     const double transformed_lower = lower_bound / bound;
     const double transformed_upper = upper_bound / bound;
 
-    dense_polynomial polynomial = dense_stretch(&shrunk, bound);
-    dense_free(shrunk);
+    univariate_polynomial polynomial = stretch_univariate_polynomial(&shrunk, bound);
+    free_univariate_polynomial(shrunk);
     if (polynomial.coefficients == NULL) {
         return NAN;
     }
@@ -505,14 +546,14 @@ static double find_positive_root(
     double saved_result = NAN;
     if (polynomial.coefficients[0] == 0.0) {
         if (lower_bound <= 0.0) {
-            if (order == SURFER_SMALLEST_ROOT) {
-                dense_free(polynomial);
+            if (order == SMALLEST_ROOT) {
+                free_univariate_polynomial(polynomial);
                 return 0.0;
             }
             saved_result = 0.0;
         }
         size_t deflated_length = 0;
-        double *deflated = deflate_zero(
+        double *deflated = deflate_zero_root(
             polynomial.coefficients,
             polynomial.length,
             &deflated_length);
@@ -528,54 +569,50 @@ static double find_positive_root(
         lower_bound = 0.0;
     }
 
-    polynomial_interval *stack = NULL;
-    size_t stack_length = 0;
-    size_t stack_capacity = 0;
-    polynomial_interval initial = {
-        dense_copy(polynomial.coefficients, polynomial.length).coefficients,
+    descartes_candidate_stack candidates =
+        empty_descartes_candidate_stack();
+    descartes_interval initial = {
+        copy_univariate_polynomial(polynomial.coefficients, polynomial.length).coefficients,
         polynomial.length,
         false,
         0.0,
         1.0
     };
     if (initial.coefficients == NULL ||
-        !push_interval(&stack, &stack_length, &stack_capacity, initial)) {
-        dense_free(polynomial);
-        free(stack);
+        !push_descartes_candidate(&candidates, initial)) {
+        free_univariate_polynomial(polynomial);
+        free_descartes_candidate_stack(&candidates);
         return NAN;
     }
 
-    while (stack_length != 0) {
-        polynomial_interval current = stack[--stack_length];
-        if (current.shift) {
-            double *shifted = shift_one(current.coefficients, current.length);
+    while (candidates.length != 0) {
+        descartes_interval current = pop_descartes_candidate(&candidates);
+        if (current.shift_by_one_when_used) {
+            double *shifted = shift_univariate_polynomial_by_one(current.coefficients, current.length);
             free(current.coefficients);
             current.coefficients = shifted;
             if (shifted == NULL && current.length != 0) {
-                free_interval(&current);
+                free_descartes_interval(&current);
                 break;
             }
         }
         if (current.length == 0) {
-            free_interval(&current);
+            free_descartes_interval(&current);
             continue;
         }
 
         if (current.coefficients[0] == 0.0) {
             const double candidate = current.lower * bound;
             if (lower_bound <= candidate && candidate <= upper_bound) {
-                if (order == SURFER_SMALLEST_ROOT) {
-                    for (size_t i = 0; i < stack_length; ++i) {
-                        free_interval(&stack[i]);
-                    }
-                    free(stack);
-                    free_interval(&current);
-                    dense_free(polynomial);
+                if (order == SMALLEST_ROOT) {
+                    free_descartes_candidate_stack(&candidates);
+                    free_descartes_interval(&current);
+                    free_univariate_polynomial(polynomial);
                     return candidate;
                 }
                 saved_result = candidate;
                 size_t deflated_length = 0;
-                double *deflated = deflate_zero(
+                double *deflated = deflate_zero_root(
                     current.coefficients,
                     current.length,
                     &deflated_length);
@@ -583,35 +620,32 @@ static double find_positive_root(
                 current.coefficients = deflated;
                 current.length = deflated_length;
                 if (current.length == 0) {
-                    free_interval(&current);
+                    free_descartes_interval(&current);
                     continue;
                 }
             }
         }
 
-        const int variations = descartes_sign_changes_reverse_shift_one(
+        const int variations = descartes_sign_changes_reverse_shift_univariate_polynomial_by_one(
             current.coefficients,
             current.length);
         if (variations < 0) {
-            free_interval(&current);
+            free_descartes_interval(&current);
             break;
         }
         if (variations == 1) {
-            const double transformed_root = adjust_interval_and_bisect(
+            const double transformed_root = restrict_interval_and_bisect_root_root_interval(
                 &polynomial,
                 current.lower,
                 current.upper,
                 transformed_lower,
                 transformed_upper);
             const double candidate = transformed_root * bound;
-            free_interval(&current);
+            free_descartes_interval(&current);
             if (!isnan(candidate)) {
-                for (size_t i = 0; i < stack_length; ++i) {
-                    free_interval(&stack[i]);
-                }
-                free(stack);
-                dense_free(polynomial);
-                if (order == SURFER_LARGEST_ROOT &&
+                free_descartes_candidate_stack(&candidates);
+                free_univariate_polynomial(polynomial);
+                if (order == LARGEST_ROOT &&
                     !isnan(saved_result) && saved_result > candidate) {
                     return saved_result;
                 }
@@ -627,20 +661,17 @@ static double find_positive_root(
                     current.lower <= transformed_lower
                         ? lower_bound
                         : current.lower * bound;
-                free_interval(&current);
-                for (size_t i = 0; i < stack_length; ++i) {
-                    free_interval(&stack[i]);
-                }
-                free(stack);
-                dense_free(polynomial);
+                free_descartes_interval(&current);
+                free_descartes_candidate_stack(&candidates);
+                free_univariate_polynomial(polynomial);
                 return candidate;
             }
 
-            double *stretched = stretch_normalize_half(
+            double *stretched = stretch_univariate_polynomial_to_half_interval(
                 current.coefficients,
                 current.length);
             if (stretched == NULL) {
-                free_interval(&current);
+                free_descartes_interval(&current);
                 break;
             }
 
@@ -648,95 +679,94 @@ static double find_positive_root(
              * shifts the upper child only after it is popped. Give each child
              * an owned copy while preserving that numerical content/order.
              */
-            polynomial_interval lower_child = {
-                dense_copy(stretched, current.length).coefficients,
+            descartes_interval lower_child = {
+                copy_univariate_polynomial(stretched, current.length).coefficients,
                 current.length,
                 false,
                 current.lower,
                 center
             };
-            polynomial_interval upper_child = {
-                dense_copy(stretched, current.length).coefficients,
+            descartes_interval upper_child = {
+                copy_univariate_polynomial(stretched, current.length).coefficients,
                 current.length,
                 true,
                 center,
                 current.upper
             };
             free(stretched);
-            free_interval(&current);
+            free_descartes_interval(&current);
 
             if (lower_child.coefficients == NULL || upper_child.coefficients == NULL) {
-                free_interval(&lower_child);
-                free_interval(&upper_child);
+                free_descartes_interval(&lower_child);
+                free_descartes_interval(&upper_child);
                 break;
             }
 
             bool ok = true;
-            if (order == SURFER_SMALLEST_ROOT) {
+            if (order == SMALLEST_ROOT) {
                 /* Stack is LIFO: push upper first so lower is searched first. */
                 if (center <= transformed_upper) {
-                    ok = push_interval(
-                        &stack, &stack_length, &stack_capacity, upper_child);
+                    ok = push_descartes_candidate(&candidates, upper_child);
                     upper_child.coefficients = NULL;
                 }
                 if (ok && center >= transformed_lower) {
-                    ok = push_interval(
-                        &stack, &stack_length, &stack_capacity, lower_child);
+                    ok = push_descartes_candidate(&candidates, lower_child);
                     lower_child.coefficients = NULL;
                 }
             } else {
                 if (center >= transformed_lower) {
-                    ok = push_interval(
-                        &stack, &stack_length, &stack_capacity, lower_child);
+                    ok = push_descartes_candidate(&candidates, lower_child);
                     lower_child.coefficients = NULL;
                 }
                 if (ok && center <= transformed_upper) {
-                    ok = push_interval(
-                        &stack, &stack_length, &stack_capacity, upper_child);
+                    ok = push_descartes_candidate(&candidates, upper_child);
                     upper_child.coefficients = NULL;
                 }
             }
-            free_interval(&lower_child);
-            free_interval(&upper_child);
+            free_descartes_interval(&lower_child);
+            free_descartes_interval(&upper_child);
             if (!ok) {
                 break;
             }
         } else {
-            free_interval(&current);
+            free_descartes_interval(&current);
         }
     }
 
-    for (size_t i = 0; i < stack_length; ++i) {
-        free_interval(&stack[i]);
-    }
-    free(stack);
-    dense_free(polynomial);
+    free_descartes_candidate_stack(&candidates);
+    free_univariate_polynomial(polynomial);
     return saved_result;
 }
 
-static double find_first_descartes_root(
-    const dense_polynomial *polynomial,
+static double find_first_root_with_descartes(
+    const univariate_polynomial *polynomial,
     double lower,
     double upper)
 {
-    dense_polynomial reflected = dense_stretch(polynomial, -1.0);
+    univariate_polynomial reflected = stretch_univariate_polynomial(polynomial, -1.0);
     if (reflected.coefficients == NULL) {
         return NAN;
     }
-    const double negative = -find_positive_root(
+
+    /*
+     * Stussak's DescartesRootFinder searches the reflected negative half
+     * first, asking for its largest positive root, then searches the positive
+     * half for the smallest root.
+     */
+    const double negative = -find_positive_root_with_descartes(
         &reflected,
         -upper,
         -lower,
-        SURFER_LARGEST_ROOT);
-    dense_free(reflected);
+        LARGEST_ROOT);
+    free_univariate_polynomial(reflected);
     if (!isnan(negative)) {
         return negative;
     }
-    return find_positive_root(
+    return find_positive_root_with_descartes(
         polynomial,
         lower,
         upper,
-        SURFER_SMALLEST_ROOT);
+        SMALLEST_ROOT);
 }
 
 static double integer_power(double base, int32_t exponent)
@@ -756,16 +786,16 @@ static double integer_power(double base, int32_t exponent)
     return result;
 }
 
-static bool axis_power_polynomial(
+static bool polynomial_for_axis_power_along_ray(
     double origin,
     double direction,
     int32_t exponent,
-    dense_polynomial *result)
+    univariate_polynomial *result)
 {
     if (exponent < 0) {
         return false;
     }
-    *result = dense_allocate((size_t)exponent + 1);
+    *result = allocate_univariate_polynomial((size_t)exponent + 1);
     if (result->coefficients == NULL) {
         return false;
     }
@@ -788,16 +818,16 @@ static bool axis_power_polynomial(
     return true;
 }
 
-static dense_polynomial dense_multiply(
-    const dense_polynomial *left,
-    const dense_polynomial *right)
+static univariate_polynomial multiply_univariate_polynomials(
+    const univariate_polynomial *left,
+    const univariate_polynomial *right)
 {
     if (left->length == 0 || right->length == 0) {
-        return dense_empty();
+        return empty_univariate_polynomial();
     }
-    dense_polynomial result = dense_allocate(left->length + right->length - 1);
+    univariate_polynomial result = allocate_univariate_polynomial(left->length + right->length - 1);
     if (result.coefficients == NULL) {
-        return dense_empty();
+        return empty_univariate_polynomial();
     }
     for (size_t i = 0; i < left->length; ++i) {
         for (size_t j = 0; j < right->length; ++j) {
@@ -808,10 +838,10 @@ static dense_polynomial dense_multiply(
     return result;
 }
 
-static bool sparse_on_ray(
+static bool expand_sparse_polynomial_directly_along_ray(
     surfer_sparse_polynomial source,
     surfer_ray ray,
-    dense_polynomial *result)
+    univariate_polynomial *result)
 {
     int64_t maximum_degree = 0;
     for (size_t i = 0; i < source.term_count; ++i) {
@@ -831,62 +861,62 @@ static bool sparse_on_ray(
         return false;
     }
 
-    *result = dense_allocate((size_t)maximum_degree + 1);
+    *result = allocate_univariate_polynomial((size_t)maximum_degree + 1);
     if (result->coefficients == NULL) {
         return false;
     }
 
     for (size_t i = 0; i < source.term_count; ++i) {
         const surfer_term term = source.terms[i];
-        dense_polynomial x = dense_empty();
-        dense_polynomial y = dense_empty();
-        dense_polynomial z = dense_empty();
-        dense_polynomial xy = dense_empty();
-        dense_polynomial xyz = dense_empty();
+        univariate_polynomial x = empty_univariate_polynomial();
+        univariate_polynomial y = empty_univariate_polynomial();
+        univariate_polynomial z = empty_univariate_polynomial();
+        univariate_polynomial xy = empty_univariate_polynomial();
+        univariate_polynomial xyz = empty_univariate_polynomial();
 
-        if (!axis_power_polynomial(
+        if (!polynomial_for_axis_power_along_ray(
                 ray.origin.x,
                 ray.direction.x,
                 term.x_exponent,
                 &x) ||
-            !axis_power_polynomial(
+            !polynomial_for_axis_power_along_ray(
                 ray.origin.y,
                 ray.direction.y,
                 term.y_exponent,
                 &y) ||
-            !axis_power_polynomial(
+            !polynomial_for_axis_power_along_ray(
                 ray.origin.z,
                 ray.direction.z,
                 term.z_exponent,
                 &z)) {
-            dense_free(x);
-            dense_free(y);
-            dense_free(z);
-            dense_free(*result);
-            *result = dense_empty();
+            free_univariate_polynomial(x);
+            free_univariate_polynomial(y);
+            free_univariate_polynomial(z);
+            free_univariate_polynomial(*result);
+            *result = empty_univariate_polynomial();
             return false;
         }
-        xy = dense_multiply(&x, &y);
-        xyz = dense_multiply(&xy, &z);
-        dense_free(x);
-        dense_free(y);
-        dense_free(z);
-        dense_free(xy);
+        xy = multiply_univariate_polynomials(&x, &y);
+        xyz = multiply_univariate_polynomials(&xy, &z);
+        free_univariate_polynomial(x);
+        free_univariate_polynomial(y);
+        free_univariate_polynomial(z);
+        free_univariate_polynomial(xy);
         if (xyz.coefficients == NULL) {
-            dense_free(*result);
-            *result = dense_empty();
+            free_univariate_polynomial(*result);
+            *result = empty_univariate_polynomial();
             return false;
         }
 
         for (size_t j = 0; j < xyz.length; ++j) {
             result->coefficients[j] += term.coefficient * xyz.coefficients[j];
         }
-        dense_free(xyz);
+        free_univariate_polynomial(xyz);
     }
     return true;
 }
 
-static double sparse_evaluate(surfer_sparse_polynomial polynomial, surfer_vec3 point)
+static double evaluate_sparse_polynomial_at_point(surfer_sparse_polynomial polynomial, surfer_vec3 point)
 {
     double result = 0.0;
     for (size_t i = 0; i < polynomial.term_count; ++i) {
@@ -904,12 +934,12 @@ bool surfer_clip_unit_sphere(surfer_ray ray, surfer_interval *interval)
     if (interval == NULL) {
         return false;
     }
-    const double a = vec3_dot(ray.direction, ray.direction);
+    const double a = dot_product(ray.direction, ray.direction);
     if (a == 0.0) {
         return false;
     }
-    const double b = 2.0 * vec3_dot(ray.origin, ray.direction);
-    const double c = vec3_dot(ray.origin, ray.origin) - 1.0;
+    const double b = 2.0 * dot_product(ray.origin, ray.direction);
+    const double c = dot_product(ray.origin, ray.origin) - 1.0;
     const double discriminant = b * b - 4.0 * a * c;
     if (discriminant < 0.0) {
         return false;
@@ -938,18 +968,18 @@ bool surfer_first_surface_root(
         return false;
     }
 
-    dense_polynomial polynomial = dense_empty();
-    if (!sparse_on_ray(surface->surface, surface_ray, &polynomial)) {
+    univariate_polynomial polynomial = empty_univariate_polynomial();
+    if (!expand_sparse_polynomial_directly_along_ray(surface->surface, surface_ray, &polynomial)) {
         return false;
     }
-    dense_polynomial shrunk = dense_shrink_copy(&polynomial);
-    dense_free(polynomial);
+    univariate_polynomial shrunk = copy_without_trailing_zeroes(&polynomial);
+    free_univariate_polynomial(polynomial);
     if (shrunk.coefficients == NULL) {
         return false;
     }
 
     double candidate = NAN;
-    const size_t degree = dense_true_length(&shrunk) - 1;
+    const size_t degree = coefficient_count_without_trailing_zeroes(&shrunk) - 1;
     if (surface->family_degree < 2) {
         if (degree == 1) {
             candidate = -shrunk.coefficients[0] / shrunk.coefficients[1];
@@ -958,9 +988,9 @@ bool surfer_first_surface_root(
             }
         }
     } else {
-        candidate = find_first_descartes_root(&shrunk, lower, upper);
+        candidate = find_first_root_with_descartes(&shrunk, lower, upper);
     }
-    dense_free(shrunk);
+    free_univariate_polynomial(shrunk);
 
     if (isnan(candidate)) {
         return false;
@@ -969,14 +999,14 @@ bool surfer_first_surface_root(
     return true;
 }
 
-static surfer_color shade_with_material(
+static surfer_color shade_hit_with_material(
     const surfer_scene *scene,
     surfer_vec3 hit,
     surfer_vec3 view,
     surfer_vec3 normal,
     surfer_material material)
 {
-    surfer_color color = color_scale(material.color, material.ambient_intensity);
+    surfer_color color = scale_color(material.color, material.ambient_intensity);
 
     const size_t light_count =
         scene->light_count < SURFER_MAX_LIGHTS
@@ -988,28 +1018,84 @@ static surfer_color shade_with_material(
             continue;
         }
         const surfer_vec3 light_direction =
-            vec3_normalize(vec3_subtract(light.position, hit));
-        const float lambert = (float)vec3_dot(normal, light_direction);
+            normalize_vector(subtract_vectors(light.position, hit));
+        const float lambert = (float)dot_product(normal, light_direction);
         if (lambert <= 0.0f) {
             continue;
         }
 
-        const surfer_color diffuse_product = color_scale(
-            color_product(material.color, light.color),
+        const surfer_color diffuse_product = scale_color(
+            multiply_colors(material.color, light.color),
             material.diffuse_intensity * light.intensity);
-        color = color_scale_add(color, lambert, diffuse_product);
+        color = add_scaled_color(color, lambert, diffuse_product);
 
         const surfer_vec3 half_vector =
-            vec3_normalize(vec3_add(light_direction, view));
+            normalize_vector(add_vectors(light_direction, view));
         const float normal_half =
-            (float)fmax(0.0, vec3_dot(normal, half_vector));
+            (float)fmax(0.0, dot_product(normal, half_vector));
         const float specular_factor = powf(normal_half, material.shininess);
-        const surfer_color specular_product = color_scale(
+        const surfer_color specular_product = scale_color(
             light.color,
             material.specular_intensity * light.intensity);
-        color = color_scale_add(color, specular_factor, specular_product);
+        color = add_scaled_color(color, specular_factor, specular_product);
     }
-    return color_clamp_max(color, 1.0f);
+    return clamp_color_to_maximum(color, 1.0f);
+}
+
+static bool visible_interval_for_ray_bundle(
+    surfer_ray_bundle rays,
+    surfer_interval *visible_interval)
+{
+    /*
+     * Stussak's RayCreator keeps one parameter t across camera, clipping, and
+     * surface space. ClipToSphere therefore returns an interval in that same t.
+     */
+    if (!surfer_clip_unit_sphere(rays.clipping_ray, visible_interval)) {
+        return false;
+    }
+    if (visible_interval->lower < rays.eye_location_on_ray &&
+        rays.eye_location_on_ray < visible_interval->upper) {
+        visible_interval->lower =
+            fmax(visible_interval->lower, rays.eye_location_on_ray);
+    }
+    return true;
+}
+
+static surfer_vec3 prepared_gradient_at_surface_point(
+    const surfer_prepared_surface *surface,
+    surfer_vec3 surface_point)
+{
+    surfer_vec3 gradient = {
+        evaluate_sparse_polynomial_at_point(surface->gradient_x, surface_point),
+        evaluate_sparse_polynomial_at_point(surface->gradient_y, surface_point),
+        evaluate_sparse_polynomial_at_point(surface->gradient_z, surface_point)
+    };
+    return gradient;
+}
+
+static surfer_vec3 camera_normal_from_surface_gradient(
+    surfer_ray_bundle rays,
+    surfer_vec3 surface_gradient)
+{
+    surfer_vec3 camera_normal =
+        apply_matrix_to_vector(rays.surface_normal_to_camera, surface_gradient);
+    const float length = (float)length_of_vector(camera_normal);
+    if (length != 0.0f) {
+        camera_normal = scale_vector(camera_normal, 1.0f / length);
+    }
+    return camera_normal;
+}
+
+static surfer_material material_for_visible_side(
+    const surfer_scene *scene,
+    surfer_vec3 view,
+    surfer_vec3 *camera_normal)
+{
+    if (dot_product(*camera_normal, view) > 0.0) {
+        return scene->front_material;
+    }
+    *camera_normal = scale_vector(*camera_normal, -1.0);
+    return scene->back_material;
 }
 
 surfer_trace_result surfer_trace_prepared_ray(
@@ -1028,64 +1114,61 @@ surfer_trace_result surfer_trace_prepared_ray(
     }
     result.color = scene->background;
 
-    surfer_interval interval;
-    if (!surfer_clip_unit_sphere(rays.clipping_ray, &interval)) {
+    /* ray bundle → visible t interval → first surface root */
+    surfer_interval visible_interval;
+    if (!visible_interval_for_ray_bundle(rays, &visible_interval)) {
         return result;
-    }
-    if (interval.lower < rays.eye_location_on_ray &&
-        rays.eye_location_on_ray < interval.upper) {
-        interval.lower = fmax(interval.lower, rays.eye_location_on_ray);
     }
 
     double hit_parameter = NAN;
     if (!surfer_first_surface_root(
             scene->surface,
             rays.surface_ray,
-            interval.lower,
-            interval.upper,
+            visible_interval.lower,
+            visible_interval.upper,
             &hit_parameter)) {
         return result;
     }
 
-    const surfer_vec3 clipping_hit = ray_at(rays.clipping_ray, hit_parameter);
-    if (vec3_dot(clipping_hit, clipping_hit) > 1.0 + 1e-12) {
+    const surfer_vec3 clipping_point =
+        point_on_ray_at_parameter(rays.clipping_ray, hit_parameter);
+    if (dot_product(clipping_point, clipping_point) > 1.0 + 1e-12) {
         return result;
     }
 
-    const surfer_vec3 surface_hit = ray_at(rays.surface_ray, hit_parameter);
-    surfer_vec3 surface_normal = {
-        sparse_evaluate(scene->surface->gradient_x, surface_hit),
-        sparse_evaluate(scene->surface->gradient_y, surface_hit),
-        sparse_evaluate(scene->surface->gradient_z, surface_hit)
-    };
-    surfer_vec3 normal = mat3_apply(rays.surface_normal_to_camera, surface_normal);
-    const float normal_length = (float)vec3_length(normal);
-    if (normal_length != 0.0f) {
-        normal = vec3_scale(normal, 1.0f / normal_length);
-    }
+    /* surface point → prepared gradient → camera normal */
+    const surfer_vec3 surface_point =
+        point_on_ray_at_parameter(rays.surface_ray, hit_parameter);
+    const surfer_vec3 surface_gradient =
+        prepared_gradient_at_surface_point(scene->surface, surface_point);
+    surfer_vec3 camera_normal =
+        camera_normal_from_surface_gradient(rays, surface_gradient);
 
-    const surfer_vec3 camera_hit = ray_at(rays.camera_ray, hit_parameter);
-    const surfer_vec3 eye = ray_at(rays.camera_ray, rays.eye_location_on_ray);
-    const surfer_vec3 view = vec3_normalize(vec3_subtract(eye, camera_hit));
-    surfer_material material = scene->front_material;
-    if (vec3_dot(normal, view) <= 0.0) {
-        normal = vec3_scale(normal, -1.0);
-        material = scene->back_material;
-    }
+    /* camera point + eye → view → visible side → shaded color */
+    const surfer_vec3 camera_point =
+        point_on_ray_at_parameter(rays.camera_ray, hit_parameter);
+    const surfer_vec3 eye = point_on_ray_at_parameter(
+        rays.camera_ray,
+        rays.eye_location_on_ray);
+    const surfer_vec3 view =
+        normalize_vector(subtract_vectors(eye, camera_point));
+    const surfer_material material =
+        material_for_visible_side(scene, view, &camera_normal);
 
     result.hit = true;
     result.ray_parameter = hit_parameter;
-    result.point = camera_hit;
-    result.surface_normal = normal;
-    result.color = shade_with_material(scene, camera_hit, view, normal, material);
+    result.point = camera_point;
+    result.surface_normal = camera_normal;
+    result.color =
+        shade_hit_with_material(scene, camera_point, view, camera_normal, material);
     return result;
 }
 
 uint32_t surfer_color_to_argb(surfer_color color)
 {
-    const float red = clamp_float(color.red, 0.0f, 1.0f);
-    const float green = clamp_float(color.green, 0.0f, 1.0f);
-    const float blue = clamp_float(color.blue, 0.0f, 1.0f);
+    const float red = clamp_float_between(color.red, 0.0f, 1.0f);
+    const float green = clamp_float_between(color.green, 0.0f, 1.0f);
+    const float blue = clamp_float_between(color.blue, 0.0f, 1.0f);
     const uint32_t red_byte = (uint32_t)lroundf(red * 255.0f);
     const uint32_t green_byte = (uint32_t)lroundf(green * 255.0f);
     const uint32_t blue_byte = (uint32_t)lroundf(blue * 255.0f);
@@ -1120,6 +1203,66 @@ surfer_scene surfer_default_scene(const surfer_prepared_surface *surface)
     return scene;
 }
 
+static orthographic_view make_orthographic_view(
+    size_t width,
+    size_t height,
+    double camera_height,
+    double yaw,
+    double pitch,
+    double zoom)
+{
+    const double effective_height = camera_height / zoom;
+    const double half_v = effective_height / 2.0;
+    const double half_u = half_v * (double)width / (double)height;
+    const surfer_mat3 camera_to_surface =
+        yaw_then_pitch_rotation(yaw, pitch);
+
+    orthographic_view view = {
+        half_u,
+        half_v,
+        camera_to_surface,
+        transpose_matrix(camera_to_surface),
+        apply_matrix_to_vector(
+            camera_to_surface,
+            (surfer_vec3){1.0, 0.0, 0.0}),
+        apply_matrix_to_vector(
+            camera_to_surface,
+            (surfer_vec3){0.0, 1.0, 0.0}),
+        apply_matrix_to_vector(
+            camera_to_surface,
+            (surfer_vec3){0.0, 0.0, -1.0})
+    };
+    return view;
+}
+
+static double orthographic_coordinate(
+    size_t index,
+    size_t count,
+    double half_extent)
+{
+    return -half_extent +
+        (2.0 * half_extent * (double)index) / (double)(count - 1);
+}
+
+static surfer_ray_bundle orthographic_ray_bundle_at(
+    orthographic_view view,
+    double u,
+    double v)
+{
+    const surfer_vec3 surface_origin = add_vectors(
+        scale_vector(view.surface_u, u),
+        scale_vector(view.surface_v, v));
+
+    surfer_ray_bundle rays = {
+        {{u, v, -1.0}, {0.0, 0.0, -1.0}},
+        {surface_origin, view.surface_direction},
+        {surface_origin, view.surface_direction},
+        -1.0,
+        view.surface_normal_to_camera
+    };
+    return rays;
+}
+
 bool surfer_render_orthographic(
     const surfer_scene *scene,
     size_t width,
@@ -1135,37 +1278,27 @@ bool surfer_render_orthographic(
         return false;
     }
 
-    const double effective_height = camera_height / zoom;
-    const double half_v = effective_height / 2.0;
-    const double half_u = half_v * (double)width / (double)height;
-    const surfer_mat3 camera_to_surface = view_rotation(yaw, pitch);
-    const surfer_mat3 normal_to_camera = mat3_transpose(camera_to_surface);
-    const surfer_vec3 surface_u = mat3_apply(
-        camera_to_surface, (surfer_vec3){1.0, 0.0, 0.0});
-    const surfer_vec3 surface_v = mat3_apply(
-        camera_to_surface, (surfer_vec3){0.0, 1.0, 0.0});
-    const surfer_vec3 surface_direction = mat3_apply(
-        camera_to_surface, (surfer_vec3){0.0, 0.0, -1.0});
+    const orthographic_view view = make_orthographic_view(
+        width,
+        height,
+        camera_height,
+        yaw,
+        pitch,
+        zoom);
 
+    /* (x,y) → (u,v) → ray bundle → trace → ARGB */
     for (size_t y = 0; y < height; ++y) {
-        const double v = -half_v +
-            (2.0 * half_v * (double)y) / (double)(height - 1);
+        const double v =
+            orthographic_coordinate(y, height, view.half_v);
         for (size_t x = 0; x < width; ++x) {
-            const double u = -half_u +
-                (2.0 * half_u * (double)x) / (double)(width - 1);
-            const surfer_vec3 surface_origin = vec3_add(
-                vec3_scale(surface_u, u),
-                vec3_scale(surface_v, v));
-            const surfer_ray_bundle rays = {
-                {{u, v, -1.0}, {0.0, 0.0, -1.0}},
-                {surface_origin, surface_direction},
-                {surface_origin, surface_direction},
-                -1.0,
-                normal_to_camera
-            };
+            const double u =
+                orthographic_coordinate(x, width, view.half_u);
+            const surfer_ray_bundle rays =
+                orthographic_ray_bundle_at(view, u, v);
             const surfer_trace_result trace =
                 surfer_trace_prepared_ray(scene, rays);
-            argb_pixels[y * width + x] = surfer_color_to_argb(trace.color);
+            argb_pixels[y * width + x] =
+                surfer_color_to_argb(trace.color);
         }
     }
     return true;
