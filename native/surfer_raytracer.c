@@ -252,7 +252,13 @@ static univariate_polynomial copy_without_trailing_zeroes(const univariate_polyn
     return copy_univariate_polynomial(polynomial->coefficients, coefficient_count_without_trailing_zeroes(polynomial));
 }
 
-static double evaluate_univariate_polynomial_at(const univariate_polynomial *polynomial, double where)
+/*
+ * Stussak: UnivariatePolynomial.evaluateAt.
+ * Keep its two Horner directions because the choice is numerical, not cosmetic.
+ */
+static double evaluate_univariate_polynomial_at(
+    const univariate_polynomial *polynomial,
+    double where)
 {
     if (polynomial->length == 0) {
         return 0.0;
@@ -344,7 +350,7 @@ static double *stretch_univariate_polynomial_to_half_interval(const double *coef
     return result;
 }
 
-static int descartes_sign_changes_reverse_shift_univariate_polynomial_by_one(
+static int descartes_sign_changes_after_reverse_shift_by_one(
     const double *coefficients,
     size_t length)
 {
@@ -426,7 +432,7 @@ static double bisect_root_interval(
     return lower;
 }
 
-static double restrict_interval_and_bisect_root_root_interval(
+static double restrict_interval_and_bisect_root(
     const univariate_polynomial *polynomial,
     double lower,
     double upper,
@@ -626,7 +632,7 @@ static double find_positive_root_with_descartes(
             }
         }
 
-        const int variations = descartes_sign_changes_reverse_shift_univariate_polynomial_by_one(
+        const int variations = descartes_sign_changes_after_reverse_shift_by_one(
             current.coefficients,
             current.length);
         if (variations < 0) {
@@ -634,7 +640,7 @@ static double find_positive_root_with_descartes(
             break;
         }
         if (variations == 1) {
-            const double transformed_root = restrict_interval_and_bisect_root_root_interval(
+            const double transformed_root = restrict_interval_and_bisect_root(
                 &polynomial,
                 current.lower,
                 current.upper,
@@ -838,6 +844,13 @@ static univariate_polynomial multiply_univariate_polynomials(
     return result;
 }
 
+/*
+ * Current PreparedSurface bridge only.
+ *
+ * Stussak's production path specializes XYZ → XY → univariate in stages.
+ * Until that exact path is translated, name this direct expansion for what it
+ * is instead of hiding the difference behind a generic "specialize" name.
+ */
 static bool expand_sparse_polynomial_directly_along_ray(
     surfer_sparse_polynomial source,
     surfer_ray ray,
@@ -999,6 +1012,10 @@ bool surfer_first_surface_root(
     return true;
 }
 
+/*
+ * Stussak: RenderingTask.shade, expressed as a value transformation rather
+ * than mutable javax.vecmath objects.
+ */
 static surfer_color shade_hit_with_material(
     const surfer_scene *scene,
     surfer_vec3 hit,
