@@ -65,7 +65,7 @@ static const surfer_prepared_surface plane = {
     {plane_dz_terms, 1}
 };
 
-static void test_clip_preserves_parameter(void)
+static void test_clip_to_sphere_preserves_ray_parameter(void)
 {
     surfer_interval interval;
     const surfer_ray ray = {{0.0, 0.0, 0.0}, {0.0, 0.0, -2.0}};
@@ -74,7 +74,7 @@ static void test_clip_preserves_parameter(void)
     require_near(interval.upper, 0.5, 1e-15, "clip upper keeps original t");
 }
 
-static void test_sphere_first_root(void)
+static void test_descartes_finds_first_sphere_root(void)
 {
     const surfer_ray center = {{0.0, 0.0, 0.0}, {0.0, 0.0, -1.0}};
     double root = 0.0;
@@ -84,7 +84,7 @@ static void test_sphere_first_root(void)
     require_near(root, -0.8, SURFER_ROOT_EPSILON, "first visible sphere root");
 }
 
-static void test_exact_tangent_root(void)
+static void test_descartes_keeps_exact_even_multiplicity_root(void)
 {
     const surfer_ray tangent = {{0.5, 0.0, 0.0}, {0.0, 0.0, -1.0}};
     double root = 99.0;
@@ -94,7 +94,7 @@ static void test_exact_tangent_root(void)
     require_near(root, 0.0, 1e-15, "tangent root is zero");
 }
 
-static void test_miss(void)
+static void test_surface_root_reports_miss(void)
 {
     const surfer_ray miss = {{0.9, 0.0, 0.0}, {0.0, 0.0, -1.0}};
     double root = 0.0;
@@ -113,7 +113,7 @@ static void test_linear_family_uses_closed_form(void)
     require_near(root, -0.25, 1e-15, "linear root");
 }
 
-static void test_trace_and_normal(void)
+static void test_ray_bundle_hit_uses_camera_point_and_normal(void)
 {
     const surfer_scene scene = surfer_default_scene(&sphere);
     const surfer_mat3 identity = {1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
@@ -134,7 +134,7 @@ static void test_trace_and_normal(void)
 }
 
 
-static size_t foreground_count(const uint32_t *pixels, size_t count, uint32_t background)
+static size_t count_foreground_pixels(const uint32_t *pixels, size_t count, uint32_t background)
 {
     size_t foreground = 0;
     for (size_t i = 0; i < count; ++i) {
@@ -155,7 +155,7 @@ static void test_render_has_surface_and_background(void)
         "orthographic render succeeds");
 
     const uint32_t background = surfer_color_to_argb(scene.background);
-    const size_t foreground = foreground_count(
+    const size_t foreground = count_foreground_pixels(
         pixels, WIDTH * HEIGHT, background);
     require_true(foreground > 500, "render contains sphere foreground");
     require_true(foreground < 1400, "render retains background around sphere");
@@ -178,19 +178,19 @@ static void test_rotated_sphere_keeps_silhouette(void)
             &scene, WIDTH, HEIGHT, 2.15, 0.63, -0.41, 1.0, rotated_pixels),
         "rotated sphere render succeeds");
     require_true(
-        foreground_count(identity_pixels, WIDTH * HEIGHT, background) ==
-            foreground_count(rotated_pixels, WIDTH * HEIGHT, background),
+        count_foreground_pixels(identity_pixels, WIDTH * HEIGHT, background) ==
+            count_foreground_pixels(rotated_pixels, WIDTH * HEIGHT, background),
         "rotating a sphere preserves its silhouette");
 }
 
 int main(void)
 {
-    test_clip_preserves_parameter();
-    test_sphere_first_root();
-    test_exact_tangent_root();
-    test_miss();
+    test_clip_to_sphere_preserves_ray_parameter();
+    test_descartes_finds_first_sphere_root();
+    test_descartes_keeps_exact_even_multiplicity_root();
+    test_surface_root_reports_miss();
     test_linear_family_uses_closed_form();
-    test_trace_and_normal();
+    test_ray_bundle_hit_uses_camera_point_and_normal();
     test_render_has_surface_and_background();
     test_rotated_sphere_keeps_silhouette();
     puts("SURFER prepared-surface C ray tracer: PASS");
