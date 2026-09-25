@@ -116,7 +116,7 @@ static void test_linear_family_uses_closed_form(void)
 static void test_trace_and_normal(void)
 {
     const surfer_scene scene = surfer_default_scene(&sphere);
-    const surfer_mat3 identity = {1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0};
+    const surfer_mat3 identity = {1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
     const surfer_ray_bundle rays = {
         {{0.0, 0.0, -1.0}, {0.0, 0.0, -1.0}},
         {{0.0, 0.0, 0.0}, {0.0, 0.0, -1.0}},
