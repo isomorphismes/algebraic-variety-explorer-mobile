@@ -844,87 +844,137 @@ static univariate_polynomial multiply_univariate_polynomials(
     return result;
 }
 
+static bool maximum_total_degree_of_sparse_polynomial(
+    surfer_sparse_polynomial polynomial,
+    size_t *maximum_degree)
+{
+    int64_t largest_degree = 0;
+    for (size_t i = 0; i < polynomial.term_count; ++i) {
+        const surfer_term term = polynomial.terms[i];
+        if (term.x_exponent < 0 ||
+            term.y_exponent < 0 ||
+            term.z_exponent < 0) {
+            return false;
+        }
+
+        const int64_t term_degree =
+            (int64_t)term.x_exponent +
+            (int64_t)term.y_exponent +
+            (int64_t)term.z_exponent;
+        if (term_degree > largest_degree) {
+            largest_degree = term_degree;
+        }
+    }
+
+    if ((uint64_t)largest_degree > SIZE_MAX - 1U) {
+        return false;
+    }
+    *maximum_degree = (size_t)largest_degree;
+    return true;
+}
+
+static bool polynomial_for_sparse_term_along_ray(
+    surfer_term term,
+    surfer_ray ray,
+    univariate_polynomial *result)
+{
+    univariate_polynomial x_power = empty_univariate_polynomial();
+    univariate_polynomial y_power = empty_univariate_polynomial();
+    univariate_polynomial z_power = empty_univariate_polynomial();
+
+    if (!polynomial_for_axis_power_along_ray(
+            ray.origin.x,
+            ray.direction.x,
+            term.x_exponent,
+            &x_power) ||
+        !polynomial_for_axis_power_along_ray(
+            ray.origin.y,
+            ray.direction.y,
+            term.y_exponent,
+            &y_power) ||
+        !polynomial_for_axis_power_along_ray(
+            ray.origin.z,
+            ray.direction.z,
+            term.z_exponent,
+            &z_power)) {
+        free_univariate_polynomial(x_power);
+        free_univariate_polynomial(y_power);
+        free_univariate_polynomial(z_power);
+        return false;
+    }
+
+    univariate_polynomial xy_power =
+        multiply_univariate_polynomials(&x_power, &y_power);
+    free_univariate_polynomial(x_power);
+    free_univariate_polynomial(y_power);
+    if (xy_power.coefficients == NULL) {
+        free_univariate_polynomial(z_power);
+        return false;
+    }
+
+    univariate_polynomial xyz_power =
+        multiply_univariate_polynomials(&xy_power, &z_power);
+    free_univariate_polynomial(xy_power);
+    free_univariate_polynomial(z_power);
+    if (xyz_power.coefficients == NULL) {
+        return false;
+    }
+
+    *result = xyz_power;
+    return true;
+}
+
+static void add_scaled_univariate_polynomial(
+    univariate_polynomial *sum,
+    const univariate_polynomial *addition,
+    double scale)
+{
+    for (size_t i = 0; i < addition->length; ++i) {
+        sum->coefficients[i] += scale * addition->coefficients[i];
+    }
+}
+
 /*
  * Current PreparedSurface bridge only.
  *
  * Stussak's production path specializes XYZ → XY → univariate in stages.
  * Until that exact path is translated, name this direct expansion for what it
  * is instead of hiding the difference behind a generic "specialize" name.
+ *
+ * term → x(t), y(t), z(t) powers → one term polynomial → accumulated sum
  */
 static bool expand_sparse_polynomial_directly_along_ray(
     surfer_sparse_polynomial source,
     surfer_ray ray,
     univariate_polynomial *result)
 {
-    int64_t maximum_degree = 0;
-    for (size_t i = 0; i < source.term_count; ++i) {
-        const surfer_term term = source.terms[i];
-        if (term.x_exponent < 0 || term.y_exponent < 0 || term.z_exponent < 0) {
-            return false;
-        }
-        const int64_t degree =
-            (int64_t)term.x_exponent +
-            (int64_t)term.y_exponent +
-            (int64_t)term.z_exponent;
-        if (degree > maximum_degree) {
-            maximum_degree = degree;
-        }
-    }
-    if ((uint64_t)maximum_degree > SIZE_MAX - 1U) {
+    size_t maximum_degree = 0;
+    if (!maximum_total_degree_of_sparse_polynomial(source, &maximum_degree)) {
         return false;
     }
 
-    *result = allocate_univariate_polynomial((size_t)maximum_degree + 1);
+    *result = allocate_univariate_polynomial(maximum_degree + 1);
     if (result->coefficients == NULL) {
         return false;
     }
 
     for (size_t i = 0; i < source.term_count; ++i) {
         const surfer_term term = source.terms[i];
-        univariate_polynomial x = empty_univariate_polynomial();
-        univariate_polynomial y = empty_univariate_polynomial();
-        univariate_polynomial z = empty_univariate_polynomial();
-        univariate_polynomial xy = empty_univariate_polynomial();
-        univariate_polynomial xyz = empty_univariate_polynomial();
-
-        if (!polynomial_for_axis_power_along_ray(
-                ray.origin.x,
-                ray.direction.x,
-                term.x_exponent,
-                &x) ||
-            !polynomial_for_axis_power_along_ray(
-                ray.origin.y,
-                ray.direction.y,
-                term.y_exponent,
-                &y) ||
-            !polynomial_for_axis_power_along_ray(
-                ray.origin.z,
-                ray.direction.z,
-                term.z_exponent,
-                &z)) {
-            free_univariate_polynomial(x);
-            free_univariate_polynomial(y);
-            free_univariate_polynomial(z);
-            free_univariate_polynomial(*result);
-            *result = empty_univariate_polynomial();
-            return false;
-        }
-        xy = multiply_univariate_polynomials(&x, &y);
-        xyz = multiply_univariate_polynomials(&xy, &z);
-        free_univariate_polynomial(x);
-        free_univariate_polynomial(y);
-        free_univariate_polynomial(z);
-        free_univariate_polynomial(xy);
-        if (xyz.coefficients == NULL) {
+        univariate_polynomial term_on_ray = empty_univariate_polynomial();
+        if (!polynomial_for_sparse_term_along_ray(
+                term,
+                ray,
+                &term_on_ray)) {
             free_univariate_polynomial(*result);
             *result = empty_univariate_polynomial();
             return false;
         }
 
-        for (size_t j = 0; j < xyz.length; ++j) {
-            result->coefficients[j] += term.coefficient * xyz.coefficients[j];
-        }
-        free_univariate_polynomial(xyz);
+        add_scaled_univariate_polynomial(
+            result,
+            &term_on_ray,
+            term.coefficient);
+        free_univariate_polynomial(term_on_ray);
     }
     return true;
 }
@@ -970,6 +1020,56 @@ bool surfer_clip_unit_sphere(surfer_ray ray, surfer_interval *interval)
     return true;
 }
 
+static bool prepare_surface_polynomial_on_ray(
+    const surfer_prepared_surface *surface,
+    surfer_ray surface_ray,
+    univariate_polynomial *prepared_polynomial)
+{
+    univariate_polynomial expanded = empty_univariate_polynomial();
+    if (!expand_sparse_polynomial_directly_along_ray(
+            surface->surface,
+            surface_ray,
+            &expanded)) {
+        return false;
+    }
+
+    *prepared_polynomial = copy_without_trailing_zeroes(&expanded);
+    free_univariate_polynomial(expanded);
+    return prepared_polynomial->coefficients != NULL;
+}
+
+static double first_linear_root_in_interval(
+    const univariate_polynomial *polynomial,
+    double lower,
+    double upper)
+{
+    const size_t coefficient_count =
+        coefficient_count_without_trailing_zeroes(polynomial);
+    if (coefficient_count != 2) {
+        return NAN;
+    }
+
+    const double root =
+        -polynomial->coefficients[0] / polynomial->coefficients[1];
+    return lower <= root && root <= upper ? root : NAN;
+}
+
+static double first_root_for_surface_family(
+    const surfer_prepared_surface *surface,
+    const univariate_polynomial *polynomial,
+    double lower,
+    double upper)
+{
+    /*
+     * Stussak: CPUAlgebraicSurfaceRenderer chooses ClosedFormRootFinder below
+     * family degree two and DescartesRootFinder(false) otherwise.
+     */
+    if (surface->family_degree < 2) {
+        return first_linear_root_in_interval(polynomial, lower, upper);
+    }
+    return find_first_root_with_descartes(polynomial, lower, upper);
+}
+
 bool surfer_first_surface_root(
     const surfer_prepared_surface *surface,
     surfer_ray surface_ray,
@@ -981,29 +1081,21 @@ bool surfer_first_surface_root(
         return false;
     }
 
+    /* PreparedSurface + surface-space ray → p(t) → first permitted root */
     univariate_polynomial polynomial = empty_univariate_polynomial();
-    if (!expand_sparse_polynomial_directly_along_ray(surface->surface, surface_ray, &polynomial)) {
-        return false;
-    }
-    univariate_polynomial shrunk = copy_without_trailing_zeroes(&polynomial);
-    free_univariate_polynomial(polynomial);
-    if (shrunk.coefficients == NULL) {
+    if (!prepare_surface_polynomial_on_ray(
+            surface,
+            surface_ray,
+            &polynomial)) {
         return false;
     }
 
-    double candidate = NAN;
-    const size_t degree = coefficient_count_without_trailing_zeroes(&shrunk) - 1;
-    if (surface->family_degree < 2) {
-        if (degree == 1) {
-            candidate = -shrunk.coefficients[0] / shrunk.coefficients[1];
-            if (!(lower <= candidate && candidate <= upper)) {
-                candidate = NAN;
-            }
-        }
-    } else {
-        candidate = find_first_root_with_descartes(&shrunk, lower, upper);
-    }
-    free_univariate_polynomial(shrunk);
+    const double candidate = first_root_for_surface_family(
+        surface,
+        &polynomial,
+        lower,
+        upper);
+    free_univariate_polynomial(polynomial);
 
     if (isnan(candidate)) {
         return false;
@@ -1012,9 +1104,48 @@ bool surfer_first_surface_root(
     return true;
 }
 
+static surfer_color add_one_light_to_shaded_color(
+    surfer_color color,
+    surfer_light light,
+    surfer_vec3 hit,
+    surfer_vec3 view,
+    surfer_vec3 normal,
+    surfer_material material)
+{
+    if (!light.enabled) {
+        return color;
+    }
+
+    const surfer_vec3 light_direction =
+        normalize_vector(subtract_vectors(light.position, hit));
+    const float lambert =
+        (float)dot_product(normal, light_direction);
+    if (lambert <= 0.0f) {
+        return color;
+    }
+
+    const surfer_color diffuse_product = scale_color(
+        multiply_colors(material.color, light.color),
+        material.diffuse_intensity * light.intensity);
+    color = add_scaled_color(color, lambert, diffuse_product);
+
+    const surfer_vec3 half_vector =
+        normalize_vector(add_vectors(light_direction, view));
+    const float normal_half =
+        (float)fmax(0.0, dot_product(normal, half_vector));
+    const float specular_factor =
+        powf(normal_half, material.shininess);
+    const surfer_color specular_product = scale_color(
+        light.color,
+        material.specular_intensity * light.intensity);
+    return add_scaled_color(color, specular_factor, specular_product);
+}
+
 /*
- * Stussak: RenderingTask.shade, expressed as a value transformation rather
+ * Stussak: RenderingTask.shade, expressed as a fold over enabled lights rather
  * than mutable javax.vecmath objects.
+ *
+ * material → ambient color → each light contribution → clamped color
  */
 static surfer_color shade_hit_with_material(
     const surfer_scene *scene,
@@ -1023,38 +1154,21 @@ static surfer_color shade_hit_with_material(
     surfer_vec3 normal,
     surfer_material material)
 {
-    surfer_color color = scale_color(material.color, material.ambient_intensity);
+    surfer_color color =
+        scale_color(material.color, material.ambient_intensity);
 
     const size_t light_count =
         scene->light_count < SURFER_MAX_LIGHTS
             ? scene->light_count
             : SURFER_MAX_LIGHTS;
     for (size_t i = 0; i < light_count; ++i) {
-        const surfer_light light = scene->lights[i];
-        if (!light.enabled) {
-            continue;
-        }
-        const surfer_vec3 light_direction =
-            normalize_vector(subtract_vectors(light.position, hit));
-        const float lambert = (float)dot_product(normal, light_direction);
-        if (lambert <= 0.0f) {
-            continue;
-        }
-
-        const surfer_color diffuse_product = scale_color(
-            multiply_colors(material.color, light.color),
-            material.diffuse_intensity * light.intensity);
-        color = add_scaled_color(color, lambert, diffuse_product);
-
-        const surfer_vec3 half_vector =
-            normalize_vector(add_vectors(light_direction, view));
-        const float normal_half =
-            (float)fmax(0.0, dot_product(normal, half_vector));
-        const float specular_factor = powf(normal_half, material.shininess);
-        const surfer_color specular_product = scale_color(
-            light.color,
-            material.specular_intensity * light.intensity);
-        color = add_scaled_color(color, specular_factor, specular_product);
+        color = add_one_light_to_shaded_color(
+            color,
+            scene->lights[i],
+            hit,
+            view,
+            normal,
+            material);
     }
     return clamp_color_to_maximum(color, 1.0f);
 }
@@ -1181,14 +1295,22 @@ surfer_trace_result surfer_trace_prepared_ray(
     return result;
 }
 
+static uint32_t color_channel_to_byte(float channel)
+{
+    const float clamped =
+        clamp_float_between(channel, 0.0f, 1.0f);
+    return (uint32_t)lroundf(clamped * 255.0f);
+}
+
 uint32_t surfer_color_to_argb(surfer_color color)
 {
-    const float red = clamp_float_between(color.red, 0.0f, 1.0f);
-    const float green = clamp_float_between(color.green, 0.0f, 1.0f);
-    const float blue = clamp_float_between(color.blue, 0.0f, 1.0f);
-    const uint32_t red_byte = (uint32_t)lroundf(red * 255.0f);
-    const uint32_t green_byte = (uint32_t)lroundf(green * 255.0f);
-    const uint32_t blue_byte = (uint32_t)lroundf(blue * 255.0f);
+    const uint32_t red_byte =
+        color_channel_to_byte(color.red);
+    const uint32_t green_byte =
+        color_channel_to_byte(color.green);
+    const uint32_t blue_byte =
+        color_channel_to_byte(color.blue);
+
     return UINT32_C(0xff000000) |
         (red_byte << 16) |
         (green_byte << 8) |
