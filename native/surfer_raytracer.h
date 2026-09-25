@@ -31,6 +31,10 @@ typedef struct {
     double m20, m21, m22;
 } surfer_mat3;
 
+/*
+ * Stussak's RayCreator contract: camera, clipping, and surface-space rays all
+ * use the same parameter t. Keeping them together makes that invariant visible.
+ */
 typedef struct {
     surfer_ray camera_ray;
     surfer_ray clipping_ray;
@@ -56,6 +60,11 @@ typedef struct {
     size_t term_count;
 } surfer_sparse_polynomial;
 
+/*
+ * PreparedSurface is the adaptation boundary, not a replacement name for a
+ * Stussak class: the semantic layer hands the numerical renderer the surface
+ * and the three already-differentiated polynomials.
+ */
 typedef struct {
     int32_t family_degree;
     surfer_sparse_polynomial surface;
