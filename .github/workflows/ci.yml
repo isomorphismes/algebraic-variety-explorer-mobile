@@ -42,6 +42,16 @@ jobs:
       - name: Run parser and ray-tracer tests
         run: bash ./build.sh test
 
+      - name: Run prepared-surface C ray-tracer tests
+        run: |
+          mkdir -p .build
+          cc -std=c17 -Wall -Wextra -Werror -pedantic -O1 -g \
+            -fno-fast-math -ffp-contract=off \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            native/surfer_raytracer.c native/surfer_raytracer_test.c \
+            -lm -o .build/surfer-raytracer-test
+          ASAN_OPTIONS=detect_leaks=1 .build/surfer-raytracer-test
+
       - name: Render and inspect deterministic JVM preview
         run: |
           bash ./build.sh preview .build/ci-preview.ppm
