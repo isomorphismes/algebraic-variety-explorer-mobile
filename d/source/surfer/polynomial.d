@@ -277,9 +277,9 @@ struct Polynomial {
 
     UnivariatePolynomial along(Ray ray) {
         auto result = UnivariatePolynomial(0.0);
-        const x = UnivariatePolynomial([ray.origin.x, ray.direction.x]);
-        const y = UnivariatePolynomial([ray.origin.y, ray.direction.y]);
-        const z = UnivariatePolynomial([ray.origin.z, ray.direction.z]);
+        auto x = UnivariatePolynomial([ray.origin.x, ray.direction.x]);
+        auto y = UnivariatePolynomial([ray.origin.y, ray.direction.y]);
+        auto z = UnivariatePolynomial([ray.origin.z, ray.direction.z]);
 
         foreach (term; terms) {
             auto expanded = x.power(term.x_exponent)
