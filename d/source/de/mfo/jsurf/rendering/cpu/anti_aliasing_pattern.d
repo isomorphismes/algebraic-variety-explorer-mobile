@@ -17,7 +17,7 @@
 module de.mfo.jsurf.rendering.cpu.anti_aliasing_pattern;
 
 class AntiAliasingPattern {
-    class SamplingPoint {
+    static class SamplingPoint {
         private float u, v, weight;
         private this(float u, float v, float weight) {
             this.u = u; this.v = v; this.weight = weight;
