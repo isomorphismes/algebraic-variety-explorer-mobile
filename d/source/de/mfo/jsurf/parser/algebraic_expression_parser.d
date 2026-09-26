@@ -61,7 +61,7 @@ class AlgebraicExpressionParser {
         while (i < source.length) {
             const c = source[i];
             if (isWhite(c)) { ++i; continue; }
-            final switch (c) {
+            switch (c) {
                 case '+': result ~= Token(Kind.plus, "+"); ++i; continue;
                 case '-': result ~= Token(Kind.minus, "-"); ++i; continue;
                 case '*': result ~= Token(Kind.mult, "*"); ++i; continue;
@@ -204,7 +204,7 @@ class AlgebraicExpressionParser {
     }
 
     private static PolynomialOperation createVariable(string name,bool parentheses){
-        final switch(name){
+        switch(name){
             case "x":return new PolynomialVariable(PolynomialVariable.Var.x,parentheses);
             case "y":return new PolynomialVariable(PolynomialVariable.Var.y,parentheses);
             case "z":return new PolynomialVariable(PolynomialVariable.Var.z,parentheses);
@@ -233,7 +233,7 @@ class AlgebraicExpressionParser {
         auto r=cast(DoubleOperation)right.operation;
         if(l !is null && r !is null){
             DoubleBinaryOperation.Op op;
-            final switch(kind){
+            switch(kind){
                 case Kind.plus:op=DoubleBinaryOperation.Op.add;break;
                 case Kind.minus:op=DoubleBinaryOperation.Op.sub;break;
                 case Kind.mult:op=DoubleBinaryOperation.Op.mult;break;
@@ -247,7 +247,7 @@ class AlgebraicExpressionParser {
             return Parsed(new DoubleBinaryOperation(op,l,r,keepParens),null);
         }
 
-        final switch(kind){
+        switch(kind){
             case Kind.plus:return Parsed(new PolynomialAddition(left.operation,right.operation,parentheses),null);
             case Kind.minus:return Parsed(new PolynomialSubtraction(left.operation,right.operation,parentheses),null);
             case Kind.mult:return Parsed(new PolynomialMultiplication(left.operation,right.operation,parentheses),null);
