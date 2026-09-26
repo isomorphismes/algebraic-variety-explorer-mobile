@@ -16,6 +16,10 @@ class Point3d {
     this() {}
     this(double x, double y, double z) { this.x=x; this.y=y; this.z=z; }
     this(Point3d p) { this(p.x,p.y,p.z); }
+    this(Vector3d v) { this(v.x,v.y,v.z); }
+    void scale(double s){x*=s;y*=s;z*=s;}
+    void scaleAdd(double s, Vector3d v, Point3d p){x=s*v.x+p.x;y=s*v.y+p.y;z=s*v.z+p.z;}
+    void scaleAdd(double s, Vector3d v, Vector3d p){x=s*v.x+p.x;y=s*v.y+p.y;z=s*v.z+p.z;}
     void add(Vector3d v) { x+=v.x; y+=v.y; z+=v.z; }
     void sub(Vector3d v) { x-=v.x; y-=v.y; z-=v.z; }
     override string toString() { import std.format : format; return format("(%s, %s, %s)",x,y,z); }
@@ -40,6 +44,9 @@ class Vector3d {
     void add(Vector3d v){x+=v.x;y+=v.y;z+=v.z;}
     void add(Vector3d a, Vector3d b){x=a.x+b.x;y=a.y+b.y;z=a.z+b.z;}
     void sub(Vector3d v){x-=v.x;y-=v.y;z-=v.z;}
+    void sub(Point3d p){x-=p.x;y-=p.y;z-=p.z;}
+    void scaleAdd(double s, Vector3d v, Point3d p){x=s*v.x+p.x;y=s*v.y+p.y;z=s*v.z+p.z;}
+    void scaleAdd(double s, Vector3d v, Vector3d p){x=s*v.x+p.x;y=s*v.y+p.y;z=s*v.z+p.z;}
     void sub(Vector3d a, Vector3d b){x=a.x-b.x;y=a.y-b.y;z=a.z-b.z;}
     void sub(Point3d a, Point3d b){x=a.x-b.x;y=a.y-b.y;z=a.z-b.z;}
     void cross(Vector3d a, Vector3d b){
@@ -62,6 +69,9 @@ class Vector3f {
     this() {}
     this(float x, float y, float z){this.x=x;this.y=y;this.z=z;}
     this(Vector3f v){this(v.x,v.y,v.z);}
+    this(Color3f c){this(c.x,c.y,c.z);}
+    void sub(Color3f c){x-=c.x;y-=c.y;z-=c.z;}
+    float dot(Vector3f v){return x*v.x+y*v.y+z*v.z;}
     void normalize(){
         const l=cast(float)sqrt(cast(double)(x*x+y*y+z*z));
         if(l!=0.0f){x/=l;y/=l;z/=l;}
@@ -92,6 +102,8 @@ class Color3f {
     void clamp(float low,float high){
         x=min(high,max(low,x)); y=min(high,max(low,y)); z=min(high,max(low,z));
     }
+    void clampMax(float high){x=min(high,x);y=min(high,y);z=min(high,z);}
+    void scaleAdd(float s, Color3f a, Color3f b){x=s*a.x+b.x;y=s*a.y+b.y;z=s*a.z+b.z;}
 }
 
 class Matrix3d {
@@ -164,6 +176,39 @@ class Matrix4d {
         const z=m[8]*v.x+m[9]*v.y+m[10]*v.z;
         v.set(x,y,z);
     }
+    void transform(Vector4d v){
+        const x=m[0]*v.x+m[1]*v.y+m[2]*v.z+m[3]*v.w;
+        const y=m[4]*v.x+m[5]*v.y+m[6]*v.z+m[7]*v.w;
+        const z=m[8]*v.x+m[9]*v.y+m[10]*v.z+m[11]*v.w;
+        const w=m[12]*v.x+m[13]*v.y+m[14]*v.z+m[15]*v.w;
+        v.x=x;v.y=y;v.z=z;v.w=w;
+    }
+    void setTranslation(Vector3d v){m[3]=v.x;m[7]=v.y;m[11]=v.z;}
+    bool epsilonEquals(Matrix4d other,double epsilon){
+        import std.math : abs;
+        foreach(i;0..16) if(abs(m[i]-other.m[i])>epsilon) return false;
+        return true;
+    }
+    void invert(){
+        double[4][4] a;
+        double[4][4] inv;
+        foreach(r;0..4)foreach(col;0..4){a[r][col]=m[r*4+col];inv[r][col]=r==col?1.0:0.0;}
+        import std.math : abs;
+        foreach(col;0..4){
+            size_t pivot=col;
+            foreach(r;col+1..4) if(abs(a[r][col])>abs(a[pivot][col])) pivot=r;
+            if(a[pivot][col]==0.0) throw new Exception("singular matrix");
+            if(pivot!=col){auto ta=a[pivot];a[pivot]=a[col];a[col]=ta;auto ti=inv[pivot];inv[pivot]=inv[col];inv[col]=ti;}
+            const d=a[col][col];
+            foreach(k;0..4){a[col][k]/=d;inv[col][k]/=d;}
+            foreach(r;0..4) if(r!=col){
+                const factor=a[r][col];
+                foreach(k;0..4){a[r][k]-=factor*a[col][k];inv[r][k]-=factor*inv[col][k];}
+            }
+        }
+        foreach(r;0..4)foreach(col;0..4)m[r*4+col]=inv[r][col];
+    }
+    void invert(Matrix4d other){m=other.m;invert();}
     void transpose(){
         foreach(r;0..4) foreach(c;r+1..4){auto t=m[r*4+c];m[r*4+c]=m[c*4+r];m[c*4+r]=t;}
     }
