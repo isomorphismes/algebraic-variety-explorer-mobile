@@ -223,7 +223,7 @@ class RenderingTask {
         if (needsRefinement) {
             finalColor = new Color3f();
 
-            foreach (samplingPoint; pattern) {
+            foreach (samplingPoint; pattern.samplingPoints()) {
                 checkInterrupted();
 
                 Color3f sampleColor;
