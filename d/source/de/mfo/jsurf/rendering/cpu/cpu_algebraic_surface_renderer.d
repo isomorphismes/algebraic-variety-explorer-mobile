@@ -266,6 +266,16 @@ unittest {
     renderer.setAntiAliasingPattern(
         AntiAliasingPattern.OG_1x1);
 
+    auto probePixels = new int[64 * 64];
+    auto probe = renderer.collectDrawCallStaticData(probePixels, 64, 64);
+    auto centerSurface = probe.surfaceRowSubstitutor.setV(0.0).setU(0.0);
+    import std.math : abs, isNaN;
+    assert(abs(centerSurface.evaluateAt(0.8)) < 1.0e-10,
+        "transformed center ray polynomial is wrong");
+    const centerRoot = probe.realRootFinder.findFirstRootIn(centerSurface, 0.0, 1.0);
+    assert(!isNaN(centerRoot), "center ray root is missing");
+    assert(abs(centerRoot - 0.8) < 1.0e-5, "center ray root is wrong");
+
     auto pixels = new int[64 * 64];
     renderer.draw(pixels, 64, 64);
 
@@ -276,6 +286,7 @@ unittest {
         if (pixel != background)
             ++foreground;
 
-    assert(foreground > 0);
-    assert(foreground < pixels.length);
+    import std.conv : to;
+    assert(foreground > 0, "foreground=" ~ foreground.to!string);
+    assert(foreground < pixels.length, "foreground=" ~ foreground.to!string);
 }
