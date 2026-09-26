@@ -68,6 +68,7 @@ struct UnivariatePolynomial {
         if (coefficients.length == 0 || rhs.coefficients.length == 0)
             return UnivariatePolynomial(0.0);
         auto result = new double[coefficients.length + rhs.coefficients.length - 1];
+        result[] = 0.0;
         foreach (i, left; coefficients)
             foreach (j, right; rhs.coefficients)
                 result[i + j] += left * right;
