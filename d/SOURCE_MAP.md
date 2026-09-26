@@ -27,5 +27,6 @@ source file here.
 ## Explicit D adaptations so far
 
 - Java array copies use D slices/`dup` while retaining copy-versus-alias intent.
+- Java varargs coefficient arrays are explicitly duplicated on entry because D variadic slices may be temporary; this preserves the Java object's retained-array lifetime.
 - `Double.longBitsToDouble`/`doubleToLongBits` in `DescartesRootFinder.nextPowerOfTwo` use a D union to reinterpret the same IEEE-754 binary64 bits.
 - The executable benchmark loop embedded as `DescartesRootFinder.main` is omitted from the library module; it is not renderer semantics.
