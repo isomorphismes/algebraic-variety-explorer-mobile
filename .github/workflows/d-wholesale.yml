@@ -1,0 +1,33 @@
+name: D wholesale source translation
+
+on:
+  push:
+    branches:
+      - d/wholesale
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Install D compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ldc dub
+
+      - name: Compile and run D unit tests
+        working-directory: d
+        run: dub test --compiler=ldc2
