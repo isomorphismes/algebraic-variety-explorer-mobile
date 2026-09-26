@@ -18,7 +18,7 @@ module de.mfo.jsurf.algebra.xy_polynomial;
 
 import std.algorithm.comparison : max;
 import std.conv : to;
-import std.math : abs, pow;
+import std.math : abs, mathPow = pow;
 import de.mfo.jsurf.algebra.univariate_polynomial : UnivariatePolynomial;
 
 class XYPolynomial {
@@ -166,14 +166,14 @@ class XYPolynomial {
     double evaluateXY(double x,double y){
         double result=0;
         foreach(i;0..coeffs.length)
-            result += coeffs[i]*pow(x,cast(double)xExps[i])*pow(y,cast(double)yExps[i]);
+            result += coeffs[i]*mathPow(x,cast(double)xExps[i])*mathPow(y,cast(double)yExps[i]);
         return result;
     }
 
     UnivariatePolynomial evaluateY(double y){
         if(coeffs.length==0)return new UnivariatePolynomial(0.0);
         auto yPowers=new double[cast(int)yDegree*2+1];
-        for(int i=0;i<=yDegree;++i)yPowers[yDegree+i]=pow(y,cast(double)i);
+        for(int i=0;i<=yDegree;++i)yPowers[yDegree+i]=mathPow(y,cast(double)i);
 
         int termIndex,incr,lastIndex;
         if(abs(y)>1.0){
