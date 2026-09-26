@@ -554,6 +554,26 @@ unittest {
     renderer.anti_aliasing_pattern = AntiAliasingPattern.og_1x1;
     renderer.camera.transform = Affine.translation_by(Vec3(0.0, 0.0, -1.0));
 
+    auto surface = parse_polynomial("x^2+y^2+z^2-0.64");
+    auto gx = surface.derivative('x');
+    auto gy = surface.derivative('y');
+    auto gz = surface.derivative('z');
+    auto rays = RayFactory.make(renderer.transform, renderer.surface_transform,
+                                renderer.camera, 64, 64);
+    const center_u = rays.transform_u(0.5);
+    const center_v = rays.transform_v(0.5);
+    auto bundle = rays.rays(center_u, center_v);
+    auto interval = clip_to_unit_sphere(bundle.clipping);
+    assert(interval.lower < 0.0 && interval.upper > 0.0,
+           "center clip interval missing");
+    auto center_polynomial = surface.along(bundle.surface);
+    const center_hit = DescartesRootFinder().find_first_root_in(
+        center_polynomial, interval.lower, interval.upper);
+    assert(!isNaN(center_hit), "center root missing");
+    auto center_color = renderer.trace(center_u, center_v, rays, surface, gx, gy, gz);
+    assert((center_color.to_argb() & 0x00ff_ffffu) != 0,
+           "center shade is black");
+
     auto pixels = renderer.draw(64, 64);
     size_t foreground;
     foreach (pixel; pixels)
