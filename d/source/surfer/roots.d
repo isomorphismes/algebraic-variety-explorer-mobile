@@ -128,7 +128,7 @@ struct DescartesRootFinder {
                         : interval.lower * bound;
                 }
 
-                const stretched = stretch_normalize_half(a);
+                auto stretched = stretch_normalize_half(a);
                 if (which == WhichRoot.smallest) {
                     // Stack is LIFO: push the right half first so the left half
                     // is searched first, exactly as in the Java implementation.
