@@ -266,7 +266,8 @@ unittest {
     import de.mfo.jsurf.algebra.degree_calculator : DegreeCalculator;
     import de.mfo.jsurf.algebra.value_calculator : ValueCalculator;
     import de.mfo.jsurf.algebra.visitor : accept;
+    import std.math : abs;
     auto p=AlgebraicExpressionParser.parse("x^2+y^2+z^2-0.64");
     assert(accept(p,new DegreeCalculator())==2);
-    assert(accept(p,new ValueCalculator(0.8,0,0))==0.0);
+    assert(abs(accept(p,new ValueCalculator(0.8,0,0))) < 1.0e-12);
 }
