@@ -186,8 +186,10 @@ class AntiAliasingPattern {
 }
 
 unittest {
+    auto points = AntiAliasingPattern.OG_4x4.samplingPoints();
+    assert(points.length == 16);
     float sum;
-    foreach (point; AntiAliasingPattern.OG_4x4)
+    foreach (point; points)
         sum += point.getWeight();
     assert(sum > 0.999f && sum < 1.001f);
 }
