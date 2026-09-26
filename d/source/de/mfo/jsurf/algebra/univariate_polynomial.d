@@ -47,7 +47,9 @@ class UnivariatePolynomial {
     }
 
     this(double[] coeffs...) {
-        setCoeffs(coeffs, false);
+        // Java's varargs array survives the constructor. D's variadic slice
+        // may be temporary, so retain equivalent object lifetime explicitly.
+        setCoeffs(coeffs, true);
     }
 
     this(double[] coeffs, bool copy) {
