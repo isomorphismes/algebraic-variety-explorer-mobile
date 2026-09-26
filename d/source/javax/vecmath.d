@@ -3,6 +3,14 @@ module javax.vecmath;
 import std.algorithm.comparison : min, max;
 import std.math : sqrt;
 
+class Vector2d {
+    double x, y;
+    this() {}
+    this(double x, double y) { this.x=x; this.y=y; }
+    this(Vector2d v) { this(v.x,v.y); }
+    void scale(double s){x*=s;y*=s;}
+}
+
 class Point3d {
     double x, y, z;
     this() {}
@@ -108,6 +116,24 @@ class Matrix3d {
 
 class Matrix4d {
     double[16] m;
+
+    @property double m00(){return m[0];} @property void m00(double v){m[0]=v;}
+    @property double m01(){return m[1];} @property void m01(double v){m[1]=v;}
+    @property double m02(){return m[2];} @property void m02(double v){m[2]=v;}
+    @property double m03(){return m[3];} @property void m03(double v){m[3]=v;}
+    @property double m10(){return m[4];} @property void m10(double v){m[4]=v;}
+    @property double m11(){return m[5];} @property void m11(double v){m[5]=v;}
+    @property double m12(){return m[6];} @property void m12(double v){m[6]=v;}
+    @property double m13(){return m[7];} @property void m13(double v){m[7]=v;}
+    @property double m20(){return m[8];} @property void m20(double v){m[8]=v;}
+    @property double m21(){return m[9];} @property void m21(double v){m[9]=v;}
+    @property double m22(){return m[10];} @property void m22(double v){m[10]=v;}
+    @property double m23(){return m[11];} @property void m23(double v){m[11]=v;}
+    @property double m30(){return m[12];} @property void m30(double v){m[12]=v;}
+    @property double m31(){return m[13];} @property void m31(double v){m[13]=v;}
+    @property double m32(){return m[14];} @property void m32(double v){m[14]=v;}
+    @property double m33(){return m[15];} @property void m33(double v){m[15]=v;}
+
     this(){setIdentity();}
     this(Matrix4d other){m=other.m;}
     void setIdentity(){m=[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1];}
