@@ -78,6 +78,14 @@ class Vector3f {
     }
 }
 
+class Quat4d {
+    double x, y, z, w;
+    this() {}
+    this(double x,double y,double z,double w){this.x=x;this.y=y;this.z=z;this.w=w;}
+    this(Quat4d q){this(q.x,q.y,q.z,q.w);}
+    override string toString(){import std.format : format;return format("(%s, %s, %s, %s)",x,y,z,w);}
+}
+
 class Vector4d {
     double x,y,z,w;
     this(){}
@@ -150,6 +158,9 @@ class Matrix4d {
     this(Matrix4d other){m=other.m;}
     void setIdentity(){m=[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1];}
     double getElement(int r,int c){return m[r*4+c];}
+    void getRow(int r,double[] outValues){
+        foreach(col;0..4)outValues[col]=m[r*4+col];
+    }
     void setElement(int r,int c,double v){m[r*4+c]=v;}
     void setColumn(int c, Vector4d v){m[c]=v.x;m[4+c]=v.y;m[8+c]=v.z;m[12+c]=v.w;}
     void getRotationScale(Matrix3d outm){
@@ -184,6 +195,14 @@ class Matrix4d {
         v.x=x;v.y=y;v.z=z;v.w=w;
     }
     void setTranslation(Vector3d v){m[3]=v.x;m[7]=v.y;m[11]=v.z;}
+    void setRotation(Quat4d q){
+        const xx=q.x*q.x, yy=q.y*q.y, zz=q.z*q.z;
+        const xy=q.x*q.y, xz=q.x*q.z, yz=q.y*q.z;
+        const wx=q.w*q.x, wy=q.w*q.y, wz=q.w*q.z;
+        m[0]=1.0-2.0*(yy+zz); m[1]=2.0*(xy-wz); m[2]=2.0*(xz+wy);
+        m[4]=2.0*(xy+wz); m[5]=1.0-2.0*(xx+zz); m[6]=2.0*(yz-wx);
+        m[8]=2.0*(xz-wy); m[9]=2.0*(yz+wx); m[10]=1.0-2.0*(xx+yy);
+    }
     bool epsilonEquals(Matrix4d other,double epsilon){
         import std.math : abs;
         foreach(i;0..16) if(abs(m[i]-other.m[i])>epsilon) return false;
