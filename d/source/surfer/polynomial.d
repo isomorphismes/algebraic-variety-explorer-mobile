@@ -81,7 +81,7 @@ struct UnivariatePolynomial {
         return UnivariatePolynomial(result);
     }
 
-    UnivariatePolynomial power(uint exponent) const {
+    UnivariatePolynomial power(uint exponent) {
         auto result = UnivariatePolynomial(1.0);
         auto base = this;
         auto remaining = exponent;
@@ -224,7 +224,7 @@ struct Polynomial {
         return Polynomial(products);
     }
 
-    Polynomial power(uint exponent) const {
+    Polynomial power(uint exponent) {
         auto result = Polynomial(1.0);
         auto base = this;
         auto remaining = exponent;
@@ -238,7 +238,7 @@ struct Polynomial {
         return result;
     }
 
-    Polynomial derivative(char variable_name) const {
+    Polynomial derivative(char variable_name) {
         Term[] result;
         result.reserve(terms.length);
         foreach (term; terms) {
@@ -275,7 +275,7 @@ struct Polynomial {
         return result;
     }
 
-    UnivariatePolynomial along(Ray ray) const {
+    UnivariatePolynomial along(Ray ray) {
         auto result = UnivariatePolynomial(0.0);
         const x = UnivariatePolynomial([ray.origin.x, ray.direction.x]);
         const y = UnivariatePolynomial([ray.origin.y, ray.direction.y]);
