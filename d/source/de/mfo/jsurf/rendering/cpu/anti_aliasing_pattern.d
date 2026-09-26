@@ -30,8 +30,8 @@ class AntiAliasingPattern {
     private SamplingPoint[] points;
     private this(SamplingPoint[] points) { this.points = points; }
 
-    int opApply(scope int delegate(SamplingPoint) dg) {
-        foreach (point; points) {
+    int opApply(scope int delegate(ref SamplingPoint) dg) {
+        foreach (ref point; points) {
             const result = dg(point);
             if (result) return result;
         }
