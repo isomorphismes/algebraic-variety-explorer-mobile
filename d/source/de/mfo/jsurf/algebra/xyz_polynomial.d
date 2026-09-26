@@ -19,7 +19,7 @@ module de.mfo.jsurf.algebra.xyz_polynomial;
 import std.algorithm.sorting : sort;
 import std.algorithm.comparison : min,max;
 import std.conv : to;
-import std.math : abs,pow;
+import std.math : abs, mathPow = pow;
 import de.mfo.jsurf.algebra.helper : intPow = pow;
 import de.mfo.jsurf.algebra.univariate_polynomial : UnivariatePolynomial;
 import de.mfo.jsurf.algebra.xy_polynomial : XYPolynomial;
@@ -44,7 +44,7 @@ class XYZPolynomial {
         }
         Term mult(Term t){return new Term(coeff*t.coeff,cast(byte)(xExp+t.xExp),cast(byte)(yExp+t.yExp),cast(byte)(zExp+t.zExp));}
         Term mult(double d){auto r=new Term(this);r.coeff*=d;return r;}
-        Term powTerm(int exp){return new Term(pow(coeff,cast(double)exp),cast(byte)(xExp*exp),cast(byte)(yExp*exp),cast(byte)(zExp*exp));}
+        Term powTerm(int exp){return new Term(mathPow(coeff,cast(double)exp),cast(byte)(xExp*exp),cast(byte)(yExp*exp),cast(byte)(zExp*exp));}
         double evaluateAt(double x,double y,double z){return coeff*intPow(x,xExp)*intPow(y,yExp)*intPow(z,zExp);}
 
         override string toString(){
@@ -141,7 +141,7 @@ class XYZPolynomial {
         if(terms.length==0)return new XYPolynomial(0.0);
         if(!isCompact){terms=collect(terms,true);isCompact=true;}
         auto zp=new double[cast(int)zDegree*2+1];
-        for(int i=0;i<=zDegree;++i)zp[zDegree+i]=pow(z,cast(double)i);
+        for(int i=0;i<=zDegree;++i)zp[zDegree+i]=mathPow(z,cast(double)i);
         auto c=new double[numXyTerms];auto xe=new byte[numXyTerms];auto ye=new byte[numXyTerms];
         int ti,incr,lastIndex,xyi;
         if(abs(z)>1.0){ti=0;incr=1;lastIndex=cast(int)terms.length-1;xyi=0;for(int i=1;i<=zDegree;++i)zp[zDegree-i]=1.0/zp[zDegree+i];}
