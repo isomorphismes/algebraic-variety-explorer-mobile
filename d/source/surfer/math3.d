@@ -4,9 +4,9 @@ import std.exception : enforce;
 import std.math : abs, cos, sin, sqrt;
 
 struct Vec3 {
-    double x;
-    double y;
-    double z;
+    double x = 0.0;
+    double y = 0.0;
+    double z = 0.0;
 
     double length_squared() const pure nothrow @safe {
         return x * x + y * y + z * z;
@@ -61,9 +61,9 @@ Vec3 cross(Vec3 a, Vec3 b) pure nothrow @safe {
 }
 
 struct Color {
-    float r;
-    float g;
-    float b;
+    float r = 0.0f;
+    float g = 0.0f;
+    float b = 0.0f;
 
     Color opBinary(string op)(Color rhs) const pure nothrow @safe
         if (op == "+" || op == "-")
@@ -131,7 +131,7 @@ struct Interval {
 struct Affine {
     // Row-major 3x3 matrix.
     double[9] linear;
-    Vec3 translation;
+    Vec3 translation = Vec3(0.0, 0.0, 0.0);
 
     static Affine identity() pure nothrow @safe {
         Affine result;
