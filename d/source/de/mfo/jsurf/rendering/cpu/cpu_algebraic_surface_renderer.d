@@ -271,7 +271,7 @@ unittest {
     auto centerSurface = probe.surfaceRowSubstitutor.setV(0.0).setU(0.0);
     import std.math : abs, isNaN;
     assert(abs(centerSurface.evaluateAt(0.8)) < 1.0e-10,
-        "transformed center ray polynomial is wrong");
+        "transformed center ray polynomial is wrong: " ~ centerSurface.toString());
     const centerRoot = probe.realRootFinder.findFirstRootIn(centerSurface, 0.0, 1.0);
     assert(!isNaN(centerRoot), "center ray root is missing");
     assert(abs(centerRoot - 0.8) < 1.0e-5, "center ray root is wrong");
