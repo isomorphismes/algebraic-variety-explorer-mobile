@@ -37,6 +37,7 @@ class Simplificator {
 
     double getParameterValue(string name) { return dict[name]; }
     string[] getKnownParameterNames() { return dict.keys; }
+    double[string] getKnownParameters() { return dict.dup; }
     void setParameterValue(string name, double value) { dict[name] = value; }
     void unsetParameterValue(string name) { dict.remove(name); }
 
