@@ -17,7 +17,7 @@
 module de.mfo.jsurf.algebra.closed_form_root_finder;
 
 import std.algorithm.sorting : sort;
-import std.math : PI, acos, cos, math_pow = pow, sqrt;
+import std.math : PI, abs, acos, cos, math_pow = pow, sqrt;
 
 import de.mfo.jsurf.algebra.real_root_finder : RealRootFinder;
 import de.mfo.jsurf.algebra.univariate_polynomial : UnivariatePolynomial;
@@ -208,8 +208,9 @@ class ClosedFormRootFinder : RealRootFinder {
     }
 
     static double[] solutions(double[] values...) {
-        sort(values);
-        return values;
+        auto result = values.dup;
+        sort(result);
+        return result;
     }
 
     private static double[] clip(double[] values, double lower, double upper) {
@@ -240,5 +241,5 @@ unittest {
     assert(roots.length == 3);
     assert(roots[0] < roots[1] && roots[1] < roots[2]);
 
-    assert(finder.findFirstRootIn(cubic, 0.0, 10.0) == 0.5);
+    assert(abs(finder.findFirstRootIn(cubic, 0.0, 10.0) - 0.5) < 1.0e-12);
 }
