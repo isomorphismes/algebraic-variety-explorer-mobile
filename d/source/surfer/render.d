@@ -470,7 +470,7 @@ class Renderer {
                         Polynomial gradient_z) const
     {
         const bundle = ray_factory.rays(u, v);
-        const clipping = clip_to_unit_sphere(bundle.clipping);
+        auto clipping = clip_to_unit_sphere(bundle.clipping);
         if (clipping.upper < clipping.lower)
             return background;
 
@@ -480,7 +480,7 @@ class Renderer {
         if (lower < eye && eye < upper)
             lower = eye;
 
-        const along_ray = surface.along(bundle.surface);
+        auto along_ray = surface.along(bundle.surface);
         const hit = DescartesRootFinder().find_first_root_in(along_ray, lower, upper);
         if (isNaN(hit))
             return background;
