@@ -1,0 +1,8 @@
+{
+  "name": "surfer-d",
+  "description": "Desktop D recasting of Christian Stussak's jsurf/SURFER CPU renderer",
+  "license": "Apache-2.0",
+  "targetType": "executable",
+  "sourcePaths": ["source"],
+  "mainSourceFile": "source/app.d"
+}
