@@ -1,0 +1,7 @@
+{
+  "name": "surfer-d-wholesale",
+  "description": "Direct source translation of Christian Stussak's jsurf/SURFER core from Java to D",
+  "license": "Apache-2.0",
+  "targetType": "library",
+  "sourcePaths": ["source"]
+}
