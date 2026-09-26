@@ -1,0 +1,32 @@
+name: D desktop SURFER
+
+on:
+  push:
+    branches: ["d/desktop-surfer"]
+  pull_request:
+    paths:
+      - "d/**"
+      - ".github/workflows/d-desktop.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ldc-latest
+      - name: Unit tests
+        working-directory: d
+        run: dub test
+      - name: Release build
+        working-directory: d
+        run: dub build --build=release
+      - name: Render smoke image
+        working-directory: d
+        run: ./surfer-d --output sphere.ppm --width 64 --height 64 --aa 1x1
+      - name: Check image header
+        working-directory: d
+        run: |
+          test -s sphere.ppm
+          head -c 2 sphere.ppm | grep -q P6
