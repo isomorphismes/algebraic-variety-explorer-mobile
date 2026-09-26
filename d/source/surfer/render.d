@@ -2,6 +2,7 @@ module surfer.render;
 
 import core.atomic : atomicLoad, atomicStore;
 import std.algorithm.comparison : max;
+import std.conv : to;
 import std.exception : enforce;
 import std.math : PI, isNaN, pow, sqrt, tan;
 import std.parallelism : parallel;
@@ -558,6 +559,6 @@ unittest {
     foreach (pixel; pixels)
         if ((pixel & 0x00ff_ffffu) != 0)
             ++foreground;
-    assert(foreground > 500);
+    assert(foreground > 500, "foreground=" ~ foreground.to!string);
     assert(foreground < pixels.length);
 }
