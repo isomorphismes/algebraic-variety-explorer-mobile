@@ -1,0 +1,70 @@
+name: Icky D SURFER
+
+on:
+  pull_request:
+    paths:
+      - 'icky/**'
+      - '.github/workflows/icky-dmd.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: icky-dmd-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  vertical-slice:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact SURFER source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Install DMD bootstrap
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y build-essential ldc
+
+      - name: Check out qualified Icky DMD
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: dilapidated-shed/ick
+          ref: 6f077a00331346e74a9a73d7e069814ad15e3195
+          path: .icky-dmd
+          persist-credentials: false
+
+      - name: Build Icky DMD
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cd .icky-dmd/dmd/compiler/src
+          ldmd2 -run ./build.d dmd HOST_DMD="$(command -v ldmd2)"
+          dmd_bin=$(find ../../generated -type f -name dmd -perm -u+x -print -quit)
+          test -n "$dmd_bin"
+          dmd_bin=$(realpath "$dmd_bin")
+          "$dmd_bin" --version
+          printf '%s\n' "$dmd_bin" > "$GITHUB_WORKSPACE/.icky-dmd-bin"
+
+      - name: Compile Icky D vertical slice
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p .build
+          dmd_bin=$(cat .icky-dmd-bin)
+          runtime_import=$(dpkg -L libphobos2-ldc-shared-dev | awk 'substr($0, length($0)-8) == "/object.d" { print substr($0, 1, length($0)-9); exit }')
+          test -f "$runtime_import/object.d"
+          "$dmd_bin" -betterC -w -I"$runtime_import" \
+            icky/surfer.d icky/surfer_test.d \
+            -of=.build/surfer-icky-d -L-lm
+          test -x .build/surfer-icky-d
+
+      - name: Run parser-to-pixel acceptance
+        shell: bash
+        run: .build/surfer-icky-d
