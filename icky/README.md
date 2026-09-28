@@ -41,23 +41,26 @@ ordinary D with the matching Icky DMD, druntime, and Phobos revisions. BetterC
 is no longer the acceptance boundary.
 
 The current root routine isolates roots through derivative critical points and
-bisection, including even-multiplicity roots. It is not yet the source
-Descartes implementation. Across the twelve 256×256 comparisons, nine images
-have zero changed pixels. The largest difference is the Roman surface in
-QUINCUNX mode: normalized mean absolute channel error `0.000116`, with `0.38%`
-of pixels changed. The test requires mean error at most `0.0002` and at most
-`0.5%` changed pixels; a half-black known-bad fixture proves that the
-comparison rejects a broken render. Issue #17 still defines the missing
-adversarial root cases, so these images do not establish complete root-finder
-parity.
+bisection, including even-multiplicity roots. Its Java/jsurf oracle fixtures
+cover a tangent root, a repeated cubic root, a near-double pair, a narrow
+interval with no source root, and four ordered quartic roots. Tightening the
+critical-value tolerance fixed a near-double false positive found by that
+comparison. The translated routine is not yet the source Descartes
+implementation, and the full adversarial corpus in issue #17 remains
+outstanding. Across the twelve 256×256 comparisons, eight images have zero
+changed pixels. The largest difference is the Roman surface in QUINCUNX mode:
+normalized mean absolute channel error `0.000116`, with `0.38%` of pixels
+changed. The test requires mean error at most `0.0002` and at most `0.5%`
+changed pixels; a half-black known-bad fixture proves that the comparison
+rejects a broken render.
 
 ## Remaining program
 
 This translation does not yet include:
 
-- the source Descartes and closed-form root finders and their complete edge
-  cases from issues #17 and #20. The derivative-isolation method has not been
-  compared over those complete cases;
+- the source Descartes subdivision implementation and the broader adversarial
+  corpus required by issue #17. The app's constant/linear path is translated;
+  the unused degree-2-to-4 generic closed-form solver is not ported;
 - renderer request concurrency, cancellation, and latest-request-wins behavior.
   The translated renderer currently runs synchronously;
 - the Android screen, gesture controls, PNG export, lifecycle, and a Java-free

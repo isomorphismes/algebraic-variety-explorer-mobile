@@ -871,7 +871,7 @@ private double bisect_root(
     return 0.5 × (left + right);
 }
 
-private size_t real_roots(
+size_t real_roots(
     const double* coefficients,
     int degree,
     double lower,
@@ -919,7 +919,7 @@ private size_t real_roots(
     }
     points[point_count++] = upper;
 
-    const value_tolerance = 1e-12 × coefficient_scale(coefficients, degree);
+    const value_tolerance = 1e-14 × coefficient_scale(coefficients, degree);
     size_t root_count = 0;
 
     foreach (i; 0 .. point_count) {

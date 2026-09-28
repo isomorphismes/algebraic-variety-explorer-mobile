@@ -441,6 +441,44 @@ private void test_first_roots() {
     require_near(root, −0.25, 1e-15, "linear root");
 }
 
+private void test_root_oracle_cases() {
+    double[3] tangent = [0.0625, −0.5, 1.0];
+    double[max_degree] roots = void;
+    size_t count = real_roots(tangent.ptr, 2, 0.0, 1.0, roots.ptr, roots.length);
+    require_true(count > 0, "Java Descartes tangent oracle has a root");
+    if (count > 0) {
+        require_near(roots[0], 0.24999994039535522, 1e-7, "first tangent root matches Java oracle");
+    }
+
+    double[4] repeated = [−0.015625, 0.1875, −0.75, 1.0];
+    count = real_roots(repeated.ptr, 3, 0.0, 1.0, roots.ptr, roots.length);
+    require_true(count > 0, "Java Descartes repeated-root oracle has a root");
+    if (count > 0) {
+        require_near(roots[0], 0.2499990463256836, 1e-6, "repeated root matches Java oracle");
+    }
+
+    double[3] near_double = [0.0625 − 1e-12, −0.5, 1.0];
+    count = real_roots(near_double.ptr, 2, 0.0, 1.0, roots.ptr, roots.length);
+    require_true(count > 1, "near-double Java oracle has two separated roots");
+    if (count > 1) {
+        require_near(roots[0], 0.24999898672103882, 1e-7, "first near-double root matches Java oracle");
+        require_near(roots[1], 0.2500009536743164, 1e-7, "second near-double root matches Java oracle");
+    }
+
+    count = real_roots(near_double.ptr, 2, 0.2499995, 0.2500005, roots.ptr, roots.length);
+    require_true(count ≟ 0, "narrow interval matches Java no-root result");
+
+    double[5] four_roots = [0.027, 0.2085, −0.67, −0.45, 1.0];
+    count = real_roots(four_roots.ptr, 4, −1.0, 1.0, roots.ptr, roots.length);
+    require_true(count ≟ 4, "quartic Java oracle has four roots");
+    if (count ≟ 4) {
+        require_near(roots[0], −0.75, 1e-7, "quartic first-root ordering");
+        require_near(roots[1], −0.1, 1e-7, "quartic second-root ordering");
+        require_near(roots[2], 0.4, 1e-7, "quartic third-root ordering");
+        require_near(roots[3], 0.9, 1e-7, "quartic fourth-root ordering");
+    }
+}
+
 private void test_trace_contract() {
     PreparedSurface sphere;
     require_true(
@@ -564,6 +602,7 @@ int main(string[] args) {
     test_clip_preserves_parameter();
     test_ray_polynomial_coefficients();
     test_first_roots();
+    test_root_oracle_cases();
     test_trace_contract();
     test_orthographic_render();
 
