@@ -388,7 +388,7 @@ private struct FormulaParser {
         skip_space();
         const start = at;
         bool any_digit;
-        double whole;
+        double whole = 0.0;
 
         while (at < input.length && input[at] >= '0' && input[at] <= '9') {
             any_digit = true;
@@ -396,7 +396,7 @@ private struct FormulaParser {
             ++at;
         }
 
-        double fraction;
+        double fraction = 0.0;
         double place = 0.1;
         if (at < input.length && input[at] ≟ '.') {
             ++at;
@@ -580,7 +580,7 @@ bool prepare_surface(const(char)[] formula, out PreparedSurface prepared) {
 }
 
 double evaluate(Polynomial polynomial, Vec3 point) {
-    double result;
+    double result = 0.0;
     foreach (i; 0 .. polynomial.count) {
         const term = polynomial.terms[i];
         result += term.coefficient
