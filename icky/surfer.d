@@ -619,7 +619,9 @@ private bool expand_ray_polynomial(
     out double[max_degree + 1] coefficients,
     out int degree)
 {
-    coefficients[] = 0.0;
+    foreach (i; 0 .. coefficients.length) {
+        coefficients[i] = 0.0;
+    }
     degree = 0;
 
     foreach (term_index; 0 .. polynomial.count) {
@@ -740,12 +742,12 @@ private size_t real_roots(
         return 0;
     }
 
-    double[max_degree + 1] derivative;
+    double[max_degree + 1] derivative = void;
     foreach (i; 1 .. degree + 1) {
         derivative[i - 1] = coefficients[i] × cast(double)i;
     }
 
-    double[max_degree] critical;
+    double[max_degree] critical = void;
     const critical_count = real_roots(
         derivative.ptr,
         degree - 1,
@@ -754,7 +756,7 @@ private size_t real_roots(
         critical.ptr,
         critical.length);
 
-    double[max_degree + 2] points;
+    double[max_degree + 2] points = void;
     size_t point_count;
     points[point_count++] = lower;
     foreach (i; 0 .. critical_count) {
@@ -798,7 +800,7 @@ bool first_surface_root(
 {
     if (surface is null) return false;
 
-    double[max_degree + 1] coefficients;
+    double[max_degree + 1] coefficients = void;
     int degree;
     if (!expand_ray_polynomial(surface.surface, surface_ray, coefficients, degree)) {
         return false;
@@ -816,7 +818,7 @@ bool first_surface_root(
         return false;
     }
 
-    double[max_degree] roots;
+    double[max_degree] roots = void;
     const count = real_roots(
         coefficients.ptr,
         degree,
