@@ -30,7 +30,7 @@ jobs:
         run: |
           set -euxo pipefail
           sudo apt-get update
-          sudo apt-get install -y build-essential ldc
+          sudo apt-get install -y build-essential ldc valgrind
 
       - name: Check out qualified Icky DMD
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
@@ -60,11 +60,14 @@ jobs:
           dmd_bin=$(cat .icky-dmd-bin)
           runtime_import=$(dpkg -L libphobos2-ldc-shared-dev | awk 'substr($0, length($0)-8) == "/object.d" { print substr($0, 1, length($0)-9); exit }')
           test -f "$runtime_import/object.d"
-          "$dmd_bin" -betterC -w -g -fsanitize=address -I"$runtime_import" \
+          "$dmd_bin" -betterC -w -g -I"$runtime_import" \
             icky/surfer.d icky/surfer_test.d \
             -of=.build/surfer-icky-d -L-lm
           test -x .build/surfer-icky-d
 
       - name: Run parser-to-pixel acceptance
         shell: bash
-        run: .build/surfer-icky-d
+        run: |
+          set -o pipefail
+          valgrind --error-exitcode=99 --track-origins=yes --leak-check=full \
+            .build/surfer-icky-d
