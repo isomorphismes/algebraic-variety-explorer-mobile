@@ -60,7 +60,7 @@ jobs:
           dmd_bin=$(cat .icky-dmd-bin)
           runtime_import=$(dpkg -L libphobos2-ldc-shared-dev | awk 'substr($0, length($0)-8) == "/object.d" { print substr($0, 1, length($0)-9); exit }')
           test -f "$runtime_import/object.d"
-          "$dmd_bin" -betterC -w -I"$runtime_import" \
+          "$dmd_bin" -betterC -w -g -fsanitize=address -I"$runtime_import" \
             icky/surfer.d icky/surfer_test.d \
             -of=.build/surfer-icky-d -L-lm
           test -x .build/surfer-icky-d
