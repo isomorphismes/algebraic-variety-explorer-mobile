@@ -75,6 +75,32 @@ private void test_clip_preserves_parameter() {
     require_near(interval.upper, 0.5, 1e-15, "clip upper keeps t");
 }
 
+private void test_ray_polynomial_coefficients() {
+    PreparedSurface sphere;
+    PreparedSurface plane;
+    require_true(prepare_surface("x²+y²+z²−0.64", sphere), "prepare coefficient sphere");
+    require_true(prepare_surface("z−0.25", plane), "prepare coefficient plane");
+
+    double[max_degree + 1] coefficients = void;
+    int degree;
+    const ray = Ray(Vec3(0.0, 0.0, 0.0), Vec3(0.0, 0.0, −1.0));
+
+    require_true(
+        ray_polynomial(sphere.surface, ray, coefficients, degree),
+        "expand sphere ray polynomial");
+    require_true(degree ≟ 2, "sphere ray polynomial degree");
+    require_near(coefficients[0], −0.64, 1e-15, "sphere ray constant");
+    require_near(coefficients[1], 0.0, 1e-15, "sphere ray linear");
+    require_near(coefficients[2], 1.0, 1e-15, "sphere ray quadratic");
+
+    require_true(
+        ray_polynomial(plane.surface, ray, coefficients, degree),
+        "expand plane ray polynomial");
+    require_true(degree ≟ 1, "plane ray polynomial degree");
+    require_near(coefficients[0], −0.25, 1e-15, "plane ray constant");
+    require_near(coefficients[1], −1.0, 1e-15, "plane ray linear");
+}
+
 private void test_first_roots() {
     PreparedSurface sphere;
     PreparedSurface tangent;
@@ -228,6 +254,7 @@ private void test_orthographic_render() {
 extern(C) int main() {
     test_formula_to_prepared_surface();
     test_clip_preserves_parameter();
+    test_ray_polynomial_coefficients();
     test_first_roots();
     test_trace_contract();
     test_orthographic_render();
