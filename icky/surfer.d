@@ -613,7 +613,7 @@ bool clip_unit_sphere(Ray ray, out Interval interval) {
     return true;
 }
 
-private bool expand_ray_polynomial(
+bool ray_polynomial(
     Polynomial polynomial,
     Ray ray,
     ref double[max_degree + 1] coefficients,
@@ -802,7 +802,7 @@ bool first_surface_root(
 
     double[max_degree + 1] coefficients = void;
     int degree;
-    if (!expand_ray_polynomial(surface.surface, surface_ray, coefficients, degree)) {
+    if (!ray_polynomial(surface.surface, surface_ray, coefficients, degree)) {
         return false;
     }
 
