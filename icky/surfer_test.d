@@ -142,10 +142,31 @@ private void test_first_roots() {
         !first_surface_root(&sphere, miss, −0.5, 0.5, root),
         "surface miss");
 
-    root = 0.0;
+    double[max_degree + 1] linear_coefficients = void;
+    int linear_degree;
     require_true(
-        first_surface_root(&plane, center, −1.0, 1.0, root),
-        "linear family root");
+        ray_polynomial(plane.surface, center, linear_coefficients, linear_degree),
+        "linear root coefficients");
+    require_true(plane.family_degree ≟ 1, "linear family degree");
+    require_true(linear_degree ≟ 1, "linear ray degree");
+    const linear_candidate = −linear_coefficients[0] / linear_coefficients[1];
+    require_near(linear_candidate, −0.25, 1e-15, "linear candidate");
+    require_true(
+        linear_candidate >= −1.0 && linear_candidate <= 1.0,
+        "linear candidate lies in interval");
+
+    root = 0.0;
+    const linear_hit = first_surface_root(&plane, center, −1.0, 1.0, root);
+    if (!linear_hit) {
+        printf(
+            "ROOT DEBUG family=%d degree=%d c0=%.17g c1=%.17g candidate=%.17g\n",
+            plane.family_degree,
+            linear_degree,
+            linear_coefficients[0],
+            linear_coefficients[1],
+            linear_candidate);
+    }
+    require_true(linear_hit, "linear family root");
     require_near(root, −0.25, 1e-15, "linear root");
 }
 
