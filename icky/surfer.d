@@ -757,7 +757,7 @@ private size_t real_roots(
         critical.length);
 
     double[max_degree + 2] points = void;
-    size_t point_count;
+    size_t point_count = 0;
     points[point_count++] = lower;
     foreach (i; 0 .. critical_count) {
         if (critical[i] > lower + root_epsilon &&
@@ -769,7 +769,7 @@ private size_t real_roots(
     points[point_count++] = upper;
 
     const value_tolerance = 1e-12 × coefficient_scale(coefficients, degree);
-    size_t root_count;
+    size_t root_count = 0;
 
     foreach (i; 0 .. point_count) {
         const p = points[i];
