@@ -616,7 +616,7 @@ bool clip_unit_sphere(Ray ray, out Interval interval) {
 private bool expand_ray_polynomial(
     Polynomial polynomial,
     Ray ray,
-    out double[max_degree + 1] coefficients,
+    ref double[max_degree + 1] coefficients,
     out int degree)
 {
     foreach (i; 0 .. coefficients.length) {
