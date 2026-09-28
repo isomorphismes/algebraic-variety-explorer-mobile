@@ -7,9 +7,9 @@ import surfer;
 
 private int failures;
 
-private void require_true(bool condition, const(char)* message) {
+private void require_true(bool condition, const(char)[] message) {
     if (!condition) {
-        printf("FAIL: %s\n", message);
+        printf("FAIL: %.*s\n", cast(int)message.length, message.ptr);
         ++failures;
     }
 }
@@ -18,12 +18,13 @@ private void require_near(
     double actual,
     double expected,
     double tolerance,
-    const(char)* message)
+    const(char)[] message)
 {
     if (fabs(actual − expected) > tolerance) {
         printf(
-            "FAIL: %s: actual=%.17g expected=%.17g\n",
-            message,
+            "FAIL: %.*s: actual=%.17g expected=%.17g\n",
+            cast(int)message.length,
+            message.ptr,
             actual,
             expected);
         ++failures;
