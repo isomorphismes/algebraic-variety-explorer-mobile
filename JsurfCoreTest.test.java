@@ -11,10 +11,36 @@ import javax.vecmath.Matrix4d;
 
 import de.mfo.jsurf.rendering.cpu.AntiAliasingPattern;
 import de.mfo.jsurf.rendering.cpu.CPUAlgebraicSurfaceRenderer;
+import de.mfo.jsurf.algebra.DescartesRootFinder;
+import de.mfo.jsurf.algebra.UnivariatePolynomial;
 import org.algebraicvarietyexplorer.samples.SurfaceExample;
 import org.algebraicvarietyexplorer.samples.SurfaceExamples;
 
 public final class JsurfCoreTest {
+    @Test
+    public void productionDescartesRootOracleCoversTangentNearAndNarrowIntervals() {
+        DescartesRootFinder roots = new DescartesRootFinder(false);
+
+        UnivariatePolynomial tangent = new UnivariatePolynomial(0.0625, -0.5, 1.0);
+        assertEquals(
+                0.24999994039535522,
+                roots.findFirstRootIn(tangent, 0.0, 1.0),
+                0.0);
+
+        UnivariatePolynomial nearDouble = new UnivariatePolynomial(0.0625 - 1e-12, -0.5, 1.0);
+        assertEquals(
+                0.24999898672103882,
+                roots.findFirstRootIn(nearDouble, 0.0, 1.0),
+                0.0);
+        assertTrue(Double.isNaN(roots.findFirstRootIn(nearDouble, 0.2499995, 0.2500005)));
+
+        UnivariatePolynomial fourRoots = new UnivariatePolynomial(0.027, 0.2085, -0.67, -0.45, 1.0);
+        assertArrayEquals(
+                new double[] {-0.75, -0.09999996423721313, 0.3999999761581421, 0.8999999761581421},
+                roots.findAllRootsIn(fourRoots, -1.0, 1.0),
+                0.0);
+    }
+
     @Test
     public void parserReportsTheSphereAsDegreeTwo() throws Exception {
         CPUAlgebraicSurfaceRenderer renderer = new CPUAlgebraicSurfaceRenderer();
