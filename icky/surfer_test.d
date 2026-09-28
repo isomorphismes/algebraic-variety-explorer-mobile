@@ -20,7 +20,9 @@ private void require_near(
     double tolerance,
     const(char)[] message)
 {
-    if (fabs(actual − expected) > tolerance) {
+    if (actual ≠ actual || expected ≠ expected ||
+        fabs(actual − expected) > tolerance)
+    {
         printf(
             "FAIL: %.*s: actual=%.17g expected=%.17g\n",
             cast(int)message.length,
@@ -157,15 +159,6 @@ private void test_first_roots() {
 
     root = 0.0;
     const linear_hit = first_surface_root(&plane, center, −1.0, 1.0, root);
-    if (!linear_hit) {
-        printf(
-            "ROOT DEBUG family=%d degree=%d c0=%.17g c1=%.17g candidate=%.17g\n",
-            plane.family_degree,
-            linear_degree,
-            linear_coefficients[0],
-            linear_coefficients[1],
-            linear_candidate);
-    }
     require_true(linear_hit, "linear family root");
     require_near(root, −0.25, 1e-15, "linear root");
 }
