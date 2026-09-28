@@ -1,11 +1,18 @@
 module surfer;
 
-import core.stdc.math : fabs, cos, pow, sin, sqrt;
+import core.stdc.math : acos, asin, atan, ceil, exp, fabs, floor, cos, log, pow, sin, sqrt, tan;
 
 enum double root_epsilon = 1e-7;
 enum size_t max_terms = 256;
 enum int max_degree = 32;
 enum size_t max_lights = 8;
+enum float adaptive_aa_threshold = 0.3f;
+enum float quincunx_corner_weight = 0.0625f + 0.25f / 3.0f;
+
+enum RenderQuality {
+    interactive,
+    production
+}
 
 struct Vec3 {
     double x;
@@ -305,6 +312,46 @@ private bool poly_power(Polynomial base, int exponent, out Polynomial result) {
     return true;
 }
 
+private bool constant_value(Polynomial polynomial, out double value) {
+    value = 0.0;
+    foreach (i; 0 .. polynomial.count) {
+        const term = polynomial.terms[i];
+        if (term.x_exponent ≠ 0 || term.y_exponent ≠ 0 || term.z_exponent ≠ 0) {
+            return false;
+        }
+        value += term.coefficient;
+    }
+    return true;
+}
+
+private bool poly_divide_scalar(Polynomial dividend, double divisor, out Polynomial result) {
+    if (divisor ≟ 0.0) return false;
+    result = dividend;
+    foreach (i; 0 .. result.count) {
+        result.terms[i].coefficient /= divisor;
+    }
+    return true;
+}
+
+private bool unary_value(const(char)[] name, double operand, out double result) {
+    if (name == "neg") result = −operand;
+    else if (name == "sin") result = sin(operand);
+    else if (name == "cos") result = cos(operand);
+    else if (name == "tan") result = tan(operand);
+    else if (name == "asin") result = asin(operand);
+    else if (name == "acos") result = acos(operand);
+    else if (name == "atan") result = atan(operand);
+    else if (name == "exp") result = exp(operand);
+    else if (name == "log") result = log(operand);
+    else if (name == "sqrt") result = sqrt(operand);
+    else if (name == "ceil") result = ceil(operand);
+    else if (name == "floor") result = floor(operand);
+    else if (name == "abs") result = fabs(operand);
+    else if (name == "sign") result = operand > 0.0 ? 1.0 : operand < 0.0 ? −1.0 : 0.0;
+    else return false;
+    return true;
+}
+
 private int polynomial_degree(Polynomial polynomial) {
     int degree = 0;
     foreach (i; 0 .. polynomial.count) {
@@ -414,6 +461,55 @@ private struct FormulaParser {
         }
 
         value = whole + fraction;
+        if (at < input.length && (input[at] ≟ 'e' || input[at] ≟ 'E')) {
+            ++at;
+            bool negative_exponent;
+            if (at < input.length && (input[at] ≟ '+' || input[at] ≟ '-')) {
+                negative_exponent = input[at] ≟ '-';
+                ++at;
+            }
+
+            if (at >= input.length || input[at] < '0' || input[at] > '9') {
+                failed = true;
+                return false;
+            }
+
+            int exponent;
+            while (at < input.length && input[at] >= '0' && input[at] <= '9') {
+                if (exponent > 308) {
+                    failed = true;
+                    return false;
+                }
+                exponent = exponent * 10 + cast(int)(input[at] − '0');
+                ++at;
+            }
+            if (negative_exponent) exponent = −exponent;
+            value *= pow(10.0, cast(double)exponent);
+        }
+        return true;
+    }
+
+    private bool parse_identifier(out const(char)[] name) {
+        skip_space();
+        if (at >= input.length) return false;
+        const first = input[at];
+        if (!((first >= 'a' && first <= 'z') ||
+              (first >= 'A' && first <= 'Z') || first ≟ '_'))
+        {
+            return false;
+        }
+        const start = at++;
+        while (at < input.length) {
+            const c = input[at];
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                (c >= '0' && c <= '9') || c ≟ '_')
+            {
+                ++at;
+            } else {
+                break;
+            }
+        }
+        name = input[start .. at];
         return true;
     }
 
@@ -429,20 +525,41 @@ private struct FormulaParser {
             return true;
         }
 
-        skip_space();
-        if (at < input.length) {
-            const c = input[at];
-            if (c ≟ 'x' || c ≟ 'y' || c ≟ 'z') {
-                ++at;
+        const saved = at;
+        const(char)[] identifier;
+        if (parse_identifier(identifier)) {
+            if (match_ascii('(')) {
+                Polynomial argument;
+                if (!parse_expression(argument) || !match_ascii(')')) {
+                    failed = true;
+                    return false;
+                }
+                double value;
+                double transformed;
+                if (!constant_value(argument, value) ||
+                    !unary_value(identifier, value, transformed))
+                {
+                    failed = true;
+                    return false;
+                }
+                result = Polynomial.init;
+                add_term(result, Term(transformed, 0, 0, 0));
+                return true;
+            }
+
+            if (identifier == "x" || identifier == "y" || identifier == "z") {
                 Term term = Term(1.0, 0, 0, 0);
-                if (c ≟ 'x') term.x_exponent = 1;
-                if (c ≟ 'y') term.y_exponent = 1;
-                if (c ≟ 'z') term.z_exponent = 1;
+                if (identifier == "x") term.x_exponent = 1;
+                if (identifier == "y") term.y_exponent = 1;
+                if (identifier == "z") term.z_exponent = 1;
                 result = Polynomial.init;
                 add_term(result, term);
                 return true;
             }
+            failed = true;
+            return false;
         }
+        at = saved;
 
         double number;
         if (parse_number(number)) {
@@ -458,6 +575,7 @@ private struct FormulaParser {
     private bool parse_power(out Polynomial result) {
         if (!parse_primary(result)) return false;
 
+        bool caret_used;
         while (true) {
             int exponent;
             if (match_utf8("²")) {
@@ -465,8 +583,27 @@ private struct FormulaParser {
             } else if (match_utf8("³")) {
                 exponent = 3;
             } else if (match_ascii('^')) {
+                if (caret_used) {
+                    failed = true;
+                    return false;
+                }
+                caret_used = true;
+                const parenthesized = match_ascii('(');
+                skip_space();
+                const exponent_start = at;
                 double parsed;
                 if (!parse_number(parsed)) {
+                    failed = true;
+                    return false;
+                }
+                const exponent_end = at;
+                bool decimal_integer = exponent_end > exponent_start;
+                foreach (i; exponent_start .. exponent_end) {
+                    if (input[i] < '0' || input[i] > '9') decimal_integer = false;
+                }
+                if ((parenthesized && !match_ascii(')')) || !decimal_integer ||
+                    parsed < 0.0 || parsed > cast(double)max_degree)
+                {
                     failed = true;
                     return false;
                 }
@@ -508,9 +645,23 @@ private struct FormulaParser {
 
         while (true) {
             const saved = at;
-            if (!match_ascii('*')) {
+            const multiply = match_ascii('*') || match_utf8("×");
+            if (!multiply) {
                 at = saved;
-                break;
+                if (!match_ascii('/')) break;
+
+                Polynomial divisor;
+                if (!parse_unary(divisor)) return false;
+                double scalar;
+                Polynomial quotient;
+                if (!constant_value(divisor, scalar) ||
+                    !poly_divide_scalar(result, scalar, quotient))
+                {
+                    failed = true;
+                    return false;
+                }
+                result = quotient;
+                continue;
             }
 
             Polynomial right;
@@ -860,7 +1011,9 @@ private Color shade(
     Vec3 normal,
     Vec3 view_direction)
 {
-    Color result = color_scale(material.color, material.ambient_intensity);
+    // RenderingTask builds the back ambient product with the front ambient
+    // intensity, so keep that observable source behavior during translation.
+    Color result = color_scale(material.color, scene.front_material.ambient_intensity);
 
     foreach (i; 0 .. scene.light_count) {
         const light = scene.lights[i];
@@ -875,12 +1028,10 @@ private Color shade(
                 material.diffuse_intensity × light.intensity × cast(float)diffuse);
             result = color_add(result, diffuse_color);
 
-            const reflected = vec_sub(
-                vec_scale(normal, 2.0 × vec_dot(normal, to_light)),
-                to_light);
+            const half_vector = vec_add(to_light, view_direction);
             const spec_angle = max_double(
                 0.0,
-                vec_dot(vec_normalize(reflected), vec_normalize(view_direction)));
+                vec_dot(normal, vec_normalize(half_vector)));
             if (spec_angle > 0.0 && material.specular_intensity > 0.0f) {
                 const specular = cast(float)pow(
                     spec_angle,
@@ -956,24 +1107,179 @@ Scene default_scene(PreparedSurface* surface) {
     Scene scene;
     scene.surface = surface;
     scene.front_material = Material(
-        Color(0.95f, 0.28f, 0.08f),
-        0.24f, 0.72f, 0.18f, 24.0f);
+        Color(0.90f, 0.47f, 0.18f),
+        0.32f, 0.76f, 0.55f, 24.0f);
     scene.back_material = Material(
-        Color(0.15f, 0.32f, 0.95f),
-        0.24f, 0.72f, 0.18f, 24.0f);
-    scene.background = Color(0.04f, 0.04f, 0.055f);
-    scene.light_count = 2;
+        Color(0.93f, 0.76f, 0.40f),
+        0.30f, 0.72f, 0.45f, 18.0f);
+    scene.background = Color(0.075f, 0.09f, 0.115f);
+    scene.light_count = 3;
     scene.lights[0] = Light(
         true,
-        Vec3(−3.0, 4.0, −5.0),
+        Vec3(−100.0, 100.0, 100.0),
         Color(1.0f, 1.0f, 1.0f),
-        0.9f);
+        0.55f);
     scene.lights[1] = Light(
         true,
-        Vec3(4.0, −2.0, −1.5),
-        Color(0.85f, 0.9f, 1.0f),
-        0.35f);
+        Vec3(100.0, 100.0, 100.0),
+        Color(1.0f, 1.0f, 1.0f),
+        0.70f);
+    scene.lights[2] = Light(
+        true,
+        Vec3(0.0, −100.0, 100.0),
+        Color(1.0f, 1.0f, 1.0f),
+        0.30f);
     return scene;
+}
+
+private Color trace_orthographic_sample(
+    Scene* scene,
+    Mat3 camera_to_surface,
+    Mat3 surface_normal_to_camera,
+    double sx,
+    double sy)
+{
+    const camera_ray = Ray(
+        Vec3(sx, sy, −1.0),
+        Vec3(0.0, 0.0, −1.0));
+    const clipping_ray = Ray(
+        Vec3(sx, sy, 0.0),
+        Vec3(0.0, 0.0, −1.0));
+    const surface_ray = Ray(
+        mat_vec(camera_to_surface, clipping_ray.origin),
+        mat_vec(camera_to_surface, camera_ray.direction));
+    const bundle = RayBundle(
+        camera_ray,
+        clipping_ray,
+        surface_ray,
+        −1.0,
+        surface_normal_to_camera);
+    const trace = trace_prepared_ray(scene, bundle);
+    return trace.hit ? trace.color : scene.background;
+}
+
+private float color_difference_squared(Color a, Color b) {
+    const red = a.red − b.red;
+    const green = a.green − b.green;
+    const blue = a.blue − b.blue;
+    return red × red + green × green + blue × blue;
+}
+
+private uint quincunx_pixel(
+    Scene* scene,
+    Mat3 camera_to_surface,
+    Mat3 surface_normal_to_camera,
+    double left,
+    double bottom,
+    double dx,
+    double dy,
+    bool adaptive)
+{
+    const lower_left = trace_orthographic_sample(
+        scene, camera_to_surface, surface_normal_to_camera, left, bottom);
+    const upper_left = trace_orthographic_sample(
+        scene, camera_to_surface, surface_normal_to_camera, left, bottom + dy);
+    const upper_right = trace_orthographic_sample(
+        scene, camera_to_surface, surface_normal_to_camera, left + dx, bottom + dy);
+    const lower_right = trace_orthographic_sample(
+        scene, camera_to_surface, surface_normal_to_camera, left + dx, bottom);
+
+    const threshold_squared = adaptive_aa_threshold × adaptive_aa_threshold;
+    const near_edge =
+        color_difference_squared(upper_left, upper_right) >= threshold_squared ||
+        color_difference_squared(upper_left, lower_left) >= threshold_squared ||
+        color_difference_squared(upper_left, lower_right) >= threshold_squared ||
+        color_difference_squared(upper_right, lower_left) >= threshold_squared ||
+        color_difference_squared(upper_right, lower_right) >= threshold_squared ||
+        color_difference_squared(lower_left, lower_right) >= threshold_squared;
+
+    Color result;
+    if (!adaptive || near_edge) {
+        const center = trace_orthographic_sample(
+            scene,
+            camera_to_surface,
+            surface_normal_to_camera,
+            left + 0.5 × dx,
+            bottom + 0.5 × dy);
+        result = color_scale(lower_left, quincunx_corner_weight);
+        result = color_add(result, color_scale(upper_left, quincunx_corner_weight));
+        result = color_add(result, color_scale(upper_right, quincunx_corner_weight));
+        result = color_add(result, color_scale(lower_right, quincunx_corner_weight));
+        result = color_add(
+            result,
+            color_scale(center, 1.0f − 4.0f × quincunx_corner_weight));
+    } else {
+        result = color_scale(lower_left, 0.25f);
+        result = color_add(result, color_scale(upper_left, 0.25f));
+        result = color_add(result, color_scale(upper_right, 0.25f));
+        result = color_add(result, color_scale(lower_right, 0.25f));
+    }
+
+    result.red = clamp01(result.red);
+    result.green = clamp01(result.green);
+    result.blue = clamp01(result.blue);
+    return color_to_argb(result);
+}
+
+bool render_orthographic_quality(
+    Scene* scene,
+    size_t width,
+    size_t height,
+    double camera_height,
+    double yaw,
+    double pitch,
+    double zoom,
+    RenderQuality quality,
+    uint* argb_pixels)
+{
+    if (scene is null || scene.surface is null ||
+        argb_pixels is null || width ≟ 0 || height ≟ 0 || zoom <= 0.0)
+    {
+        return false;
+    }
+
+    const camera_to_surface = view_rotation(yaw, pitch);
+    const surface_normal_to_camera = mat_transpose(camera_to_surface);
+    const background = color_to_argb(scene.background);
+    const aspect = cast(double)width / cast(double)height;
+    const half_height = camera_height × 0.5 / zoom;
+    const dx = width == 1 ? 0.0 : 2.0 × aspect × half_height / cast(double)(width − 1);
+    const dy = height == 1 ? 0.0 : 2.0 × half_height / cast(double)(height − 1);
+
+    foreach (row; 0 .. height) {
+        const sy = height == 1
+            ? 0.0
+            : (1.0 − 2.0 × cast(double)row / cast(double)(height − 1)) × half_height;
+
+        foreach (column; 0 .. width) {
+            const sx = width == 1
+                ? 0.0
+                : (2.0 × cast(double)column / cast(double)(width − 1) − 1.0)
+                    × aspect × half_height;
+
+            if (quality == RenderQuality.interactive) {
+                const color = trace_orthographic_sample(
+                    scene,
+                    camera_to_surface,
+                    surface_normal_to_camera,
+                    sx,
+                    sy);
+                argb_pixels[row × width + column] = color_to_argb(color);
+            } else {
+                argb_pixels[row × width + column] = quincunx_pixel(
+                    scene,
+                    camera_to_surface,
+                    surface_normal_to_camera,
+                    sx − 0.5 × dx,
+                    sy − 0.5 × dy,
+                    dx,
+                    dy,
+                    true);
+            }
+        }
+    }
+
+    return true;
 }
 
 bool render_orthographic(
@@ -986,46 +1292,14 @@ bool render_orthographic(
     double zoom,
     uint* argb_pixels)
 {
-    if (scene is null || scene.surface is null ||
-        argb_pixels is null || width ≟ 0 || height ≟ 0 || zoom <= 0.0)
-    {
-        return false;
-    }
-
-    const surface_to_camera = view_rotation(yaw, pitch);
-    const camera_to_surface = mat_transpose(surface_to_camera);
-    const background = color_to_argb(scene.background);
-    const aspect = cast(double)width / cast(double)height;
-
-    foreach (row; 0 .. height) {
-        const sy =
-            (1.0 − 2.0 × (cast(double)row + 0.5) / cast(double)height) / zoom;
-
-        foreach (column; 0 .. width) {
-            const sx =
-                (2.0 × (cast(double)column + 0.5) / cast(double)width − 1.0)
-                × aspect / zoom;
-
-            const camera_ray = Ray(
-                Vec3(sx, sy, −camera_height),
-                Vec3(0.0, 0.0, 1.0));
-
-            const surface_ray = Ray(
-                mat_vec(camera_to_surface, camera_ray.origin),
-                mat_vec(camera_to_surface, camera_ray.direction));
-
-            const bundle = RayBundle(
-                camera_ray,
-                camera_ray,
-                surface_ray,
-                0.0,
-                surface_to_camera);
-
-            const trace = trace_prepared_ray(scene, bundle);
-            argb_pixels[row × width + column] =
-                trace.hit ? color_to_argb(trace.color) : background;
-        }
-    }
-
-    return true;
+    return render_orthographic_quality(
+        scene,
+        width,
+        height,
+        camera_height,
+        yaw,
+        pitch,
+        zoom,
+        RenderQuality.interactive,
+        argb_pixels);
 }

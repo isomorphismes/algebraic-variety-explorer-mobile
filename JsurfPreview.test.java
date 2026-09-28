@@ -29,7 +29,7 @@ public final class JsurfPreview {
         CPUAlgebraicSurfaceRenderer renderer = new CPUAlgebraicSurfaceRenderer();
         try {
             configure(renderer);
-            int size = 256;
+            int size = Integer.parseInt(System.getProperty("jsurf.preview.size", "256"));
             int[] pixels = new int[size * size];
             renderer.draw(pixels, size, size);
             flipRowsInPlace(pixels, size, size);
@@ -40,11 +40,14 @@ public final class JsurfPreview {
     }
 
     private static void configure(CPUAlgebraicSurfaceRenderer renderer) throws Exception {
-        renderer.setSurfaceFamily("x^2+y^2+z^2-0.64");
+        String formula = System.getProperty(
+                "jsurf.preview.formula", "x^2+y^2+z^2-0.64");
+        renderer.setSurfaceFamily(formula);
         renderer.setBackgroundColor(new Color3f(0.075f, 0.09f, 0.115f));
         renderer.setAntiAliasingMode(
                 CPUAlgebraicSurfaceRenderer.AntiAliasingMode.ADAPTIVE_SUPERSAMPLING);
-        renderer.setAntiAliasingPattern(AntiAliasingPattern.QUINCUNX);
+        String pattern = System.getProperty("jsurf.preview.pattern", "QUINCUNX");
+        renderer.setAntiAliasingPattern(AntiAliasingPattern.valueOf(pattern));
 
         Camera camera = renderer.getCamera();
         camera.setCameraType(Camera.CameraType.ORTHOGRAPHIC_CAMERA);
@@ -53,10 +56,14 @@ public final class JsurfPreview {
         cameraTransform.setIdentity();
         cameraTransform.m23 = -1.0;
 
+        double yawAngle = Double.parseDouble(
+                System.getProperty("jsurf.preview.yaw", "0.55"));
+        double pitchAngle = Double.parseDouble(
+                System.getProperty("jsurf.preview.pitch", "-0.35"));
         Matrix4d yaw = new Matrix4d();
-        yaw.rotY(0.55);
+        yaw.rotY(yawAngle);
         Matrix4d pitch = new Matrix4d();
-        pitch.rotX(-0.35);
+        pitch.rotX(pitchAngle);
         yaw.mul(pitch);
         renderer.setTransform(yaw);
 

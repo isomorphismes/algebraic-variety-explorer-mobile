@@ -2,6 +2,8 @@ module surfer_test;
 
 import core.stdc.math : fabs;
 import core.stdc.stdio : printf, puts;
+import std.file : read;
+import std.stdio : File;
 
 import surfer;
 
@@ -62,6 +64,282 @@ private void test_formula_to_prepared_surface() {
         1.6,
         1e-15,
         "symbolic x derivative");
+}
+
+private void test_complete_polynomial_surface_grammar() {
+    PreparedSurface surface;
+
+    require_true(
+        prepare_surface("x^(8)+y²+z²−0.64", surface),
+        "parenthesized integer ASCII power mixes with superscripts");
+    require_true(surface.family_degree ≟ 8, "integer power exponent degree");
+
+    require_true(
+        prepare_surface("(x²+y²+z²−4e-1)/2", surface),
+        "parentheses, scalar division, and scientific literal parse");
+    require_near(
+        evaluate(surface.surface, Vec3(1.0, 0.0, 0.0)),
+        0.3,
+        1e-15,
+        "scalar polynomial division");
+
+    require_true(
+        prepare_surface("sqrt(4)*x²+abs(-1.5)*y²+floor(2.4)*z²−6", surface),
+        "constant functions in polynomial coefficients parse");
+    require_near(
+        evaluate(surface.surface, Vec3(1.0, 0.0, 0.0)),
+        −4.0,
+        1e-15,
+        "constant function value enters polynomial");
+
+    require_true(
+        prepare_surface("x/2+y/(1+1)+z/2", surface),
+        "constant expressions may divide polynomial expressions");
+    require_near(
+        evaluate(surface.surface, Vec3(2.0, 4.0, 6.0)),
+        6.0,
+        1e-15,
+        "polynomial divided by evaluated constants");
+
+    require_true(
+        prepare_surface(".5*x²+5.*y²+1e-3*z²", surface),
+        "decimal literals accept leading dot, trailing dot, and exponent");
+    require_near(
+        evaluate(surface.surface, Vec3(2.0, 0.0, 0.0)),
+        2.0,
+        1e-15,
+        "leading-dot decimal value");
+
+    require_true(
+        !prepare_surface("x/y", surface),
+        "nonconstant polynomial divisor is rejected");
+    require_true(
+        !prepare_surface("sin(x)", surface),
+        "nonconstant function argument is rejected");
+    require_true(
+        !prepare_surface("w²+y²+z²", surface),
+        "unknown coordinate is rejected");
+    require_true(
+        !prepare_surface("x^", surface),
+        "trailing exponent operator is rejected");
+    require_true(
+        !prepare_surface("x^2^3", surface),
+        "compound power exponent is rejected like the source walker");
+    require_true(
+        !prepare_surface("x^(2+1)", surface),
+        "compound integer expression is not an exponent literal");
+    require_true(
+        !prepare_surface("x^2.0", surface),
+        "floating literal is not an integer exponent token");
+}
+
+private void test_shipped_examples_and_render_paths() {
+    const(char)[][6] formulas = [
+        "x²+y²+z²−0.64",
+        "(x²+y²+z²+0.36)²−1.69×(x²+y²)",
+        "x²+y²+z²+2×x×y×z−1",
+        "x²−y²×z",
+        "x²×y²+y²×z²+z²×x²−x×y×z",
+        "(x²+2.25×y²+z²−1)³−x²×z³−0.1125×y²×z³"
+    ];
+    const int[6] degrees = [2, 4, 3, 3, 4, 6];
+
+    enum width = 40;
+    enum height = 40;
+    foreach (i; 0 .. formulas.length) {
+        PreparedSurface surface;
+        require_true(
+            prepare_surface(formulas[i], surface),
+            "parse shipped surface example");
+        require_true(
+            surface.family_degree ≟ degrees[i],
+            "shipped surface example has oracle degree");
+
+        Scene scene = default_scene(&surface);
+        const background = color_to_argb(scene.background);
+        uint[width × height] first;
+        uint[width × height] repeated;
+        uint[width × height] production;
+        uint[width × height] production_repeat;
+        require_true(
+            render_orthographic(
+                &scene, width, height, 2.15, 0.0, 0.0, 1.0, first.ptr),
+            "shipped example orthographic render succeeds");
+        require_true(
+            render_orthographic(
+                &scene, width, height, 2.15, 0.0, 0.0, 1.0, repeated.ptr),
+            "repeat shipped example render succeeds");
+        require_true(
+            render_orthographic_quality(
+                &scene,
+                width,
+                height,
+                2.15,
+                0.0,
+                0.0,
+                1.0,
+                RenderQuality.production,
+                production.ptr),
+            "production-quality shipped example render succeeds");
+        require_true(
+            render_orthographic_quality(
+                &scene,
+                width,
+                height,
+                2.15,
+                0.0,
+                0.0,
+                1.0,
+                RenderQuality.production,
+                production_repeat.ptr),
+            "repeat production-quality shipped example render succeeds");
+
+        size_t foreground;
+        foreach (pixel; 0 .. first.length) {
+            if (first[pixel] ≠ background) ++foreground;
+            require_true(first[pixel] ≟ repeated[pixel], "repeat render is pixel-stable");
+            require_true(
+                production[pixel] ≟ production_repeat[pixel],
+                "repeat production render is pixel-stable");
+        }
+        require_true(foreground > 0, "shipped example render has surface pixels");
+        require_true(foreground < first.length, "shipped example render retains background");
+    }
+}
+
+private bool app_preview_pixels_close(
+    const(uint)[] reference,
+    const(uint)[] translated,
+    out double mean_absolute_error,
+    out double changed_pixel_fraction)
+{
+    if (reference.length != translated.length || reference.length == 0) return false;
+
+    size_t channel_error;
+    size_t changed_pixels;
+    foreach (i; 0 .. reference.length) {
+        const a = reference[i];
+        const b = translated[i];
+        const red_a = (a >> 16) & 0xff;
+        const red_b = (b >> 16) & 0xff;
+        const red_error = red_a > red_b ? red_a - red_b : red_b - red_a;
+        const green_a = (a >> 8) & 0xff;
+        const green_b = (b >> 8) & 0xff;
+        const blue_a = a & 0xff;
+        const blue_b = b & 0xff;
+        const green_error = green_a > green_b ? green_a - green_b : green_b - green_a;
+        const blue_error = blue_a > blue_b ? blue_a - blue_b : blue_b - blue_a;
+        channel_error += red_error + green_error + blue_error;
+        if (red_error != 0 || green_error != 0 || blue_error != 0) ++changed_pixels;
+    }
+
+    mean_absolute_error = cast(double)channel_error /
+        (cast(double)reference.length × 3.0 × 255.0);
+    changed_pixel_fraction = cast(double)changed_pixels / cast(double)reference.length;
+    return mean_absolute_error <= 0.0002 && changed_pixel_fraction <= 0.005;
+}
+
+private void test_image_comparison_rejects_a_broken_render() {
+    uint[64] reference;
+    uint[64] matching;
+    uint[64] broken;
+    foreach (i; 0 .. reference.length) {
+        reference[i] = 0xff305070;
+        matching[i] = reference[i];
+        broken[i] = reference[i];
+    }
+    foreach (i; 0 .. broken.length / 2) broken[i] = 0xff000000;
+
+    double mae;
+    double changed;
+    require_true(
+        app_preview_pixels_close(reference[], matching[], mae, changed),
+        "identical image fixture passes differential threshold");
+    require_true(
+        !app_preview_pixels_close(reference[], broken[], mae, changed),
+        "half-black known-bad image fails differential threshold");
+}
+
+private RenderQuality preview_quality(string pattern) {
+    return pattern == "QUINCUNX"
+        ? RenderQuality.production
+        : RenderQuality.interactive;
+}
+
+private void write_app_preview(string path, string formula, RenderQuality quality) {
+    PreparedSurface sphere;
+    if (!prepare_surface(formula, sphere)) return;
+    Scene scene = default_scene(&sphere);
+    enum size = 256;
+    uint[size × size] pixels;
+    if (!render_orthographic_quality(
+        &scene, size, size, 2.15, 0.55, −0.35, 1.0, quality, pixels.ptr))
+    {
+        return;
+    }
+
+    auto output = File(path, "wb");
+    output.writef("P6\n%u %u\n255\n", size, size);
+    foreach (pixel; pixels) {
+        ubyte[3] rgb = [
+            cast(ubyte)(pixel >> 16),
+            cast(ubyte)(pixel >> 8),
+            cast(ubyte)pixel];
+        output.rawWrite(rgb[]);
+    }
+    output.close();
+}
+
+private bool compare_app_preview(
+    string reference_path,
+    string formula,
+    RenderQuality quality)
+{
+    enum size = 256;
+    enum header = "P6\n256 256\n255\n";
+    enum pixel_bytes = size × size × 3;
+    auto reference_file = cast(const(ubyte)[])read(reference_path);
+    if (reference_file.length != header.length + pixel_bytes) return false;
+    foreach (i; 0 .. header.length) {
+        if (reference_file[i] ≠ header[i]) return false;
+    }
+
+    PreparedSurface sphere;
+    if (!prepare_surface(formula, sphere)) return false;
+    Scene scene = default_scene(&sphere);
+    uint[size × size] translated_pixels;
+    if (!render_orthographic_quality(
+        &scene,
+        size,
+        size,
+        2.15,
+        0.55,
+        −0.35,
+        1.0,
+        quality,
+        translated_pixels.ptr))
+    {
+        return false;
+    }
+
+    uint[size × size] reference_pixels;
+    foreach (i; 0 .. reference_pixels.length) {
+        const offset = header.length + i × 3;
+        reference_pixels[i] = 0xff000000u |
+            (cast(uint)reference_file[offset] << 16) |
+            (cast(uint)reference_file[offset + 1] << 8) |
+            cast(uint)reference_file[offset + 2];
+    }
+
+    double mean_error;
+    double changed_fraction;
+    const accepted = app_preview_pixels_close(
+        reference_pixels[], translated_pixels[], mean_error, changed_fraction);
+    printf(
+        "Java preview comparison: mean absolute error=%.6f, changed pixels=%.4f\n",
+        mean_error,
+        changed_fraction);
+    return accepted;
 }
 
 private void test_clip_preserves_parameter() {
@@ -265,8 +543,24 @@ private void test_orthographic_render() {
         "sphere silhouette survives rotation");
 }
 
-extern(C) int main() {
+int main(string[] args) {
+    if ((args.length == 3 || args.length == 4 || args.length == 5) && args[1] == "--write-preview") {
+        const formula = args.length >= 4 ? args[3] : "x²+y²+z²−0.64";
+        const pattern = args.length == 5 ? args[4] : "OG_1x1";
+        write_app_preview(args[2], formula, preview_quality(pattern));
+        return 0;
+    }
+    if (args.length == 5 && args[1] == "--compare-java-preview") {
+        if (compare_app_preview(args[2], args[3], preview_quality(args[4]))) return 0;
+        puts("FAIL: translated render diverges from the Java preview");
+        return 1;
+    }
+    if (args.length != 1) return 2;
+
+    test_image_comparison_rejects_a_broken_render();
     test_formula_to_prepared_surface();
+    test_complete_polynomial_surface_grammar();
+    test_shipped_examples_and_render_paths();
     test_clip_preserves_parameter();
     test_ray_polynomial_coefficients();
     test_first_roots();
@@ -274,10 +568,10 @@ extern(C) int main() {
     test_orthographic_render();
 
     if (failures ≠ 0) {
-        printf("SURFER Icky D vertical slice: %d failure(s)\n", failures);
+        printf("SURFER Icky D formula/render tests: %d failure(s)\n", failures);
         return 1;
     }
 
-    puts("SURFER Icky D vertical slice: PASS");
+    puts("SURFER Icky D formula/render tests: PASS");
     return 0;
 }
