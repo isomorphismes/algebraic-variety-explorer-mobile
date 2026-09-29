@@ -22,13 +22,16 @@ public final class JsurfPreview {
     }
 
     public static void main(String[] arguments) throws Exception {
-        if (arguments.length != 1) {
-            throw new IllegalArgumentException("Expected an output .ppm path");
+        if (arguments.length < 1 || arguments.length > 2) {
+            throw new IllegalArgumentException("Expected an output .ppm path and optional polynomial");
         }
+        String formula = arguments.length == 2
+                ? arguments[1]
+                : "x^2+y^2+z^2-0.64";
 
         CPUAlgebraicSurfaceRenderer renderer = new CPUAlgebraicSurfaceRenderer();
         try {
-            configure(renderer);
+            configure(renderer, formula);
             int size = 256;
             int[] pixels = new int[size * size];
             renderer.draw(pixels, size, size);
@@ -39,8 +42,10 @@ public final class JsurfPreview {
         }
     }
 
-    private static void configure(CPUAlgebraicSurfaceRenderer renderer) throws Exception {
-        renderer.setSurfaceFamily("x^2+y^2+z^2-0.64");
+    private static void configure(
+            CPUAlgebraicSurfaceRenderer renderer,
+            String formula) throws Exception {
+        renderer.setSurfaceFamily(formula);
         renderer.setBackgroundColor(new Color3f(0.075f, 0.09f, 0.115f));
         renderer.setAntiAliasingMode(
                 CPUAlgebraicSurfaceRenderer.AntiAliasingMode.ADAPTIVE_SUPERSAMPLING);
