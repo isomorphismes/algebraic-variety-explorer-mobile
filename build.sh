@@ -42,7 +42,7 @@ main() {
             run_tests
             ;;
         preview)
-            render_preview "${2:-}"
+            render_preview "${2:-}" "${3:-}"
             ;;
         clean)
             clean
@@ -65,7 +65,8 @@ Usage:
   ./build.sh release         Build an unsigned APK for F-Droid or external signing
   ./build.sh diagnostic      Build a side-by-side package for install diagnosis
   ./build.sh test            Run the JVM parser and renderer tests
-  ./build.sh preview [FILE]  Render a JVM-only PPM smoke-test image
+  ./build.sh preview [FILE] [FORMULA]
+                           Render a JVM-only PPM image; FORMULA defaults to the smoke-test sphere
   ./build.sh clean           Remove generated build output
 
 Required for APK builds:
@@ -442,6 +443,7 @@ run_tests() {
 
 render_preview() {
     local output="${1:-$BUILD_DIR/jsurf-preview.ppm}"
+    local formula="${2:-x^2+y^2+z^2-0.64}"
     local classpath
 
     test_dependencies
@@ -450,7 +452,7 @@ render_preview() {
     classpath="$BUILD_DIR/test/classes:$ANTLR_JAR:$VECMATH_JAR:$JUNIT_JAR:$HAMCREST_JAR"
     "$JAVA" -classpath "$classpath" \
         org.algebraicvarietyexplorer.render.JsurfPreview \
-        "$output"
+        "$output" "$formula"
     printf '%s\n' "$output"
 }
 
