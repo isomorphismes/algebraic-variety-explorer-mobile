@@ -625,4 +625,159 @@ static void solve_quartic(const surfer_poly *poly, surfer_roots4 *out)
     const double A = poly->coefficients[3] / poly->coefficients[4];
     const double B = poly->coefficients[2] / poly->coefficients[4];
     const double C = poly->coefficients[1] / poly->coefficients[4];
-    const double D = poly->coefficients[0] / poly->coefficients[4
+    const double D = poly->coefficients[0] / poly->coefficients[4];
+    const double sq_A = A * A;
+    const double p = -(3.0 / 8.0) * sq_A + B;
+    const double q = (1.0 / 8.0) * sq_A * A - (1.0 / 2.0) * A * B + C;
+    const double r = -(3.0 / 256.0) * sq_A * sq_A + (1.0 / 16.0) * sq_A * B - (1.0 / 4.0) * A * C + D;
+
+    if (is_zero_cf(r)) {
+        const double cubic_coefficients[] = {q, p, 0.0, 1.0};
+        surfer_poly cubic = {0};
+        if (!make_small_poly(&cubic, cubic_coefficients, 4)) {
+            out->count = 0;
+            return;
+        }
+        surfer_roots4 cubic_roots = {0};
+        solve_cubic(&cubic, &cubic_roots);
+        surfer_poly_destroy(&cubic);
+        out->count = cubic_roots.count + 1;
+        for (size_t i = 0; i < cubic_roots.count; ++i) {
+            out->values[i] = cubic_roots.values[i];
+        }
+        out->values[cubic_roots.count] = 0.0;
+    } else {
+        const double cubic_coefficients[] = {
+            0.5 * r * p - 0.125 * q * q,
+            -r,
+            -0.5 * p,
+            1.0
+        };
+        surfer_poly cubic = {0};
+        if (!make_small_poly(&cubic, cubic_coefficients, 4)) {
+            out->count = 0;
+            return;
+        }
+        surfer_roots4 cubic_roots = {0};
+        solve_cubic(&cubic, &cubic_roots);
+        surfer_poly_destroy(&cubic);
+        if (cubic_roots.count == 0) {
+            out->count = 0;
+            return;
+        }
+
+        const double z = cubic_roots.values[0];
+        double u = z * z - r;
+        double v = 2.0 * z - p;
+
+        if (is_zero_cf(u)) {
+            u = 0.0;
+        } else if (u > 0.0) {
+            u = sqrt(u);
+        } else {
+            out->count = 0;
+            return;
+        }
+
+        if (is_zero_cf(v)) {
+            v = 0.0;
+        } else if (v > 0.0) {
+            v = sqrt(v);
+        } else {
+            out->count = 0;
+            return;
+        }
+
+        const double quadric1_coefficients[] = {z - u, q < 0.0 ? -v : v, 1.0};
+        const double quadric2_coefficients[] = {z + u, q < 0.0 ? v : -v, 1.0};
+        surfer_poly quadric1 = {0};
+        surfer_poly quadric2 = {0};
+        if (!make_small_poly(&quadric1, quadric1_coefficients, 3) ||
+            !make_small_poly(&quadric2, quadric2_coefficients, 3)) {
+            surfer_poly_destroy(&quadric1);
+            surfer_poly_destroy(&quadric2);
+            out->count = 0;
+            return;
+        }
+        surfer_roots4 roots1 = {0};
+        surfer_roots4 roots2 = {0};
+        solve_quadric(&quadric1, &roots1);
+        solve_quadric(&quadric2, &roots2);
+        surfer_poly_destroy(&quadric1);
+        surfer_poly_destroy(&quadric2);
+
+        out->count = roots1.count + roots2.count;
+        size_t index = 0;
+        for (size_t i = 0; i < roots1.count; ++i) {
+            out->values[index++] = roots1.values[i];
+        }
+        for (size_t i = 0; i < roots2.count; ++i) {
+            out->values[index++] = roots2.values[i];
+        }
+    }
+
+    const double substitute = A / 4.0;
+    for (size_t i = 0; i < out->count; ++i) {
+        out->values[i] -= substitute;
+    }
+    sort_roots(out);
+}
+
+bool surfer_closed_form_roots(const surfer_poly *poly, surfer_roots4 *out)
+{
+    if (poly == NULL || poly->coefficients == NULL || out == NULL || poly->degree > 4) {
+        return false;
+    }
+    out->count = 0;
+    switch (poly->degree) {
+        case 0:
+            return true;
+        case 1:
+            solve_linear(poly, out);
+            return true;
+        case 2:
+            solve_quadric(poly, out);
+            return true;
+        case 3:
+            solve_cubic(poly, out);
+            return true;
+        case 4:
+            solve_quartic(poly, out);
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool surfer_closed_form_roots_in(
+    const surfer_poly *poly,
+    double lower,
+    double upper,
+    surfer_roots4 *out)
+{
+    surfer_roots4 roots = {0};
+    if (!surfer_closed_form_roots(poly, &roots)) {
+        return false;
+    }
+    out->count = 0;
+    for (size_t i = 0; i < roots.count; ++i) {
+        if (lower <= roots.values[i] && roots.values[i] <= upper) {
+            out->values[out->count++] = roots.values[i];
+        }
+    }
+    return true;
+}
+
+bool surfer_closed_form_first_root_in(
+    const surfer_poly *poly,
+    double lower,
+    double upper,
+    double *root)
+{
+    if (root == NULL) {
+        return false;
+    }
+    surfer_roots4 roots = {0};
+    if (!surfer_closed_form_roots_in(poly, lower, upper, &roots) || roots.count == 0) {
+        *root = NAN;
+        return fal
