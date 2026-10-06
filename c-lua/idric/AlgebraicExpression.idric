@@ -1,0 +1,147 @@
+module AlgebraicExpression
+
+%default total
+
+-- Typed replacement boundary for AlgebraicExpression.g and
+-- AlgebraicExpressionWalker.g. The lexer is intentionally kept separate from
+-- the grammar so tokenization and algebra construction can be tested
+-- independently.
+
+public export
+data Token
+  = Plus
+  | Minus
+  | Mult
+  | Div
+  | Pow
+  | LPar
+  | RPar
+  | Decimal String
+  | Floating String
+  | Identifier String
+  | End
+
+public export
+data Expr
+  = Number String Bool
+  | Variable String Bool
+  | Add Expr Expr Bool
+  | Sub Expr Expr Bool
+  | Neg Expr Bool
+  | Mul Expr Expr Bool
+  | Divide Expr Expr Bool
+  | Power Expr Expr Bool
+  | Call String Expr Bool
+
+public export
+record Parsed a where
+  constructor MkParsed
+  value : a
+  rest : List Token
+
+public export
+ParseResult : Type -> Type
+ParseResult a = Either String (Parsed a)
+
+withParens : Bool -> Expr -> Expr
+withParens p (Number text _) = Number text p
+withParens p (Variable name _) = Variable name p
+withParens p (Add a b _) = Add a b p
+withParens p (Sub a b _) = Sub a b p
+withParens p (Neg a _) = Neg a p
+withParens p (Mul a b _) = Mul a b p
+withParens p (Divide a b _) = Divide a b p
+withParens p (Power a b _) = Power a b p
+withParens p (Call name a _) = Call name a p
+
+mutual
+  parsePrimary : List Token -> ParseResult Expr
+  parsePrimary (Decimal text :: rest) = Right (MkParsed (Number text False) rest)
+  parsePrimary (Floating text :: rest) = Right (MkParsed (Number text False) rest)
+  parsePrimary (Identifier name :: LPar :: rest) =
+    case parseAdd rest of
+      Left error => Left error
+      Right (MkParsed argument (RPar :: tail)) =>
+        Right (MkParsed (Call name argument True) tail)
+      Right _ => Left "expected ')' after function argument"
+  parsePrimary (Identifier name :: rest) =
+    Right (MkParsed (Variable name False) rest)
+  parsePrimary (LPar :: rest) =
+    case parseAdd rest of
+      Left error => Left error
+      Right (MkParsed expression (RPar :: tail)) =>
+        Right (MkParsed (withParens True expression) tail)
+      Right _ => Left "expected ')'"
+  parsePrimary _ = Left "expected decimal, floating literal, identifier, or '('"
+
+  -- ANTLR pow_expr is right-associative: unary_expr ('^' pow_expr)?
+  parsePower : List Token -> ParseResult Expr
+  parsePower tokens =
+    case parsePrimary tokens of
+      Left error => Left error
+      Right (MkParsed base (Pow :: rest)) =>
+        case parsePower rest of
+          Left error => Left error
+          Right (MkParsed exponent tail) =>
+            Right (MkParsed (Power base exponent False) tail)
+      Right parsed => Right parsed
+
+  parseNegative : List Token -> ParseResult Expr
+  parseNegative (Minus :: rest) =
+    case parsePower rest of
+      Left error => Left error
+      Right (MkParsed expression tail) =>
+        Right (MkParsed (Neg expression False) tail)
+  parseNegative tokens = parsePower tokens
+
+  parseMultTail : Expr -> List Token -> ParseResult Expr
+  parseMultTail left (Mult :: rest) =
+    case parseNegative rest of
+      Left error => Left error
+      Right (MkParsed right tail) =>
+        parseMultTail (Mul left right False) tail
+  parseMultTail left (Div :: rest) =
+    case parseNegative rest of
+      Left error => Left error
+      Right (MkParsed right tail) =>
+        parseMultTail (Divide left right False) tail
+  parseMultTail left rest = Right (MkParsed left rest)
+
+  parseMult : List Token -> ParseResult Expr
+  parseMult tokens =
+    case parseNegative tokens of
+      Left error => Left error
+      Right (MkParsed left rest) => parseMultTail left rest
+
+  parseAddTail : Expr -> List Token -> ParseResult Expr
+  parseAddTail left (Plus :: rest) =
+    case parseMult rest of
+      Left error => Left error
+      Right (MkParsed right tail) =>
+        parseAddTail (Add left right False) tail
+  parseAddTail left (Minus :: rest) =
+    case parseMult rest of
+      Left error => Left error
+      Right (MkParsed right tail) =>
+        parseAddTail (Sub left right False) tail
+  parseAddTail left rest = Right (MkParsed left rest)
+
+  parseAdd : List Token -> ParseResult Expr
+  parseAdd tokens =
+    case parseMult tokens of
+      Left error => Left error
+      Right (MkParsed left rest) => parseAddTail left rest
+
+public export
+parse : List Token -> Either String Expr
+parse tokens =
+  case parseAdd tokens of
+    Left error => Left error
+    Right (MkParsed expression [End]) => Right expression
+    Right (MkParsed expression []) => Right expression
+    Right _ => Left "unexpected token after expression"
+
+-- Walker semantics are kept explicit rather than hidden in generated code.
+-- The C-facing lowering pass distinguishes x/y/z polynomial variables from
+-- named Double variables, and it rejects non-integer polynomial exponents or
+-- division by a polynomial exactly where the old tree walker did.
