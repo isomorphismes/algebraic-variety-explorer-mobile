@@ -322,4 +322,160 @@ bool surfer_poly_pow(surfer_poly *out, const surfer_poly *poly, unsigned exponen
     const double one = 1.0;
     if (!surfer_poly_from_coefficients(&result, &one, 1) || !surfer_poly_copy(&power, poly)) {
         surfer_poly_destroy(&result);
-        surfer_poly_destroy(&pow
+        surfer_poly_destroy(&power);
+        return false;
+    }
+
+    unsigned remaining = exponent;
+    while (remaining > 0) {
+        if ((remaining & 1U) != 0U) {
+            surfer_poly next = {0};
+            if (!surfer_poly_mul(&next, &result, &power)) {
+                surfer_poly_destroy(&result);
+                surfer_poly_destroy(&power);
+                return false;
+            }
+            surfer_poly_destroy(&result);
+            result = next;
+        }
+        remaining >>= 1U;
+        if (remaining != 0) {
+            surfer_poly square = {0};
+            if (!surfer_poly_mul(&square, &power, &power)) {
+                surfer_poly_destroy(&result);
+                surfer_poly_destroy(&power);
+                return false;
+            }
+            surfer_poly_destroy(&power);
+            power = square;
+        }
+    }
+
+    surfer_poly_destroy(&power);
+    surfer_poly_destroy(out);
+    *out = result;
+    return true;
+}
+
+double surfer_poly_evaluate(const surfer_poly *poly, double where)
+{
+    if (poly == NULL || poly->coefficients == NULL) {
+        return NAN;
+    }
+    if (fabs(where) <= 1.0) {
+        double result = poly->coefficients[poly->degree];
+        for (size_t i = poly->degree; i-- > 0;) {
+            result = result * where + poly->coefficients[i];
+        }
+        return result;
+    }
+
+    double result = poly->coefficients[0];
+    for (size_t i = 1; i <= poly->degree; ++i) {
+        result = result / where + poly->coefficients[i];
+    }
+    return result * pow(where, (double)poly->degree);
+}
+
+bool surfer_poly_derive(surfer_poly *out, const surfer_poly *poly)
+{
+    if (out == NULL || poly == NULL || poly->coefficients == NULL) {
+        return false;
+    }
+    const size_t result_degree = poly->degree > 0 ? poly->degree - 1 : 0;
+    surfer_poly tmp = {0};
+    if (!allocate_poly(&tmp, result_degree)) {
+        return false;
+    }
+    for (size_t i = 1; i <= poly->degree; ++i) {
+        tmp.coefficients[i - 1] = (double)i * poly->coefficients[i];
+    }
+    compact_in_place(&tmp);
+    surfer_poly_destroy(out);
+    *out = tmp;
+    return true;
+}
+
+static bool shift_impl(surfer_poly *out, const surfer_poly *poly, double amount, bool reverse)
+{
+    if (out == NULL || poly == NULL || poly->coefficients == NULL) {
+        return false;
+    }
+    surfer_poly tmp = {0};
+    if (!allocate_poly(&tmp, poly->degree)) {
+        return false;
+    }
+    if (reverse) {
+        for (size_t i = 0; i <= poly->degree; ++i) {
+            tmp.coefficients[i] = poly->coefficients[poly->degree - i];
+        }
+    } else {
+        memcpy(tmp.coefficients, poly->coefficients, (poly->degree + 1) * sizeof(double));
+    }
+    const size_t length = poly->degree + 1;
+    for (size_t i = 1; i <= length; ++i) {
+        for (size_t j = length - 1; j > i - 1;) {
+            --j;
+            tmp.coefficients[j] += amount * tmp.coefficients[j + 1];
+        }
+    }
+    compact_in_place(&tmp);
+    surfer_poly_destroy(out);
+    *out = tmp;
+    return true;
+}
+
+bool surfer_poly_shift(surfer_poly *out, const surfer_poly *poly, double amount)
+{
+    return shift_impl(out, poly, amount, false);
+}
+
+bool surfer_poly_reverse_shift(surfer_poly *out, const surfer_poly *poly, double amount)
+{
+    return shift_impl(out, poly, amount, true);
+}
+
+bool surfer_poly_stretch(surfer_poly *out, const surfer_poly *poly, double factor)
+{
+    if (out == NULL || poly == NULL || poly->coefficients == NULL) {
+        return false;
+    }
+    surfer_poly tmp = {0};
+    if (!allocate_poly(&tmp, poly->degree)) {
+        return false;
+    }
+    double multiplier = 1.0;
+    for (size_t i = 0; i <= poly->degree; ++i) {
+        tmp.coefficients[i] = poly->coefficients[i] * multiplier;
+        multiplier *= factor;
+    }
+    compact_in_place(&tmp);
+    surfer_poly_destroy(out);
+    *out = tmp;
+    return true;
+}
+
+int surfer_poly_coefficient_sign_changes(const surfer_poly *poly)
+{
+    if (poly == NULL || poly->coefficients == NULL) {
+        return 0;
+    }
+    int changes = 0;
+    double last = poly->coefficients[poly->degree];
+    for (size_t i = poly->degree; i-- > 0;) {
+        const double current = poly->coefficients[i];
+        if (current != 0.0) {
+            if (current * last < 0.0) {
+                ++changes;
+            }
+            last = current;
+        }
+    }
+    return changes;
+}
+
+static int descartes_shift1_impl(const surfer_poly *poly, bool reverse)
+{
+    const size_t length = poly->degree + 1;
+    double *horner = malloc(length * sizeof(*horner));
+    if (horner == NUL
