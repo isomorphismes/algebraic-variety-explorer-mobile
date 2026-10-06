@@ -478,4 +478,151 @@ static int descartes_shift1_impl(const surfer_poly *poly, bool reverse)
 {
     const size_t length = poly->degree + 1;
     double *horner = malloc(length * sizeof(*horner));
-    if (horner == NUL
+    if (horner == NULL) {
+        return -1;
+    }
+    if (reverse) {
+        for (size_t i = 0; i < length; ++i) {
+            horner[i] = poly->coefficients[length - i - 1];
+        }
+    } else {
+        memcpy(horner, poly->coefficients, length * sizeof(*horner));
+    }
+
+    int changes = 0;
+    double last_nonzero = NAN;
+    for (size_t i = 1; i <= length; ++i) {
+        for (size_t j = length - 1; j > i - 1;) {
+            --j;
+            horner[j] += horner[j + 1];
+        }
+        if (horner[i - 1] != 0.0) {
+            if (horner[i - 1] * last_nonzero < 0.0) {
+                ++changes;
+            }
+            if (changes > 1) {
+                free(horner);
+                return changes;
+            }
+            last_nonzero = horner[i - 1];
+        }
+    }
+    free(horner);
+    return changes;
+}
+
+int surfer_poly_descartes_sign_changes_shift1(const surfer_poly *poly)
+{
+    return descartes_shift1_impl(poly, false);
+}
+
+int surfer_poly_descartes_sign_changes_reverse_shift1(const surfer_poly *poly)
+{
+    return descartes_shift1_impl(poly, true);
+}
+
+static int compare_double(const void *left, const void *right)
+{
+    const double a = *(const double *)left;
+    const double b = *(const double *)right;
+    return (a > b) - (a < b);
+}
+
+static void sort_roots(surfer_roots4 *roots)
+{
+    qsort(roots->values, roots->count, sizeof(roots->values[0]), compare_double);
+}
+
+static bool is_zero_cf(double value)
+{
+    return -1e-20 < value && value < 1e-20;
+}
+
+static double signed_cuberoot(double value)
+{
+    return value >= 0.0 ? pow(value, 1.0 / 3.0) : -pow(-value, 1.0 / 3.0);
+}
+
+static void solve_linear(const surfer_poly *poly, surfer_roots4 *out)
+{
+    out->count = 1;
+    out->values[0] = -poly->coefficients[0] / poly->coefficients[1];
+}
+
+static void solve_quadric(const surfer_poly *poly, surfer_roots4 *out)
+{
+    const double p = poly->coefficients[1] / (2.0 * poly->coefficients[2]);
+    const double q = poly->coefficients[0] / poly->coefficients[2];
+    const double discriminant = p * p - q;
+
+    if (is_zero_cf(discriminant)) {
+        out->count = 2;
+        out->values[0] = -p;
+        out->values[1] = -p;
+    } else if (discriminant < 0.0) {
+        out->count = 0;
+    } else {
+        const double root = sqrt(discriminant);
+        out->count = 2;
+        out->values[0] = root - p;
+        out->values[1] = -root - p;
+        sort_roots(out);
+    }
+}
+
+static void solve_cubic(const surfer_poly *poly, surfer_roots4 *out)
+{
+    const double A = poly->coefficients[2] / poly->coefficients[3];
+    const double B = poly->coefficients[1] / poly->coefficients[3];
+    const double C = poly->coefficients[0] / poly->coefficients[3];
+    const double sq_A = A * A;
+    const double p = (1.0 / 3.0) * (-(1.0 / 3.0) * sq_A + B);
+    const double q = (1.0 / 2.0) * ((2.0 / 27.0) * A * sq_A - (1.0 / 3.0) * A * B + C);
+    const double cb_p = p * p * p;
+    const double discriminant = q * q + cb_p;
+
+    if (is_zero_cf(discriminant)) {
+        if (is_zero_cf(q)) {
+            out->count = 3;
+            out->values[0] = 0.0;
+            out->values[1] = 0.0;
+            out->values[2] = 0.0;
+        } else {
+            const double u = signed_cuberoot(-q);
+            out->count = 3;
+            out->values[0] = 2.0 * u;
+            out->values[1] = -u;
+            out->values[2] = -u;
+        }
+    } else if (discriminant < 0.0) {
+        const double phi = (1.0 / 3.0) * acos(-q / sqrt(-cb_p));
+        const double t = 2.0 * sqrt(-p);
+        out->count = 3;
+        out->values[0] = t * cos(phi);
+        out->values[1] = -t * cos(phi + M_PI / 3.0);
+        out->values[2] = -t * cos(phi - M_PI / 3.0);
+    } else {
+        const double root = sqrt(discriminant);
+        out->count = 1;
+        out->values[0] = signed_cuberoot(root - q) - signed_cuberoot(root + q);
+    }
+
+    const double substitute = A / 3.0;
+    for (size_t i = 0; i < out->count; ++i) {
+        out->values[i] -= substitute;
+    }
+    sort_roots(out);
+}
+
+static bool make_small_poly(surfer_poly *poly, const double *coefficients, size_t count)
+{
+    memset(poly, 0, sizeof(*poly));
+    return surfer_poly_from_coefficients(poly, coefficients, count);
+}
+
+static void solve_quartic(const surfer_poly *poly, surfer_roots4 *out)
+{
+    const double A = poly->coefficients[3] / poly->coefficients[4];
+    const double B = poly->coefficients[2] / poly->coefficients[4];
+    const double C = poly->coefficients[1] / poly->coefficients[4];
+    const double D = poly->coefficients[0] / poly->coefficients[4
