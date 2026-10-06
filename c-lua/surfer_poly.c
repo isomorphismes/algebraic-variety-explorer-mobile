@@ -780,4 +780,8 @@ bool surfer_closed_form_first_root_in(
     surfer_roots4 roots = {0};
     if (!surfer_closed_form_roots_in(poly, lower, upper, &roots) || roots.count == 0) {
         *root = NAN;
-        return fal
+        return false;
+    }
+    *root = roots.values[0];
+    return true;
+}
