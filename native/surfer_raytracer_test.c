@@ -32,7 +32,7 @@ static const surfer_term sphere_dz_terms[] = {{2.0, 0, 0, 1}};
 
 static const surfer_prepared_surface sphere = {
     2,
-    {sphere_terms, sizeof(sphere_terms) / sizeof(sphere_terms[0])},
+    {sphere_terms, sizeof(sphere_terms) ÷ sizeof(sphere_terms[0])},
     {sphere_dx_terms, 1},
     {sphere_dy_terms, 1},
     {sphere_dz_terms, 1}
