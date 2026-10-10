@@ -44,6 +44,14 @@ UndefinedBehaviorSanitizer profile with leak detection. `SANITIZE=1` selects
 that profile locally. This host-only producer does not add native libraries to
 the Java APK or change its existing native-payload rejection policy.
 
+The source-inventory guard checks all maintained native C/header code for
+14 executable `÷` operators and no ASCII quotient operators. It must reject
+deliberate regressions to `/`, `/=`, or a missing operator; comments and
+string literals do not count. The native test runner also executes a separate
+negative-control process: an approximate comparison against `NaN` must exit
+with status 1 and its expected failure marker, not merely produce an ordinary
+green test result.
+
 The tests cover ray-parameter-preserving sphere clipping, first-root selection,
 an exact even-multiplicity tangent root, a miss, the low-degree linear path,
 normal orientation, a rendered sphere with foreground/background, and a rotated

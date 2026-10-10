@@ -17,3 +17,12 @@ test:
 	  "$(ROOT)/native/surfer_raytracer.c" "$(ROOT)/native/surfer_raytracer_test.c" \
 	  -lm -o "$(BUILD)/surfer-raytracer-test"
 	"$(BUILD)/surfer-raytracer-test"
+	@set +e; "$(BUILD)/surfer-raytracer-test" --negative-near-nan \
+	  >"$(BUILD)/surfer-raytracer-negative-nan.log" 2>&1; status=$?; \
+	  if [ "$status" -ne 1 ] || \
+	     ! grep -Fq 'FAIL: negative-control NaN:' "$(BUILD)/surfer-raytracer-negative-nan.log"; then \
+	    cat "$(BUILD)/surfer-raytracer-negative-nan.log" >&2; \
+	    printf 'FAIL: native floating-point negative control did not reject NaN (status=%s)\n' "$status" >&2; \
+	    exit 1; \
+	  fi; \
+	  printf 'SURFER native NaN negative control: PASS\n'

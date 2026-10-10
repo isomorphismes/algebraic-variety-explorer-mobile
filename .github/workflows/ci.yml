@@ -42,6 +42,9 @@ jobs:
       - name: Run parser and ray-tracer tests
         run: bash ./build.sh test
 
+      - name: Check maintained quotient glyphs and deliberate negative controls
+        run: python3 ci/verify-native-division.py --self-test
+
       - name: Provision the qualified native ICK compiler
         id: ick
         uses: isomorphisms/ai-ci/ick-host@c789bb621ca9c5fb1a9bec07eb95cc670efb65f7
