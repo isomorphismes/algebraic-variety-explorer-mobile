@@ -22,17 +22,23 @@ public final class JsurfPreview {
     }
 
     public static void main(String[] arguments) throws Exception {
-        if (arguments.length < 1 || arguments.length > 2) {
-            throw new IllegalArgumentException("Expected an output .ppm path and optional polynomial");
+        if (arguments.length < 1 || arguments.length > 5) {
+            throw new IllegalArgumentException(
+                    "Expected output.ppm [polynomial] [yawRadians] [pitchRadians] [size]");
         }
-        String formula = arguments.length == 2
+        String formula = arguments.length >= 2
                 ? arguments[1]
                 : "x^2+y^2+z^2-0.64";
+        double yaw = arguments.length >= 3 ? Double.parseDouble(arguments[2]) : 0.55;
+        double pitch = arguments.length >= 4 ? Double.parseDouble(arguments[3]) : -0.35;
+        int size = arguments.length >= 5 ? Integer.parseInt(arguments[4]) : 256;
+        if (!Double.isFinite(yaw) || !Double.isFinite(pitch) || size < 64 || size > 1024) {
+            throw new IllegalArgumentException("Invalid rotation or image dimension");
+        }
 
         CPUAlgebraicSurfaceRenderer renderer = new CPUAlgebraicSurfaceRenderer();
         try {
-            configure(renderer, formula);
-            int size = 256;
+            configure(renderer, formula, yaw, pitch);
             int[] pixels = new int[size * size];
             renderer.draw(pixels, size, size);
             flipRowsInPlace(pixels, size, size);
@@ -44,7 +50,9 @@ public final class JsurfPreview {
 
     private static void configure(
             CPUAlgebraicSurfaceRenderer renderer,
-            String formula) throws Exception {
+            String formula,
+            double yawAngle,
+            double pitchAngle) throws Exception {
         renderer.setSurfaceFamily(formula);
         renderer.setBackgroundColor(new Color3f(0.075f, 0.09f, 0.115f));
         renderer.setAntiAliasingMode(
@@ -59,9 +67,9 @@ public final class JsurfPreview {
         cameraTransform.m23 = -1.0;
 
         Matrix4d yaw = new Matrix4d();
-        yaw.rotY(0.55);
+        yaw.rotY(yawAngle);
         Matrix4d pitch = new Matrix4d();
-        pitch.rotX(-0.35);
+        pitch.rotX(pitchAngle);
         yaw.mul(pitch);
         renderer.setTransform(yaw);
 
