@@ -28,7 +28,7 @@ public final class JsurfCoreTest {
 
     @Test
     public void everyShippedExampleParsesAtItsExpectedDegree() throws Exception {
-        int[] expectedDegrees = {2, 4, 3, 3, 4, 6};
+        int[] expectedDegrees = {2, 4, 3, 3, 4, 6, 3};
         assertEquals(expectedDegrees.length, SurfaceExamples.all().size());
 
         CPUAlgebraicSurfaceRenderer renderer = new CPUAlgebraicSurfaceRenderer();

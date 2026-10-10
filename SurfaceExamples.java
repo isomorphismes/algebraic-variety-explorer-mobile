@@ -22,7 +22,10 @@ public final class SurfaceExamples {
                             "x^2*y^2+y^2*z^2+z^2*x^2-x*y*z"),
                     new SurfaceExample(
                             "Heart",
-                            "(x^2+2.25*y^2+z^2-1)^3-x^2*z^3-0.1125*y^2*z^3")
+                            "(x^2+2.25*y^2+z^2-1)^3-x^2*z^3-0.1125*y^2*z^3"),
+                    new SurfaceExample(
+                            "Madore E6 cubic",
+                            "x^2+x*z^2+y^3")
             ));
 
     private SurfaceExamples() {
