@@ -32,6 +32,8 @@ and the corresponding [original POV-Ray rendering in
 Reproduce and check the JSURF frames, MP4 and GIF:
 `bash tools/render-madore-e6.sh renders/madore-e6`.
 
+![Verified SURFER/jsurf E6 surface rotation, rendered from the exact polynomial](renders/madore-e6/madore-e6-surfer.gif)
+
 ## Features
 
 - Original polynomial parser and CPU ray tracer from jsurf
