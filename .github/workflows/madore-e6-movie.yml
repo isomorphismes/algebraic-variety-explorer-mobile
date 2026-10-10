@@ -1,0 +1,80 @@
+name: Real SURFER/jsurf movie - Madore E6
+
+on:
+  push:
+    branches:
+      - feature/madore-e6-orbit
+    paths:
+      - .github/workflows/madore-e6-movie.yml
+      - JsurfPreview.test.java
+      - JsurfCoreTest.test.java
+      - SurfaceExamples.java
+      - tools/render-madore-e6.sh
+      - tools/verify-e6-render.py
+      - notes/e6-madore-compare.md
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  render-and-verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out exact SURFER source on feature branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.ref_name }}
+          persist-credentials: true
+
+      - name: Install JDK 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Validate scripts and keep existing sphere regression green
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n tools/render-madore-e6.sh
+          python3 -m py_compile tools/verify-e6-render.py
+          command -v ffmpeg
+          command -v ffprobe
+          bash ./build.sh preview .build/original-sphere.ppm
+          ci/verify-preview.py .build/original-sphere.ppm
+
+      - name: Render E6 with genuine jsurf and verify every decoded frame
+        shell: bash
+        run: bash tools/render-madore-e6.sh renders/madore-e6
+
+      - name: Commit verified movie, GIF, still and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- renders/madore-e6/madore-e6-surfer.mp4 \
+            renders/madore-e6/madore-e6-surfer.gif \
+            renders/madore-e6/madore-e6-surfer.png \
+            renders/madore-e6/madore-e6-surfer-manifest.json
+          if git diff --cached --quiet; then
+            echo "Verified E6 movie is already committed."
+            exit 0
+          fi
+          git commit -m "Render and verify 32-frame SURFER film of Madore E6 cubic"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+      - name: Retain original frame evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: madore-e6-jsurf-frame-evidence
+          path: |
+            renders/madore-e6/frames/
+            renders/madore-e6/madore-e6-surfer.mp4
+            renders/madore-e6/madore-e6-surfer.gif
+            renders/madore-e6/madore-e6-surfer-manifest.json
+          if-no-files-found: warn
+          retention-days: 14
