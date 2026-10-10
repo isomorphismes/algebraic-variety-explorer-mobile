@@ -14,6 +14,24 @@ belong in the
 [GitHub issues](https://github.com/isomorphisms/algebraic-variety-explorer-mobile/issues);
 an open issue is not silently being treated as finished functionality.
 
+## Madore's `E₆` cubic: video and source comparison
+
+The **Madore E6 cubic** example renders the exact real polynomial
+`x^2+x*z^2+y^3=0` with Christian Stussak's original SURFER/jsurf
+ray tracer. The formula comes from **David A. Madore's**
+[2006 *Cubic Surfaces DVD*](http://www.madore.org/cubic-dvd/),
+original scene `03s01a.pov`. We thank both authors, with their
+distinct public-domain and Apache-2.0 source terms preserved.
+
+See the [cross-render mathematical note](notes/e6-madore-compare.md),
+[rotating SURFER movie](renders/madore-e6/madore-e6-surfer.mp4),
+[inline GIF](renders/madore-e6/madore-e6-surfer.gif),
+and the corresponding [original POV-Ray rendering in
+`resolution`](https://github.com/isomorphisms/resolution/tree/main/renders/madore-e6).
+
+Reproduce and check the JSURF frames, MP4 and GIF:
+`bash tools/render-madore-e6.sh renders/madore-e6`.
+
 ## Features
 
 - Original polynomial parser and CPU ray tracer from jsurf
