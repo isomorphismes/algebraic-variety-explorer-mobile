@@ -26,7 +26,7 @@ displays a complex-analytic `E₆` rational double point after a holomorphic res
 
 | Engine | What is rendered | Camera / cut-off | Output |
 |---|---|---|---|
-| **SURFER / jsurf** | Actual zero set `F=0`, original CPU ray tracer by Christian Stussak | Orthographic, height `2.15`, unit-sphere clipping, fixed pitch, full yaw turn | [`madore-e6-surfer.mp4`](../renders/madore-e6/madore-e6-surfer.mp4) and [GIF](../renders/madore-e6/madore-e6-surfer.gif) (when generated) |
+| **SURFER / jsurf** | Actual zero set `F=0`, original CPU ray tracer by Christian Stussak | Orthographic, height `2.15`, unit-sphere clipping, fixed pitch, full yaw turn | [`madore-e6-surfer.mp4`](../renders/madore-e6/madore-e6-surfer.mp4) and [GIF](../renders/madore-e6/madore-e6-surfer.gif) (verified, 2026-10-09) |
 | **Madore's POV-Ray** | Thin `-10^-4 ≤ F ≤ 10^-4` volume clipped inside a radius-4 sphere, using his unmodified `03s01a.pov` | Perspective at `(0,5,-20)`, rotating object, fixed RGB lights | [POV-Ray film in `resolution`](https://github.com/isomorphisms/resolution/tree/main/renders/madore-e6) |
 
 These videos deliberately are **not framewise image-equal**. They use different projection, clipping radius, lights, shading and surface thickness. They should display the same polynomial zero set up to the POV-Ray tolerance and clipping conventions.
@@ -40,6 +40,8 @@ bash tools/render-madore-e6.sh renders/madore-e6
 ```
 
 Defaults: 32 frames at 320×320, 16 fps, full yaw turn, fixed pitch `−0.35` radians. This compiles and tests the actual Java `de.mfo.jsurf` core, renders real PPM frames with `JsurfPreview`, encodes MP4 and GitHub-friendly GIF, saves a PNG still and a JSON manifest, then verifies decoded frame colors, a bounded foreground, frame changes, and the encoded MP4 frame count.
+
+**Completed render evidence:** 32/32 decoded unique JSURF frames, 320×320 at 16 fps, a real two-second MP4 (77,619 bytes), an animated GIF (644,000 bytes), and a poster PNG. The [committed JSON manifest](../renders/madore-e6/madore-e6-surfer-manifest.json) records the actual frame hashes, foreground-pixel counts, and video frame rate. The source/renderer CI and Android emulator smoke checks passed on the source-changing branch commit.
 
 The unmodified default preview parameters stay `yaw=0.55`, `pitch=−0.35`, `size=256`; the original sphere preview byte checksum remains a regression gate.
 
