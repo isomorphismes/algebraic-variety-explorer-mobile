@@ -33,12 +33,24 @@ at the camera-space hit, and solves the polynomial in surface space.
 
 From the repository root:
 
-```sh
-cc -std=c17 -Wall -Wextra -Werror -pedantic -O2 -fno-fast-math -ffp-contract=off \
-  native/surfer_raytracer.c native/surfer_raytracer_test.c \
-  -lm -o .build/surfer-raytracer-test
-.build/surfer-raytracer-test
+```text
+make -f native/Makefile test ICK_CC=/absolute/path/to/qualified/ick
 ```
+
+The maintained C nucleus uses `÷` and is compiled directly by ICK revision
+`c61e448251744a2f40ad743ebef1a027bdcd2f9d`. CI provisions that exact compiler
+through the shared `ick-host` action and runs the original AddressSanitizer and
+UndefinedBehaviorSanitizer profile with leak detection. `SANITIZE=1` selects
+that profile locally. This host-only producer does not add native libraries to
+the Java APK or change its existing native-payload rejection policy.
+
+The source-inventory guard checks all maintained native C/header code for
+14 executable `÷` operators and no ASCII quotient operators. It must reject
+deliberate regressions to `/`, `/=`, or a missing operator; comments and
+string literals do not count. The native test runner also executes a separate
+negative-control process: an approximate comparison against `NaN` must exit
+with status 1 and its expected failure marker, not merely produce an ordinary
+green test result.
 
 The tests cover ray-parameter-preserving sphere clipping, first-root selection,
 an exact even-multiplicity tangent root, a miss, the low-degree linear path,

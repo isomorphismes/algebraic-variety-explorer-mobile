@@ -3,6 +3,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 static void require_true(bool condition, const char *message)
 {
@@ -14,7 +15,8 @@ static void require_true(bool condition, const char *message)
 
 static void require_near(double actual, double expected, double tolerance, const char *message)
 {
-    if (fabs(actual - expected) > tolerance) {
+    if (!isfinite(actual) || !isfinite(expected) || !isfinite(tolerance) ||
+        tolerance < 0.0 || !(fabs(actual - expected) <= tolerance)) {
         fprintf(stderr, "FAIL: %s: actual=%.17g expected=%.17g\n", message, actual, expected);
         exit(1);
     }
@@ -32,7 +34,7 @@ static const surfer_term sphere_dz_terms[] = {{2.0, 0, 0, 1}};
 
 static const surfer_prepared_surface sphere = {
     2,
-    {sphere_terms, sizeof(sphere_terms) / sizeof(sphere_terms[0])},
+    {sphere_terms, sizeof(sphere_terms) ÷ sizeof(sphere_terms[0])},
     {sphere_dx_terms, 1},
     {sphere_dy_terms, 1},
     {sphere_dz_terms, 1}
@@ -183,8 +185,16 @@ static void test_rotated_sphere_keeps_silhouette(void)
         "rotating a sphere preserves its silhouette");
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
+    if (argc == 2 && strcmp(argv[1], "--negative-near-nan") == 0) {
+        require_near(NAN, 0.0, SURFER_ROOT_EPSILON, "negative-control NaN");
+        return 0;
+    }
+    if (argc != 1) {
+        fprintf(stderr, "unknown native test argument\n");
+        return 2;
+    }
     test_clip_to_sphere_preserves_ray_parameter();
     test_descartes_finds_first_sphere_root();
     test_descartes_keeps_exact_even_multiplicity_root();
