@@ -31,7 +31,8 @@ jobs:
             native/android/activity.c native/android/presets.c \
             native/android/presets.h native/android/AndroidManifest.xml \
             native/android/build-native.sh \
-            ci/verify-native-screenshots.py
+            ci/verify-native-screenshots.py \
+            build.sh SurfaceExamples.java JsurfPreview.test.java
           {
             echo "## Diagnostic only"
             echo "Replaying the exact source-built ICK x86_64 APK artifact from"
@@ -78,6 +79,14 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-save -no-metrics
           script: >-
             bash -c 'set -euo pipefail; mapfile -t apks < <(find native-artifacts -type f -name "SURFER-native-probe-x86_64-debug.apk" -print); test "${#apks[@]}" -eq 1; exec bash ci/native-emulator-smoke.sh "${apks[0]}" native-evidence'
+
+      - name: Rebuild Java/jsurf reference and compare all seven observed images
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash build.sh test
+          python3 ci/compare-java-native-surfer.py native-evidence \
+            | tee native-evidence/java-native-diagnostic-log.jsonl
 
       - name: Retain diagnostic, never acceptance, outputs
         if: always()
