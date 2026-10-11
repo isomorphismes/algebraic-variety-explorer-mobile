@@ -47,3 +47,29 @@ was green in run 38139176495 at commit 04221f4. After this protocol change
 the newly selected head must pass all seven checks again. Neither protocol
 proves numerical parity with Java for every polynomial or physical C67/A1
 execution, nor does it replace the independent ai-ci/FP receipts.
+
+## Bounded numerical Java/native image gate
+
+The native emulator must additionally execute the **original maintained
+Java/jsurf reference renderer** on all seven same-source polynomials, with
+matching 256×256 image size and zero yaw/pitch. The Java side uses adaptive
+QUINCUNX; the native side still uses single-sample orthographic rendering.
+Decoded actual Android screenshots are mapped back from the centered 360×360
+window to the 256×256 native grid, excluding system navigation and preset
+indicator pixels.
+
+For every case the required numerical bounds are mean absolute RGB channel
+difference at most **4 of 255** and silhouette intersection-over-union at
+least **0.90** (silhouette defined as over 20 channel counts from the
+respective background). Earlier independent diagnostic run 38140765349
+observed mean channel differences of 0.49–2.12 and IoU of 0.937–0.989.
+Thresholds retain margin but must still reject wrong-surface, blank-native
+and inverted-red-channel mutants for every preset: **21 negative controls**.
+That exact diagnostic passed, but current-head CI must repeat it.
+
+These are deliberately bounded single-view visual/numerical equivalence
+checks, not a proof that all Java parser grammar, pathological root cases,
+adaptive antialiasing, or concurrency and lifecycle behavior have been
+translated. The original Java code is retained as a test oracle only until
+the complete native path is qualified. Independent FP/ai-ci receipts and
+physical A1/C67 tests remain mandatory.

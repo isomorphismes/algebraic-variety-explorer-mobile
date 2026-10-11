@@ -8,6 +8,7 @@ on:
       - 'ci/verify-native-toolchain.sh'
       - 'ci/verify-native-screenshots.py'
       - 'ci/native-emulator-smoke.sh'
+      - 'ci/compare-java-native-surfer.py'
       - '.github/workflows/native-android.yml'
   workflow_dispatch:
 
@@ -185,6 +186,14 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-save -no-metrics
           script: >-
             bash -c 'set -euo pipefail; mapfile -t apks < <(find native-artifacts -type f -name "SURFER-native-probe-x86_64-debug.apk" -print); test "${#apks[@]}" -eq 1; exec bash ci/native-emulator-smoke.sh "${apks[0]}" native-evidence'
+
+      - name: Require bounded Java/jsurf versus executed native images for all seven formulas
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash build.sh test
+          python3 ci/compare-java-native-surfer.py native-evidence \
+            | tee native-evidence/java-native-parity.jsonl
 
       - name: Retain executed APK hash, live logs, and decoded screenshots
         if: always()
