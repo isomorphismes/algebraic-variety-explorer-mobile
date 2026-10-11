@@ -18,6 +18,13 @@ case "$abi" in
     flags=(-ffixed-x18)
     machine=AArch64
     alignment=16384 ;;
+  x86_64)
+    gnu=x86_64-linux-gnu
+    target_include=x86_64-linux-android
+    ndk_driver=x86_64-linux-android26-clang
+    flags=(-march=x86-64-v2 -mno-avx -mno-movbe)
+    machine="Advanced Micro Devices X86-64"
+    alignment=16384 ;;
   armeabi-v7a)
     gnu=arm-linux-gnueabi
     target_include=arm-linux-androideabi

@@ -3,6 +3,7 @@
     package="org.algebraicvarietyexplorer.nativeprobe">
     <application
         android:hasCode="false"
+        android:extractNativeLibs="true"
         android:allowBackup="false"
         android:label="@string/app_name"
         android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen">

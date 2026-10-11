@@ -6,6 +6,8 @@ on:
       - 'native/**'
       - 'ci/build-toolchain.tsv'
       - 'ci/verify-native-toolchain.sh'
+      - 'ci/verify-native-screenshots.py'
+      - 'ci/native-emulator-smoke.sh'
       - '.github/workflows/native-android.yml'
   workflow_dispatch:
 
@@ -26,6 +28,9 @@ jobs:
           - abi: armeabi-v7a
             gnu: arm-linux-gnueabi
             binutils: binutils-arm-linux-gnueabi
+          - abi: x86_64
+            gnu: x86_64-linux-gnu
+            binutils: binutils-x86-64-linux-gnu
 
     steps:
       - name: Check out exact SURFER source head
@@ -131,5 +136,64 @@ jobs:
           name: surfer-native-${{ matrix.abi }}-${{ github.event.pull_request.head.sha || github.sha }}
           path: .build/native/${{ matrix.abi }}/
           include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 30
+
+  native-emulator-smoke:
+    needs: build-native
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out exact head with screen comparison
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify positive and negative screenshot controls
+        run: python3 ci/verify-native-screenshots.py --self-test
+
+      - name: Load exactly the ICK-compiled x86_64 APK from this run
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: surfer-native-x86_64-${{ github.event.pull_request.head.sha || github.sha }}
+          path: native-artifacts
+
+      - name: Install Java 17 to operate Android emulator tooling
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Permit emulator hardware acceleration
+        shell: bash
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install and render on Android API 35 x86_64
+        uses: reactivecircus/android-emulator-runner@4c44018e59b437e86cdfc41da381398f93ed8808
+        with:
+          api-level: 35
+          target: default
+          arch: x86_64
+          profile: pixel_2
+          ram-size: 1536M
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-save -no-metrics
+          script: |
+            set -euo pipefail
+            apk="$(find native-artifacts -type f -name 'SURFER-native-probe-x86_64-debug.apk' -print -quit)"
+            test -s "$apk"
+            ci/native-emulator-smoke.sh "$apk" native-evidence
+
+      - name: Retain executed APK hash, live logs, and decoded screenshots
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: surfer-native-emulator-${{ github.event.pull_request.head.sha || github.sha }}
+          path: native-evidence/
           if-no-files-found: warn
           retention-days: 30
