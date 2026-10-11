@@ -184,10 +184,9 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-save -no-metrics
           script: |
-            set -euo pipefail
             apk="$(find native-artifacts -type f -name 'SURFER-native-probe-x86_64-debug.apk' -print -quit)"
-            test -s "$apk"
-            ci/native-emulator-smoke.sh "$apk" native-evidence
+            test -s "$apk" || exit 1
+            bash ci/native-emulator-smoke.sh "$apk" native-evidence
 
       - name: Retain executed APK hash, live logs, and decoded screenshots
         if: always()
