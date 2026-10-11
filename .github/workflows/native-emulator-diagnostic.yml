@@ -21,7 +21,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Prove application and smoke source have not changed since APK build
+      - name: Prove native application and screenshot-decoder source match APK build
         shell: bash
         run: |
           set -euo pipefail
@@ -31,12 +31,13 @@ jobs:
             native/android/activity.c native/android/presets.c \
             native/android/presets.h native/android/AndroidManifest.xml \
             native/android/build-native.sh \
-            ci/native-emulator-smoke.sh ci/verify-native-screenshots.py
+            ci/verify-native-screenshots.py
           {
             echo "## Diagnostic only"
             echo "Replaying the exact source-built ICK x86_64 APK artifact from"
             echo "run 38137728366 / source commit 67c3911448f04e770dc6de9878ada4bdf3413ba7."
             echo "This is **not** an exact-current-head app acceptance or merge receipt."
+            echo "Diagnostic smoke script expands seven preset checks; application bytes are unchanged."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Check screenshot controls
