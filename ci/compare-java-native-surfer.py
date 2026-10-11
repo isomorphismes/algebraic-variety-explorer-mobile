@@ -35,6 +35,20 @@ CLASS_PATH = os.pathsep.join([
 ])
 PNG_DECODER = runpy.run_path("ci/verify-native-screenshots.py")["decode"]
 
+# Measured normal baseline ranges at Android API 35 x86_64 are:
+# RGB MAE 0.49..2.12, silhouette IoU 0.937..0.989. Bound these with margin.
+# This is one fixed zero-yaw/pitch surface-image gate, not full JSURF parity.
+MAX_MEAN_CHANNEL_ERROR = 4.0
+MIN_SILHOUETTE_IOU = 0.90
+
+
+def within_bounded_parity(measurement):
+    return (
+        measurement["mean_absolute_rgb_channel_error"] <= MAX_MEAN_CHANNEL_ERROR
+        and measurement["silhouette_intersection_over_union"] >= MIN_SILHOUETTE_IOU
+    )
+
+
 
 def load_java_256(path):
     raw = path.read_bytes()
@@ -113,22 +127,68 @@ def main():
         raise ValueError("run bash build.sh test before Java/jsurf parity diagnostic")
     EVIDENCE.mkdir(parents=True, exist_ok=True)
     results = []
+    references = []
+    actual_native_frames = []
     for index, ((name, filename), (_, formula)) in enumerate(zip(EXPECTED, formulas)):
         out = EVIDENCE / f"java-reference-{index}.ppm"
         subprocess.run([
             "java", "-classpath", CLASS_PATH, JAVA_CLASS,
             str(out), formula, "0", "0", "256",
         ], check=True, timeout=150)
+        reference_image = load_java_256(out)
+        native_image = load_native_256(EVIDENCE / filename)
+        metric = compare(reference_image, native_image)
         row = {
             "index": index, "name": name, "formula": formula,
             "java_preview": out.name, "native_screenshot": filename,
-            **compare(load_java_256(out), load_native_256(EVIDENCE / filename)),
+            **metric,
         }
         print(json.dumps(row, sort_keys=True), flush=True)
+        if not within_bounded_parity(metric):
+            raise ValueError(f"Java/native numerical image mismatch: {name}: {metric}")
+        references.append(reference_image)
+        actual_native_frames.append(native_image)
         results.append(row)
+
+    # These are actual image-byte mutants of the same decoded execution trace,
+    # not a source-token grep or a second handwritten renderer.
+    negative_controls = []
+    for index, native_image in enumerate(actual_native_frames):
+        controls = [
+            ("wrong-surface", references[(index + 1) % len(references)]),
+            ("blank-native", None),
+            ("invert-native-red", references[index]),
+        ]
+        for name, reference in controls:
+            if name == "wrong-surface":
+                observed = compare(reference, native_image)
+            elif name == "blank-native":
+                observed = compare(references[index], bytes(len(native_image)))
+            else:
+                altered = bytearray(native_image)
+                for channel_index in range(0, len(altered), 3):
+                    altered[channel_index] = 255 - altered[channel_index]
+                observed = compare(references[index], altered)
+            if within_bounded_parity(observed):
+                raise ValueError(
+                    f"false numerical parity PASS: {name} preset={index}: {observed}"
+                )
+            negative_controls.append({
+                "preset": index, "mutant": name,
+                "mean_absolute_rgb_channel_error": observed[
+                    "mean_absolute_rgb_channel_error"],
+                "silhouette_intersection_over_union": observed[
+                    "silhouette_intersection_over_union"],
+                "rejected": True,
+            })
+    print(f"bounded Java/native image gate PASS; rejected {len(negative_controls)} independent image mutants", flush=True)
 
     record = {
         "diagnostic_only": True,
+        "bounded_image_gate_passed": True,
+        "threshold_max_mean_absolute_rgb_channel_error": MAX_MEAN_CHANNEL_ERROR,
+        "threshold_min_silhouette_intersection_over_union": MIN_SILHOUETTE_IOU,
+        "negative_controls": negative_controls,
         "java_source": str(SOURCE),
         "native_artifact_source_commit": "67c3911448f04e770dc6de9878ada4bdf3413ba7",
         "native_apk_run": 38137728366,
