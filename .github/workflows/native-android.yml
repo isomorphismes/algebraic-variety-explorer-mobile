@@ -1,0 +1,133 @@
+name: SURFER native ICK Android probe
+
+on:
+  pull_request:
+    paths:
+      - 'native/**'
+      - 'ci/build-toolchain.tsv'
+      - 'ci/verify-native-toolchain.sh'
+      - '.github/workflows/native-android.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            gnu: aarch64-linux-gnu
+            binutils: binutils-aarch64-linux-gnu
+          - abi: armeabi-v7a
+            gnu: arm-linux-gnueabi
+            binutils: binutils-arm-linux-gnueabi
+
+    steps:
+      - name: Check out exact SURFER source head
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify declared compiler choices and kill one fallback mutant
+        shell: bash
+        run: |
+          set -euo pipefail
+          ci/verify-native-toolchain.sh
+          sed $'s/\\tick\\t/\\tndk\\t/' ci/build-toolchain.tsv > /tmp/native-bad-toolchain.tsv
+          if ci/verify-native-toolchain.sh /tmp/native-bad-toolchain.tsv; then
+            echo 'invalid ICK-to-NDK compilation fallback passed' >&2
+            exit 1
+          fi
+
+      - name: Check out pinned ICK and owned GCC reference
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: dilapidated-shed/ick
+          ref: c61e448251744a2f40ad743ebef1a027bdcd2f9d
+          submodules: true
+          path: .compiler/ick
+          persist-credentials: false
+
+      - name: Verify and materialize source-built ICK
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd .compiler/ick
+          test "$(git rev-parse HEAD)" = c61e448251744a2f40ad743ebef1a027bdcd2f9d
+          . ick/SOURCE.lock
+          test "$(git -C gcc rev-parse HEAD)" = "$gcc_commit"
+          bash ick/materialize.sh gcc source
+          test -s source/gcc/config/linux-android.h
+
+      - name: Install ICK compiler-bootstrap prerequisites
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential flex bison texinfo \
+            libgmp-dev libmpfr-dev libmpc-dev libisl-dev libzstd-dev \
+            ${{ matrix.binutils }}
+
+      - name: Build the owned ICK cross C compiler
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd .compiler/ick
+          mkdir -p build stage
+          cd build
+          ../source/configure \
+            --target=${{ matrix.gnu }} \
+            --prefix="$GITHUB_WORKSPACE/.compiler/ick/stage" \
+            --with-as="$(command -v ${{ matrix.gnu }}-as)" \
+            --with-ld="$(command -v ${{ matrix.gnu }}-ld)" \
+            --enable-languages=c \
+            --disable-bootstrap --disable-multilib --disable-nls \
+            --disable-shared --disable-threads --without-headers \
+            --disable-libatomic --disable-libgomp --disable-libquadmath \
+            --disable-libssp --disable-libvtv
+          make -j2 all-gcc
+          make install-gcc
+          "$GITHUB_WORKSPACE/.compiler/ick/stage/bin/${{ matrix.gnu }}-gcc" --version
+
+      - name: Provision Java 17 for Android command-line packaging
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install pinned Android SDK tools
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+
+      - name: Install exact Android SDK and NDK versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.1' \
+            'ndk;29.0.14206865'
+
+      - name: ICK compile plus NDK platform link, unsigned/signed APK checks
+        shell: bash
+        env:
+          ICK_SOURCE_DIR: ${{ github.workspace }}/.compiler/ick
+          ICK: ${{ github.workspace }}/.compiler/ick/stage/bin/${{ matrix.gnu }}-gcc
+        run: |
+          set -euo pipefail
+          native/android/build-native.sh ${{ matrix.abi }}
+          cat ".build/native/${{ matrix.abi }}/provenance.txt"
+          test -s ".build/native/${{ matrix.abi }}/elf-header.txt"
+          ! grep -Eq '^classes[0-9]*\.dex$' ".build/native/${{ matrix.abi }}/entries.txt"
+
+      - name: Retain actual APK, ABI evidence, and source/object hashes
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: surfer-native-${{ matrix.abi }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: .build/native/${{ matrix.abi }}/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 30

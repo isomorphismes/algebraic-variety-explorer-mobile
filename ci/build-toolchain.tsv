@@ -1,0 +1,5 @@
+build_id	target	toolchain	ick_revision	ick_status	ick_evidence
+native-probe-objects-arm64	arm64-v8a	ick	c61e448251744a2f40ad743ebef1a027bdcd2f9d	qualified	receipt:ick-android-abi-foundation-pr4
+native-probe-link-arm64	arm64-v8a	ndk	c61e448251744a2f40ad743ebef1a027bdcd2f9d	gap:ICK-platform-link-API26-not-qualified	issue:ick-android-release-gate
+native-probe-objects-arm32	armeabi-v7a	ick	c61e448251744a2f40ad743ebef1a027bdcd2f9d	qualified	receipt:ick-android-abi-foundation-pr4
+native-probe-link-arm32	armeabi-v7a	ndk	c61e448251744a2f40ad743ebef1a027bdcd2f9d	gap:ICK-platform-link-API26-not-qualified	issue:ick-android-release-gate
