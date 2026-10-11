@@ -32,8 +32,18 @@ Flexible Pipes intent: https://github.com/isomorphisms/flexible-pipes/issues/82.
 ## Emulator execution
 
 A third source-built ICK lane creates an x86_64 APK. The dependent emulator
-job installs this exact archive, waits for SURFER's positive-foreground render
-logs, taps to select the torus, and decodes interior pixels of two actual
-emulator screenshots. The checker rejects flat, identical, and indicator-only
-mutants; this is runtime evidence, not full Java numerical equivalence or a
-physical C67/A1 test.
+job installs the exact same-head archive, launches its NativeActivity, then
+runs all **seven** shipped formula presets: sphere, torus, Cayley cubic,
+Whitney umbrella, Roman surface, heart, and Madore E6 cubic. It requires
+a matching native preset identity, nonzero SURFER foreground, and an actual
+Android screenshot for each. It decodes every image and compares all six
+successive interior regions, excluding the on-screen preset indicator.
+
+The screenshot checker rejects flat, identical, and indicator-only mutants.
+The all-seven protocol passed previously in diagnostic run 38140033432 using
+the ICK-built x86_64 APK from source commit 67c3911; that is provenance, not
+acceptance of the current source head. The native exact-head sphere/torus gate
+was green in run 38139176495 at commit 04221f4. After this protocol change
+the newly selected head must pass all seven checks again. Neither protocol
+proves numerical parity with Java for every polynomial or physical C67/A1
+execution, nor does it replace the independent ai-ci/FP receipts.
