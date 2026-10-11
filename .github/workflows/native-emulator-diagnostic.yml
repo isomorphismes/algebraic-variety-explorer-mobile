@@ -1,0 +1,88 @@
+name: SURFER NativeActivity diagnostic replay (NOT acceptance)
+
+on:
+  push:
+    branches:
+      - diagnostics/nativeactivity-emulator-20261011
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  replay-old-native-artifact:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out diagnostic source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Prove application and smoke source have not changed since APK build
+        shell: bash
+        run: |
+          set -euo pipefail
+          git cat-file -e 67c3911448f04e770dc6de9878ada4bdf3413ba7^{commit}
+          git diff --exit-code 67c3911448f04e770dc6de9878ada4bdf3413ba7 HEAD -- \
+            native/surfer_raytracer.c native/surfer_raytracer.h \
+            native/android/activity.c native/android/presets.c \
+            native/android/presets.h native/android/AndroidManifest.xml \
+            native/android/build-native.sh \
+            ci/native-emulator-smoke.sh ci/verify-native-screenshots.py
+          {
+            echo "## Diagnostic only"
+            echo "Replaying the exact source-built ICK x86_64 APK artifact from"
+            echo "run 38137728366 / source commit 67c3911448f04e770dc6de9878ada4bdf3413ba7."
+            echo "This is **not** an exact-current-head app acceptance or merge receipt."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check screenshot controls
+        run: python3 ci/verify-native-screenshots.py --self-test
+
+      - name: Download the immutable earlier-head APK for diagnostics only
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: surfer-native-x86_64-67c3911448f04e770dc6de9878ada4bdf3413ba7
+          path: native-artifacts
+          run-id: 38137728366
+          github-token: ${{ github.token }}
+          repository: isomorphismes/algebraic-variety-explorer-mobile
+
+      - name: Provision emulator Java runtime
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Permit KVM
+        shell: bash
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install and execute the earlier source-identical NativeActivity APK
+        uses: reactivecircus/android-emulator-runner@4c44018e59b437e86cdfc41da381398f93ed8808
+        with:
+          api-level: 35
+          target: default
+          arch: x86_64
+          profile: pixel_2
+          ram-size: 1536M
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-save -no-metrics
+          script: >-
+            bash -c 'set -euo pipefail; mapfile -t apks < <(find native-artifacts -type f -name "SURFER-native-probe-x86_64-debug.apk" -print); test "${#apks[@]}" -eq 1; exec bash ci/native-emulator-smoke.sh "${apks[0]}" native-evidence'
+
+      - name: Retain diagnostic, never acceptance, outputs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: surfer-native-diagnostic-${{ github.sha }}
+          path: native-evidence/
+          if-no-files-found: warn
+          retention-days: 14
