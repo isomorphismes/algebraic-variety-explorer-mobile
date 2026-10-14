@@ -17,7 +17,7 @@ concurrency:
 jobs:
   source-and-renderer:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 120
 
     steps:
       - name: Check out exact source
@@ -42,15 +42,17 @@ jobs:
       - name: Run parser and ray-tracer tests
         run: bash ./build.sh test
 
+      - name: Check maintained quotient glyphs and deliberate negative controls
+        run: python3 ci/verify-native-division.py --self-test
+
+      - name: Provision the qualified native ICK compiler
+        id: ick
+        uses: isomorphisms/ai-ci/ick-host@c789bb621ca9c5fb1a9bec07eb95cc670efb65f7
+
       - name: Run prepared-surface C ray-tracer tests
-        run: |
-          mkdir -p .build
-          cc -std=c17 -Wall -Wextra -Werror -pedantic -O1 -g \
-            -fno-fast-math -ffp-contract=off \
-            -fsanitize=address,undefined -fno-omit-frame-pointer \
-            native/surfer_raytracer.c native/surfer_raytracer_test.c \
-            -lm -o .build/surfer-raytracer-test
-          ASAN_OPTIONS=detect_leaks=1 .build/surfer-raytracer-test
+        env:
+          ASAN_OPTIONS: detect_leaks=1
+        run: make -f native/Makefile test SANITIZE=1 ICK_CC="${{ steps.ick.outputs.compiler }}"
 
       - name: Render and inspect deterministic JVM preview
         run: |

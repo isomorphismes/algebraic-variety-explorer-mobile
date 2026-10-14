@@ -105,7 +105,7 @@ static surfer_vec3 normalize_vector(surfer_vec3 value)
     if (length == 0.0) {
         return value;
     }
-    return scale_vector(value, 1.0 / length);
+    return scale_vector(value, 1.0 ÷ length);
 }
 
 static surfer_vec3 point_on_ray_at_parameter(surfer_ray ray, double t)
@@ -273,7 +273,7 @@ static double evaluate_univariate_polynomial_at(
 
     double result = polynomial->coefficients[0];
     for (size_t i = 1; i < polynomial->length; ++i) {
-        result = result / where + polynomial->coefficients[i];
+        result = result ÷ where + polynomial->coefficients[i];
     }
     return result * pow(where, (double)(polynomial->length - 1));
 }
@@ -540,8 +540,8 @@ static double find_positive_root_with_descartes(
         free_univariate_polynomial(shrunk);
         return NAN;
     }
-    const double transformed_lower = lower_bound / bound;
-    const double transformed_upper = upper_bound / bound;
+    const double transformed_lower = lower_bound ÷ bound;
+    const double transformed_upper = upper_bound ÷ bound;
 
     univariate_polynomial polynomial = stretch_univariate_polynomial(&shrunk, bound);
     free_univariate_polynomial(shrunk);
@@ -814,7 +814,7 @@ static bool polynomial_for_axis_power_along_ray(
     for (int32_t k = 0; k <= exponent; ++k) {
         if (k != 0) {
             binomial *= (double)(exponent - (k - 1));
-            binomial /= (double)k;
+            binomial = binomial ÷ (double)k;
         }
         result->coefficients[k] =
             binomial *
@@ -1008,8 +1008,8 @@ bool surfer_clip_unit_sphere(surfer_ray ray, surfer_interval *interval)
         return false;
     }
     const double root = sqrt(discriminant);
-    double lower = (-b - root) / (2.0 * a);
-    double upper = (-b + root) / (2.0 * a);
+    double lower = (-b - root) ÷ (2.0 * a);
+    double upper = (-b + root) ÷ (2.0 * a);
     if (lower > upper) {
         const double swap = lower;
         lower = upper;
@@ -1050,7 +1050,7 @@ static double first_linear_root_in_interval(
     }
 
     const double root =
-        -polynomial->coefficients[0] / polynomial->coefficients[1];
+        -polynomial->coefficients[0] ÷ polynomial->coefficients[1];
     return lower <= root && root <= upper ? root : NAN;
 }
 
@@ -1212,7 +1212,7 @@ static surfer_vec3 camera_normal_from_surface_gradient(
         apply_matrix_to_vector(rays.surface_normal_to_camera, surface_gradient);
     const float length = (float)length_of_vector(camera_normal);
     if (length != 0.0f) {
-        camera_normal = scale_vector(camera_normal, 1.0f / length);
+        camera_normal = scale_vector(camera_normal, 1.0f ÷ length);
     }
     return camera_normal;
 }
@@ -1350,9 +1350,9 @@ static orthographic_view make_orthographic_view(
     double pitch,
     double zoom)
 {
-    const double effective_height = camera_height / zoom;
-    const double half_v = effective_height / 2.0;
-    const double half_u = half_v * (double)width / (double)height;
+    const double effective_height = camera_height ÷ zoom;
+    const double half_v = effective_height ÷ 2.0;
+    const double half_u = half_v * (double)width ÷ (double)height;
     const surfer_mat3 camera_to_surface =
         yaw_then_pitch_rotation(yaw, pitch);
 
@@ -1380,7 +1380,7 @@ static double orthographic_coordinate(
     double half_extent)
 {
     return -half_extent +
-        (2.0 * half_extent * (double)index) / (double)(count - 1);
+        (2.0 * half_extent * (double)index) ÷ (double)(count - 1);
 }
 
 static surfer_ray_bundle orthographic_ray_bundle_at(
