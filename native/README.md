@@ -1,10 +1,18 @@
 # SURFER native ray tracer
 
-This directory resumes the numerical ray-tracer translation at the corrected
-`PreparedSurface` boundary. It does not replace the Java renderer yet.
+**Upstream algorithm and attribution: Christian Stussak's
+[original `jsurf` ray tracer](https://github.com/IMAGINARY/jsurf),
+written for [IMAGINARY/SURFER](https://www.imaginary.org/program/surfer)
+(copyright 2008, Apache License 2.0).** The Descartes root-finding,
+ray-clipping/parameter-space design, and prepared-surface structure below
+are translated from or compared with his work; they are not claimed as
+new algorithms invented in this C experiment. See [`NOTICE`](../NOTICE).
 
-Christian Stussak's original jsurf/SURFER renderer remains the oracle. The
-numerical path here intentionally preserves the original split between F64
+This directory resumes the numerical ray-tracer translation at the corrected
+`PreparedSurface` boundary. It does not replace Stussak's running Java
+renderer yet.
+
+The numerical path intentionally preserves the original split between F64
 geometry/polynomial/root work and F32 material/color work.
 
 ## Implemented slice
