@@ -1,10 +1,21 @@
 # Algebraic Variety Explorer
 
-An offline Android explorer for real algebraic surfaces, adapted from
-[IMAGINARY's SURFER](https://www.imaginary.org/program/surfer).
+**Original rendering engine — Christian Stussak (2008).** This application
+**contains and runs Stussak's original Java `jsurf` algebraic-surface
+ray tracer**, created for [IMAGINARY's SURFER](https://www.imaginary.org/program/surfer)
+at the Mathematisches Forschungsinstitut Oberwolfach. See the
+[original `IMAGINARY/jsurf` source](https://github.com/IMAGINARY/jsurf),
+[official SURFER contributor credits](https://www.imaginary.org/program/surfer),
+and the inherited [copyright notice](NOTICE). The algebraic-surface renderer
+is **Stussak's implementation, not code newly authored for this app**.
 
-The app evaluates a polynomial in `x`, `y`, and `z`, then uses the original
-jsurf ray-tracing core to draw its real zero set inside a sphere.
+**What this project adds:** an experimental offline Android interface, touch
+rotation/zoom, APK build and packaging, and integration of the inherited
+renderer into a phone application. It is an independent adaptation and
+not an official release by IMAGINARY.
+
+The app evaluates a polynomial in `x`, `y`, and `z`, then calls Stussak's
+`jsurf` to draw its real zero set inside a sphere.
 
 The Android adaptation and flat build were produced in conversation with
 ChatGPT 5.6. They have not received an independent code or mathematical review.
@@ -167,7 +178,22 @@ the exact candidate on real hardware or F-Droid's own review.
 
 ## Attribution and license
 
-The jsurf ray-tracing core was written by Christian Stussak for the
-Mathematisches Forschungsinstitut Oberwolfach as part of IMAGINARY's SURFER.
-The original core and this adaptation are distributed under the Apache License
-2.0. See `LICENSE` and `NOTICE`.
+**Christian Stussak wrote the original Java `jsurf` ray tracer** (copyright
+2008) and its algebraic-surface rendering core, retained in this repository's
+`de.mfo.jsurf` classes. The original source is published at
+[IMAGINARY/jsurf](https://github.com/IMAGINARY/jsurf).
+This application depends directly on that implementation.
+
+The wider [SURFER project](https://www.imaginary.org/program/surfer) was
+developed by IMAGINARY with the Mathematisches Forschungsinstitut Oberwolfach
+and Martin Luther University Halle-Wittenberg. The project credits
+**Gert-Martin Greuel** (direction), **Christian Stussak** (Java renderer),
+**Maik Urbannek** (JavaFX), and **Henning Meyer** (previous version), with
+additional coordination, design, galleries, and text contributors recorded
+on the official project page. Do not attribute those contributions to the
+Android adaptation or to Stussak alone.
+
+The Android adaptation is independent and not an official IMAGINARY release.
+The original `jsurf` code and this adaptation are distributed under the
+Apache License 2.0. Preserve `LICENSE`, `NOTICE`, the per-file copyrights,
+and `THIRD_PARTY_LICENSES.md` when distributing or translating the work.
