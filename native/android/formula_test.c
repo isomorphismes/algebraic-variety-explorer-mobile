@@ -2,6 +2,7 @@
  * Independent of Android controls; runs with ASan/UBSan before device builds.
  */
 #include "formula.h"
+#include "presets.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -45,6 +46,58 @@ static double evaluate(double x, double y, double z, int derivative)
 static void near(double a, double b, const char *message)
 {
     need(isfinite(a) && fabs(a-b) <= 1e-9, message);
+}
+static void same_sparse(const surfer_sparse_polynomial *want,
+                        const surfer_sparse_polynomial *got, const char *name)
+{
+    need(want->term_count == got->term_count, name);
+    for (size_t i = 0; i < want->term_count; ++i) {
+        const surfer_term a = want->terms[i];
+        int matches = 0;
+        double value = 0.0;
+        for (size_t j = 0; j < got->term_count; ++j) {
+            const surfer_term b = got->terms[j];
+            if (a.x_exponent == b.x_exponent &&
+                a.y_exponent == b.y_exponent &&
+                a.z_exponent == b.z_exponent) {
+                ++matches;
+                value += b.coefficient;
+            }
+        }
+        need(matches == 1 &&
+             fabs(a.coefficient - value) <= 1e-10 * (1 + fabs(a.coefficient)),
+             name);
+    }
+}
+static void check_original_seven_presets(void)
+{
+    static const struct { const char *name; const char *source; } cases[] = {
+        {"Sphere", "x^2+y^2+z^2-0.64"},
+        {"Torus", "(x^2+y^2+z^2+0.36)^2-1.69*(x^2+y^2)"},
+        {"Cayley cubic", "x^2+y^2+z^2+2*x*y*z-1"},
+        {"Whitney umbrella", "x^2-y^2*z"},
+        {"Roman surface", "x^2*y^2+y^2*z^2+z^2*x^2-x*y*z"},
+        {"Heart", "(x^2+2.25*y^2+z^2-1)^3-x^2*z^3-0.1125*y^2*z^3"},
+        {"Madore E6 cubic", "x^2+x*z^2+y^3"}
+    };
+    need(ave_native_preset_count() == sizeof cases / sizeof cases[0],
+         "original preset count unchanged");
+    for (size_t i = 0; i < ave_native_preset_count(); ++i) {
+        ave_native_preset original;
+        need(ave_native_load_preset(i, &original), "load original preset");
+        need(strcmp(original.name, cases[i].name) == 0, "preset order");
+        need(ave_formula_compile(cases[i].source,
+             &formula, diagnostic, sizeof diagnostic), "preset source parsed");
+        need(original.surface.family_degree == formula.surface.family_degree,
+             "source family degree");
+        same_sparse(&original.surface.surface, &formula.surface.surface, cases[i].name);
+        same_sparse(&original.surface.gradient_x,
+                    &formula.surface.gradient_x, "preset dx");
+        same_sparse(&original.surface.gradient_y,
+                    &formula.surface.gradient_y, "preset dy");
+        same_sparse(&original.surface.gradient_z,
+                    &formula.surface.gradient_z, "preset dz");
+    }
 }
 int main(void)
 {
@@ -99,6 +152,7 @@ int main(void)
         &formula, diagnostic, sizeof diagnostic), "equation both sides");
     near(coefficient(1,0,0), 1, "equation lhs");
     near(coefficient(0,1,0), -1, "equation rhs");
+    check_original_seven_presets();
     puts("Native arbitrary formula parser, derivatives, and failure invariants: PASS");
     return 0;
 }
