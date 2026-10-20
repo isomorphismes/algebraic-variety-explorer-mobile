@@ -40,6 +40,18 @@ static const uint8_t font[128][7] = {
     ['=']={0,31,0,31,0,0,0}, ['<']={2,4,8,16,8,4,2},
     [' ']={0,0,0,0,0,0,0}
 };
+static int keypad_row_height(int width, int height)
+{
+    int pixels = width * 2 / 15; /* 48 px at the 360-wide emulator baseline. */
+    if (pixels < 48) pixels = 48;
+    if (pixels > height / 7) pixels = height / 7;
+    return pixels;
+}
+static int text_scale(const ANativeWindow_Buffer *b)
+{
+    const int scale = (b->width + 179) / 180;
+    return scale < 2 ? 2 : (scale > 4 ? 4 : scale);
+}
 static void pixel(ANativeWindow_Buffer *b, int x, int y,
                   uint8_t r, uint8_t g, uint8_t blue)
 {
@@ -63,6 +75,7 @@ static void letters(ANativeWindow_Buffer *b,
                     int x, int y, const char *value, int limit,
                     uint8_t r, uint8_t g, uint8_t blue)
 {
+    const int scale = text_scale(b);
     for (int i = 0; value[i] != 0 && i < limit; ++i) {
         const unsigned char ascii =
             (unsigned char)toupper((unsigned char)value[i]);
@@ -71,10 +84,10 @@ static void letters(ANativeWindow_Buffer *b,
             const uint8_t bits = font[ascii][row];
             for (int column = 0; column < 5; ++column)
                 if ((bits & (16U >> column)) != 0)
-                    for (int yy = 0; yy < 2; ++yy)
-                        for (int xx = 0; xx < 2; ++xx)
-                            pixel(b, x + i * 12 + column * 2 + xx,
-                                y + row * 2 + yy, r, g, blue);
+                    for (int yy = 0; yy < scale; ++yy)
+                        for (int xx = 0; xx < scale; ++xx)
+                            pixel(b, x + i * 6 * scale + column * scale + xx,
+                                y + row * scale + yy, r, g, blue);
         }
     }
 }
@@ -82,15 +95,17 @@ int ave_editor_touch(ave_formula_editor *editor,
                      int x, int y, int width, int height)
 {
     if (!editor || width <= 0 || height <= 0) return 0;
-    if (y < 48 && x >= width - 80) {
+    const int button_width = width / 5 > 80 ? width / 5 : 80;
+    if (y < 48 && x >= width - button_width) {
         editor->open = !editor->open;
         editor->error[0] = '\0';
         return editor->open ? 1 : 3;
     }
     if (!editor->open) return 0;
-    const int y0 = height - 192;
+    const int row_height = keypad_row_height(width, height);
+    const int y0 = height - row_height * 4;
     if (y >= y0 && y < height && x >= 0 && x < width) {
-        const size_t row = (size_t)(y - y0) / 48;
+        const size_t row = (size_t)(y - y0) / (size_t)row_height;
         const size_t column = (size_t)x * 6 / (size_t)width;
         const char *key = keypad[row][column];
         if (strcmp(key, "OK") == 0) return 2;
@@ -124,35 +139,44 @@ void ave_editor_draw(ANativeWindow_Buffer *b, const ave_formula_editor *editor)
 {
     if (!b || !editor || b->format != WINDOW_FORMAT_RGBA_8888) return;
     if (!editor->open) {
-        rectangle(b, b->width - 77, 16, b->width - 3, 43, 38, 53, 71);
-        letters(b, b->width - 67, 22, "EDIT", 4, 229, 232, 240);
+        const int button_width = b->width / 5 > 80 ? b->width / 5 : 80;
+        const int advance = 6 * text_scale(b);
+        rectangle(b, b->width - button_width, 16, b->width - 3, 43,
+                  38, 53, 71);
+        letters(b, b->width - button_width / 2 - 2 * advance, 22,
+                "EDIT", 4, 229, 232, 240);
         return;
     }
     rectangle(b, 0, 15, b->width, 121, 23, 34, 46);
     letters(b, 10, 20, "FORMULA", 7, 230, 238, 243);
-    letters(b, b->width - 65, 20, "EDIT", 4, 182, 195, 209);
+    letters(b, b->width - 4 * 6 * text_scale(b) - 8, 20,
+            "EDIT", 4, 182, 195, 209);
     /* The editor displays the rightmost visible characters, not a truncated input. */
-    const size_t max_visible = b->width > 24 ? (size_t)(b->width - 20) / 12 : 0;
+    const int advance = 6 * text_scale(b);
+    const size_t max_visible = b->width > 24 ?
+        (size_t)(b->width - 20) / (size_t)advance : 0;
     const char *tail = editor->input;
     if (editor->length > max_visible) tail += editor->length - max_visible;
     letters(b, 10, 52, tail, (int)max_visible, 245, 246, 248);
     if (editor->error[0])
-        letters(b, 10, 87, editor->error, (b->width - 20) / 12, 255, 133, 132);
+        letters(b, 10, 87, editor->error, (b->width - 20) / advance, 255, 133, 132);
     else letters(b, 10, 87, "F=0", 3, 129, 187, 209);
 
-    const int y0 = b->height - 192;
+    const int row_height = keypad_row_height(b->width, b->height);
+    const int y0 = b->height - row_height * 4;
     for (int row = 0; row < 4; ++row) {
         for (int col = 0; col < 6; ++col) {
             const int x0 = col * b->width / 6;
             const int x1 = (col + 1) * b->width / 6;
-            const int by0 = y0 + row * 48, by1 = by0 + 48;
+            const int by0 = y0 + row * row_height, by1 = by0 + row_height;
             const char *key = keypad[row][col];
             const int highlight = strcmp(key, "OK") == 0;
             rectangle(b, x0 + 1, by0 + 1, x1 - 1, by1 - 1,
                       highlight ? 46 : 39, highlight ? 98 : 50,
                       highlight ? 91 : 67);
             const int characters = (int)strlen(key);
-            letters(b, (x0 + x1 - characters * 12) / 2, by0 + 17,
+            letters(b, (x0 + x1 - characters * advance) / 2,
+                    by0 + (row_height - 7 * text_scale(b)) / 2,
                     key, characters, 233, 240, 241);
         }
     }
