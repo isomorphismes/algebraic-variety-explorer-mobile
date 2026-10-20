@@ -70,7 +70,49 @@ for index in "${!preset_names[@]}"; do
     previous="$screenshot"
 done
 
+# Exercise the actual editable NativeActivity UI on the same APK and emulator.
+# Touch the EDIT control, clear, type the user's quartic, and submit.
+adb shell input tap 330 30
+adb shell input tap 150 616
+for xy in \
+  '30 472' '150 568' '270 520' \
+  '90 520' '30 472' '150 520' '90 472' '150 568' '270 616' \
+  '90 520' '150 472' '150 568' '270 520' \
+  '30 520' '150 472' '210 568' '210 616'; do
+    adb shell input tap $xy
+done
+adb shell input tap 330 616
+for attempt in $(seq 1 45); do
+    adb logcat -d -s 'SurferNative:I' 'SurferNative:E' '*:S' \
+        > "$evidence/logcat.txt"
+    if grep -Fq 'formula accepted=x^4-x*y^3-z^4+z=0' "$evidence/logcat.txt" &&
+       grep -Eq 'frame custom size=.* foreground=[1-9][0-9]*' \
+            "$evidence/logcat.txt"; then
+        break
+    fi
+    sleep 2
+done
+grep -Fq 'formula accepted=x^4-x*y^3-z^4+z=0' "$evidence/logcat.txt"
+grep -Eq 'frame custom size=.* foreground=[1-9][0-9]*' "$evidence/logcat.txt"
+adb exec-out screencap -p > "$evidence/custom-quartic.png"
+python3 ci/verify-native-screenshots.py \
+    "$evidence/madore-e6.png" "$evidence/custom-quartic.png" \
+    | tee -a "$evidence/image-verdict.txt"
+
+# Invalid division must not evict the last valid surface.
+adb shell input tap 330 30
+adb shell input tap 150 616
+for xy in '30 472' '210 520' '210 616'; do
+    adb shell input tap $xy
+done
+adb shell input tap 330 616
+adb logcat -d -s 'SurferNative:I' 'SurferNative:E' '*:S' \
+    > "$evidence/logcat.txt"
+grep -Fq 'formula rejected=x/0 reason=division needs a nonzero constant' \
+    "$evidence/logcat.txt"
+adb shell input tap 330 30
+
 adb shell dumpsys package org.algebraicvarietyexplorer.nativeprobe \
     > "$evidence/package.txt"
 adb shell am force-stop org.algebraicvarietyexplorer.nativeprobe
-echo "NativeActivity executed all seven real SURFER presets with distinct renders: PASS"
+echo "NativeActivity executed seven presets, user quartic, and invalid-input rejection: PASS"
