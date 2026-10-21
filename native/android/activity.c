@@ -6,6 +6,8 @@
  * Derived work: Christian Stussak's jsurf/SURFER (Apache-2.0), see NOTICE.
  */
 #include "presets.h"
+#include "formula.h"
+#include "editor.h"
 
 #include <android/input.h>
 #include <android/log.h>
@@ -13,6 +15,7 @@
 #include <android/native_window.h>
 #include <android/window.h>
 #include <android_native_app_glue.h>
+#include <jni.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -23,6 +26,12 @@
 
 typedef struct {
     ave_native_preset preset;
+    ave_formula formula;
+    ave_formula_editor editor;
+    int custom;
+    int render_dirty;
+    uint32_t *cached_pixels;
+    size_t cached_side;
     size_t preset_index;
     double yaw;
     double pitch;
@@ -44,10 +53,83 @@ static double clamp_value(double value, double minimum, double maximum)
     return value;
 }
 
+/* Query the platform's window inset through NativeActivity's existing JVM.
+ * No application Java classes, DEX, IME, or Java renderer are introduced. */
+static jobject call_platform_object(JNIEnv *env, jobject receiver,
+                                    const char *name, const char *signature)
+{
+    if (!receiver) return NULL;
+    jclass type = (*env)->GetObjectClass(env, receiver);
+    if (!type) return NULL;
+    jmethodID method = (*env)->GetMethodID(env, type, name, signature);
+    (*env)->DeleteLocalRef(env, type);
+    if (!method) return NULL;
+    return (*env)->CallObjectMethod(env, receiver, method);
+}
+
+static int platform_navigation_inset(struct android_app *app)
+{
+    if (!app->activity || !app->activity->vm || !app->activity->clazz)
+        return 0;
+    JavaVM *vm = app->activity->vm;
+    JNIEnv *env = NULL;
+    int detach = 0;
+    const jint state = (*vm)->GetEnv(vm, (void **)&env, JNI_VERSION_1_6);
+    if (state == JNI_EDETACHED) {
+        if ((*vm)->AttachCurrentThread(vm, &env, NULL) != JNI_OK) return 0;
+        detach = 1;
+    } else if (state != JNI_OK) {
+        return 0;
+    }
+
+    jobject window = call_platform_object(env, app->activity->clazz,
+        "getWindow", "()Landroid/view/Window;");
+    jobject view = call_platform_object(env, window,
+        "getDecorView", "()Landroid/view/View;");
+    jobject insets = call_platform_object(env, view,
+        "getRootWindowInsets", "()Landroid/view/WindowInsets;");
+    int bottom = 0;
+    if (insets && !(*env)->ExceptionCheck(env)) {
+        jclass type = (*env)->GetObjectClass(env, insets);
+        if (type) {
+            /* API 20+, including Android 14 C67 and API 35 emulator. */
+            jmethodID method = (*env)->GetMethodID(env, type,
+                "getSystemWindowInsetBottom", "()I");
+            if (method) bottom = (*env)->CallIntMethod(env, insets, method);
+            (*env)->DeleteLocalRef(env, type);
+        }
+    }
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionClear(env);
+        bottom = 0;
+    }
+    if (insets) (*env)->DeleteLocalRef(env, insets);
+    if (view) (*env)->DeleteLocalRef(env, view);
+    if (window) (*env)->DeleteLocalRef(env, window);
+    if (detach) (*vm)->DetachCurrentThread(vm);
+    return bottom;
+}
+
+static void refresh_editor_inset(struct android_app *app, int height)
+{
+    ave_engine *engine = (ave_engine *)app->userData;
+    int bottom = platform_navigation_inset(app);
+    /* Native glue also reports the visible content rectangle when available. */
+    if (app->contentRect.bottom > height / 2 &&
+        app->contentRect.bottom <= height) {
+        const int excluded = height - app->contentRect.bottom;
+        if (excluded > bottom) bottom = excluded;
+    }
+    if (bottom < 0 || bottom > height / 3) bottom = 0;
+    engine->editor.bottom_inset = bottom;
+}
+
 static void select_preset(ave_engine *engine, size_t index)
 {
     if (ave_native_load_preset(index, &engine->preset)) {
         engine->preset_index = index;
+        engine->custom = 0;
+        engine->render_dirty = 1;
         engine->redraw = 1;
         AVE_LOG("preset=%zu name=%s", index, engine->preset.name);
     }
@@ -84,7 +166,8 @@ static int32_t input_event(struct android_app *app, AInputEvent *event)
         return 1;
     }
 
-    if (action == AMOTION_EVENT_ACTION_MOVE && pointers >= 2) {
+    if (action == AMOTION_EVENT_ACTION_MOVE && pointers >= 2 &&
+        !engine->editor.open) {
         const float x2 = AMotionEvent_getX(event, 1);
         const float y2 = AMotionEvent_getY(event, 1);
         const float distance = hypotf(x2 - x, y2 - y);
@@ -93,6 +176,7 @@ static int32_t input_event(struct android_app *app, AInputEvent *event)
                 engine->zoom * (double)distance / (double)engine->last_distance,
                 0.5, 4.0);
             engine->redraw = 1;
+            engine->render_dirty = 1;
         }
         engine->fingers = 2;
         engine->used_pinch = 1;
@@ -101,7 +185,8 @@ static int32_t input_event(struct android_app *app, AInputEvent *event)
     }
 
     if (action == AMOTION_EVENT_ACTION_MOVE &&
-        pointers == 1 && engine->fingers == 1 && !engine->used_pinch) {
+        pointers == 1 && engine->fingers == 1 && !engine->used_pinch &&
+        !engine->editor.open) {
         const float dx = x - engine->last_x;
         const float dy = y - engine->last_y;
         if (app->window != NULL) {
@@ -114,6 +199,7 @@ static int32_t input_event(struct android_app *app, AInputEvent *event)
                     engine->pitch + 3.141592653589793 * (double)dy / smaller,
                     -1.57, 1.57);
                 engine->redraw = 1;
+                engine->render_dirty = 1;
             }
         }
         engine->last_x = x;
@@ -129,9 +215,41 @@ static int32_t input_event(struct android_app *app, AInputEvent *event)
 
     if (action == AMOTION_EVENT_ACTION_UP) {
         const float distance = hypotf(x - engine->start_x, y - engine->start_y);
-        if (engine->fingers == 1 && !engine->used_pinch && distance < 12.0f) {
-            select_preset(engine,
-                (engine->preset_index + 1) % ave_native_preset_count());
+        if (engine->fingers == 1 && !engine->used_pinch && distance < 12.0f &&
+            app->window != NULL) {
+            const int32_t width = ANativeWindow_getWidth(app->window);
+            const int32_t height = ANativeWindow_getHeight(app->window);
+            const int button_width = width / 5 > 80 ? width / 5 : 80;
+            const int edit_button = y < 48 && x >= width - button_width;
+            if (edit_button) refresh_editor_inset(app, height);
+            const int result = ave_editor_touch(&engine->editor,
+                (int)x, (int)y, width, height);
+            if (edit_button && engine->editor.open) {
+                const int row_height = width * 2 / 15 < 48 ? 48 :
+                    (width * 2 / 15 > height / 7 ? height / 7 : width * 2 / 15);
+                AVE_LOG("editor open width=%d height=%d bottom_inset=%d row_height=%d",
+                    width, height, engine->editor.bottom_inset, row_height);
+            }
+            if (result == 2) {
+                if (ave_formula_compile(engine->editor.input, &engine->formula,
+                        engine->editor.error, sizeof engine->editor.error)) {
+                    engine->custom = 1;
+                    engine->editor.open = false;
+                    engine->render_dirty = 1;
+                    AVE_LOG("formula accepted=%s terms=%zu",
+                        engine->editor.input,
+                        engine->formula.surface.surface.term_count);
+                } else {
+                    AVE_LOG_ERROR("formula rejected=%s reason=%s",
+                        engine->editor.input, engine->editor.error);
+                }
+                engine->redraw = 1;
+            } else if (result != 0) {
+                engine->redraw = 1;
+            } else {
+                select_preset(engine,
+                    (engine->preset_index + 1) % ave_native_preset_count());
+            }
         }
         engine->fingers = 0;
         return 1;
@@ -161,6 +279,10 @@ static void app_command(struct android_app *app, int32_t command)
         case APP_CMD_WINDOW_REDRAW_NEEDED:
         case APP_CMD_GAINED_FOCUS:
         case APP_CMD_CONFIG_CHANGED:
+        case APP_CMD_CONTENT_RECT_CHANGED:
+            if (app->window != NULL) {
+                refresh_editor_inset(app, ANativeWindow_getHeight(app->window));
+            }
             engine->redraw = 1;
             break;
         default:
@@ -183,32 +305,43 @@ static void draw_frame(struct android_app *app, ave_engine *engine)
 
     const size_t side = square < AVE_MAX_RENDER_SIDE ?
         (size_t)square : AVE_MAX_RENDER_SIDE;
-    uint32_t *pixels = (uint32_t *)malloc(side * side * sizeof(*pixels));
+    if (engine->cached_side != side || engine->cached_pixels == NULL) {
+        free(engine->cached_pixels);
+        engine->cached_pixels = (uint32_t *)malloc(side * side * sizeof(uint32_t));
+        engine->cached_side = engine->cached_pixels == NULL ? 0 : side;
+        engine->render_dirty = 1;
+    }
+    uint32_t *pixels = engine->cached_pixels;
     if (pixels == NULL) {
         AVE_LOG_ERROR("render buffer allocation failed");
         return;
     }
 
-    const surfer_scene scene = surfer_default_scene(&engine->preset.surface);
-    if (!surfer_render_orthographic(&scene, side, side, 2.15,
-            engine->yaw, engine->pitch, engine->zoom, pixels)) {
-        AVE_LOG_ERROR("SURFER renderer rejected request");
-        free(pixels);
-        return;
+    if (engine->render_dirty) {
+        const surfer_prepared_surface *surface = engine->custom ?
+            &engine->formula.surface : &engine->preset.surface;
+        const surfer_scene scene = surfer_default_scene(surface);
+        if (!surfer_render_orthographic(&scene, side, side, 2.15,
+                engine->yaw, engine->pitch, engine->zoom, pixels)) {
+            AVE_LOG_ERROR("SURFER renderer rejected request");
+            return;
+        }
+        const uint32_t background = surfer_color_to_argb(scene.background);
+        size_t foreground = 0;
+        for (size_t k = 0; k < side * side; ++k)
+            if (pixels[k] != background) ++foreground;
+        if (engine->custom)
+            AVE_LOG("frame custom size=%zux%zu foreground=%zu",
+                side, side, foreground);
+        else
+            AVE_LOG("frame preset=%zu size=%zux%zu foreground=%zu",
+                engine->preset_index, side, side, foreground);
+        engine->render_dirty = 0;
     }
-
-    const uint32_t background = surfer_color_to_argb(scene.background);
-    size_t foreground = 0;
-    for (size_t k = 0; k < side * side; ++k) {
-        if (pixels[k] != background) ++foreground;
-    }
-    AVE_LOG("frame preset=%zu size=%zux%zu foreground=%zu",
-        engine->preset_index, side, side, foreground);
 
     ANativeWindow_Buffer buffer;
     if (ANativeWindow_lock(window, &buffer, NULL) != 0) {
         AVE_LOG_ERROR("unable to lock native window");
-        free(pixels);
         return;
     }
 
@@ -247,8 +380,8 @@ static void draw_frame(struct android_app *app, ave_engine *engine)
         AVE_LOG_ERROR("unexpected window format=%d", buffer.format);
     }
 
+    ave_editor_draw(&buffer, &engine->editor);
     ANativeWindow_unlockAndPost(window);
-    free(pixels);
 }
 
 void android_main(struct android_app *app)
@@ -275,5 +408,6 @@ void android_main(struct android_app *app)
             draw_frame(app, &engine);
         }
     }
+    free(engine.cached_pixels);
     AVE_LOG("native activity finished");
 }

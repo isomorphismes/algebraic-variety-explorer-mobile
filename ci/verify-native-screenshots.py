@@ -77,15 +77,24 @@ def decode(raw):
     return width, height, output
 
 
-def check(before_png, after_png):
+def check(before_png, after_png, editor_text=False):
     width, height, before = decode(before_png)
     width2, height2, after = decode(after_png)
     if (width, height) != (width2, height2):
         raise ValueError("screenshot dimensions differ")
     colors_a, colors_b, changed = set(), set(), 0
-    # Cropped interior excludes status bars and the preset index strip.
-    x0, x1 = width // 10, width * 9 // 10
-    y0, y1 = height * 3 // 10, height * 7 // 10
+    if editor_text:
+        # Editor text is at y≈80–120. The surface-region oracle below
+        # deliberately ignores that region; it cannot check typed input.
+        x0, x1 = width // 25, width * 24 // 25
+        y0, y1 = height // 10, height // 4
+        min_colors, min_changed = 2, 80
+    else:
+        # Preserve the original seven-preset geometric-image oracle.
+        x0, x1 = width // 10, width * 9 // 10
+        y0, y1 = height * 3 // 10, height * 7 // 10
+        min_colors = 32
+        min_changed = max(500, (x1 - x0) * (y1 - y0) // 40)
     pixels = (x1 - x0) * (y1 - y0)
     for y in range(y0, y1):
         for x in range(x0, x1):
@@ -94,11 +103,15 @@ def check(before_png, after_png):
             colors_a.add(a)
             colors_b.add(b)
             changed += a != b
-    if min(len(colors_a), len(colors_b)) < 32:
-        raise ValueError("flat or blank interior screenshot")
-    if changed < max(500, pixels // 40):
-        raise ValueError(f"unchanged geometry: {changed}/{pixels} interior pixels")
-    print(f"native screenshot PASS {width}x{height}, colors={len(colors_a)}/{len(colors_b)}, changed={changed}/{pixels}")
+    if min(len(colors_a), len(colors_b)) < min_colors:
+        raise ValueError("flat or blank target region")
+    if changed < min_changed:
+        raise ValueError(
+            f"unchanged {'editor text' if editor_text else 'geometry'}: "
+            f"{changed}/{pixels} target pixels"
+        )
+    scope = "editor text" if editor_text else "native screenshot"
+    print(f"{scope} PASS {width}x{height}, colors={len(colors_a)}/{len(colors_b)}, changed={changed}/{pixels}")
 
 
 def synthetic(width, height, pixel):
@@ -119,6 +132,26 @@ def self_test():
     strip = synthetic(360, 640, lambda x, y: bytes(((x+y+(20 if y<16 else 0)) % 256, x % 256, y % 256)))
     flat = synthetic(360, 640, lambda x, y: b"\x20\x20\x20")
     check(gradient, altered)
+    # Text mutations must pass the editor-text oracle but not the geometric
+    # surface oracle. Reject unchanged editor text with a negative control.
+    text_changed = synthetic(
+        360, 640,
+        lambda x, y: bytes((((x + y + (80 if 76 <= y < 112 and 12 <= x < 210 else 0)) % 256),
+                            x % 256, y % 256))
+    )
+    check(gradient, text_changed, editor_text=True)
+    try:
+        check(gradient, text_changed)
+    except ValueError:
+        print("rejected mutant: text-only change is not new geometry")
+    else:
+        raise AssertionError("text-only change passed geometry oracle")
+    try:
+        check(gradient, gradient, editor_text=True)
+    except ValueError:
+        print("rejected mutant: unchanged editor text")
+    else:
+        raise AssertionError("unchanged editor text passed")
     for a, b, name in ((gradient, gradient, "identical"), (gradient, strip, "indicator-only"), (flat, altered, "blank")):
         try:
             check(a, b)
@@ -134,11 +167,14 @@ def main():
     parser.add_argument("before", nargs="?")
     parser.add_argument("after", nargs="?")
     parser.add_argument("--self-test", action="store_true")
+    parser.add_argument("--editor-text", action="store_true",
+                        help="compare the editor's formula text strip, not the surface")
     args = parser.parse_args()
     if args.self_test:
         self_test()
     elif args.before and args.after:
-        check(pathlib.Path(args.before).read_bytes(), pathlib.Path(args.after).read_bytes())
+        check(pathlib.Path(args.before).read_bytes(),
+              pathlib.Path(args.after).read_bytes(), editor_text=args.editor_text)
     else:
         parser.error("two screenshots are required")
 

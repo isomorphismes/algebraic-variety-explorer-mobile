@@ -82,7 +82,8 @@ cflags=(--sysroot="$sysroot"
   -D__ANDROID__ -D__ANDROID_API__="$api"
   -DBIONIC_IOCTL_NO_SIGNEDNESS_OVERLOAD
   -O2 -fPIC -fno-fast-math -ffp-contract=off)
-for src in native/surfer_raytracer.c native/android/presets.c native/android/activity.c; do
+for src in native/surfer_raytracer.c native/android/presets.c \
+           native/android/formula.c native/android/editor.c native/android/activity.c; do
   "$ICK" "${flags[@]}" "${cflags[@]}" -std=c17 \
     -Wall -Wextra -Werror -c "$root/$src" \
     -o "$work/obj/$(basename "$src" .c).o"
