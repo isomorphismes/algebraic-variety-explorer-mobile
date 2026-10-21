@@ -6,6 +6,7 @@
 
 typedef struct {
     bool open;
+    int bottom_inset; /* System navigation inset in native-window pixels. */
     char input[AVE_FORMULA_MAX_SOURCE + 1];
     size_t length;
     char error[96];

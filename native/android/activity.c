@@ -15,6 +15,7 @@
 #include <android/native_window.h>
 #include <android/window.h>
 #include <android_native_app_glue.h>
+#include <jni.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -50,6 +51,77 @@ static double clamp_value(double value, double minimum, double maximum)
     if (value < minimum) return minimum;
     if (value > maximum) return maximum;
     return value;
+}
+
+/* Query the platform's window inset through NativeActivity's existing JVM.
+ * No application Java classes, DEX, IME, or Java renderer are introduced. */
+static jobject call_platform_object(JNIEnv *env, jobject receiver,
+                                    const char *name, const char *signature)
+{
+    if (!receiver) return NULL;
+    jclass type = (*env)->GetObjectClass(env, receiver);
+    if (!type) return NULL;
+    jmethodID method = (*env)->GetMethodID(env, type, name, signature);
+    (*env)->DeleteLocalRef(env, type);
+    if (!method) return NULL;
+    return (*env)->CallObjectMethod(env, receiver, method);
+}
+
+static int platform_navigation_inset(struct android_app *app)
+{
+    if (!app->activity || !app->activity->vm || !app->activity->clazz)
+        return 0;
+    JavaVM *vm = app->activity->vm;
+    JNIEnv *env = NULL;
+    int detach = 0;
+    const jint state = (*vm)->GetEnv(vm, (void **)&env, JNI_VERSION_1_6);
+    if (state == JNI_EDETACHED) {
+        if ((*vm)->AttachCurrentThread(vm, &env, NULL) != JNI_OK) return 0;
+        detach = 1;
+    } else if (state != JNI_OK) {
+        return 0;
+    }
+
+    jobject window = call_platform_object(env, app->activity->clazz,
+        "getWindow", "()Landroid/view/Window;");
+    jobject view = call_platform_object(env, window,
+        "getDecorView", "()Landroid/view/View;");
+    jobject insets = call_platform_object(env, view,
+        "getRootWindowInsets", "()Landroid/view/WindowInsets;");
+    int bottom = 0;
+    if (insets && !(*env)->ExceptionCheck(env)) {
+        jclass type = (*env)->GetObjectClass(env, insets);
+        if (type) {
+            /* API 20+, including Android 14 C67 and API 35 emulator. */
+            jmethodID method = (*env)->GetMethodID(env, type,
+                "getSystemWindowInsetBottom", "()I");
+            if (method) bottom = (*env)->CallIntMethod(env, insets, method);
+            (*env)->DeleteLocalRef(env, type);
+        }
+    }
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionClear(env);
+        bottom = 0;
+    }
+    if (insets) (*env)->DeleteLocalRef(env, insets);
+    if (view) (*env)->DeleteLocalRef(env, view);
+    if (window) (*env)->DeleteLocalRef(env, window);
+    if (detach) (*vm)->DetachCurrentThread(vm);
+    return bottom;
+}
+
+static void refresh_editor_inset(struct android_app *app, int height)
+{
+    ave_engine *engine = (ave_engine *)app->userData;
+    int bottom = platform_navigation_inset(app);
+    /* Native glue also reports the visible content rectangle when available. */
+    if (app->contentRect.bottom > height / 2 &&
+        app->contentRect.bottom <= height) {
+        const int excluded = height - app->contentRect.bottom;
+        if (excluded > bottom) bottom = excluded;
+    }
+    if (bottom < 0 || bottom > height / 3) bottom = 0;
+    engine->editor.bottom_inset = bottom;
 }
 
 static void select_preset(ave_engine *engine, size_t index)
@@ -147,8 +219,17 @@ static int32_t input_event(struct android_app *app, AInputEvent *event)
             app->window != NULL) {
             const int32_t width = ANativeWindow_getWidth(app->window);
             const int32_t height = ANativeWindow_getHeight(app->window);
+            const int button_width = width / 5 > 80 ? width / 5 : 80;
+            const int edit_button = y < 48 && x >= width - button_width;
+            if (edit_button) refresh_editor_inset(app, height);
             const int result = ave_editor_touch(&engine->editor,
                 (int)x, (int)y, width, height);
+            if (edit_button && engine->editor.open) {
+                const int row_height = width * 2 / 15 < 48 ? 48 :
+                    (width * 2 / 15 > height / 7 ? height / 7 : width * 2 / 15);
+                AVE_LOG("editor open width=%d height=%d bottom_inset=%d row_height=%d",
+                    width, height, engine->editor.bottom_inset, row_height);
+            }
             if (result == 2) {
                 if (ave_formula_compile(engine->editor.input, &engine->formula,
                         engine->editor.error, sizeof engine->editor.error)) {
@@ -198,6 +279,10 @@ static void app_command(struct android_app *app, int32_t command)
         case APP_CMD_WINDOW_REDRAW_NEEDED:
         case APP_CMD_GAINED_FOCUS:
         case APP_CMD_CONFIG_CHANGED:
+        case APP_CMD_CONTENT_RECT_CHANGED:
+            if (app->window != NULL) {
+                refresh_editor_inset(app, ANativeWindow_getHeight(app->window));
+            }
             engine->redraw = 1;
             break;
         default:

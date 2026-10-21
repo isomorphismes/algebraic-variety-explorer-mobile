@@ -47,6 +47,13 @@ static int keypad_row_height(int width, int height)
     if (pixels > height / 7) pixels = height / 7;
     return pixels;
 }
+/* Draw and hit-test against the same safe bottom, never behind Android's
+ * three-button navigation bar. API 35 may extend our window under that bar. */
+static int keypad_bottom(const ave_formula_editor *editor, int height)
+{
+    const int inset = editor->bottom_inset;
+    return height - (inset >= 0 && inset <= height / 3 ? inset : 0);
+}
 static int text_scale(const ANativeWindow_Buffer *b)
 {
     const int scale = (b->width + 179) / 180;
@@ -103,8 +110,9 @@ int ave_editor_touch(ave_formula_editor *editor,
     }
     if (!editor->open) return 0;
     const int row_height = keypad_row_height(width, height);
-    const int y0 = height - row_height * 4;
-    if (y >= y0 && y < height && x >= 0 && x < width) {
+    const int bottom = keypad_bottom(editor, height);
+    const int y0 = bottom - row_height * 4;
+    if (y >= y0 && y < bottom && x >= 0 && x < width) {
         const size_t row = (size_t)(y - y0) / (size_t)row_height;
         const size_t column = (size_t)x * 6 / (size_t)width;
         const char *key = keypad[row][column];
@@ -163,7 +171,7 @@ void ave_editor_draw(ANativeWindow_Buffer *b, const ave_formula_editor *editor)
     else letters(b, 10, 87, "F=0", 3, 129, 187, 209);
 
     const int row_height = keypad_row_height(b->width, b->height);
-    const int y0 = b->height - row_height * 4;
+    const int y0 = keypad_bottom(editor, b->height) - row_height * 4;
     for (int row = 0; row < 4; ++row) {
         for (int col = 0; col < 6; ++col) {
             const int x0 = col * b->width / 6;
