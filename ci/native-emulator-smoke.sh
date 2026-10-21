@@ -143,7 +143,9 @@ for key in x '^' 4 - x '*' y '^' 3 - z '^' 4 + z = 0; do
     tap_key "$key"
 done
 adb exec-out screencap -p > "$evidence/editor-quartic-typed.png"
-python3 ci/verify-native-screenshots.py \
+# Formula typing does not alter the underlying surface until OK; compare
+# the actual formula strip instead of applying the preset geometry oracle.
+python3 ci/verify-native-screenshots.py --editor-text \
     "$evidence/editor-open.png" "$evidence/editor-quartic-typed.png" \
     | tee -a "$evidence/image-verdict.txt"
 tap_key OK
