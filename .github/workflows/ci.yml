@@ -17,7 +17,7 @@ concurrency:
 jobs:
   source-and-renderer:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 120
 
     steps:
       - name: Check out exact source
@@ -42,10 +42,13 @@ jobs:
       - name: Run parser and ray-tracer tests
         run: bash ./build.sh test
 
+      - name: Qualify the existing owned C frontend for host sanitizers
+        id: host-ick
+        uses: isomorphisms/ai-ci/ick-host@903b2cb27ea572c9c6cb2ffa9f39e0fbf06ec9f8
       - name: Run prepared-surface C ray-tracer tests
         run: |
           mkdir -p .build
-          cc -std=c17 -Wall -Wextra -Werror -pedantic -O1 -g \
+          "${{ steps.host-ick.outputs.compiler }}" ${{ steps.host-ick.outputs.link_flags }} -std=c17 -Wall -Wextra -Werror -pedantic -O1 -g \
             -fno-fast-math -ffp-contract=off \
             -fsanitize=address,undefined -fno-omit-frame-pointer \
             native/surfer_raytracer.c native/surfer_raytracer_test.c \

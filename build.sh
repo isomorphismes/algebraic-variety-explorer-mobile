@@ -208,6 +208,7 @@ stage_android_resources() {
     cp "$PROJECT_DIR/values.colors.xml" "$staged/values/colors.xml"
     cp "$PROJECT_DIR/values.strings.xml" "$staged/values/strings.xml"
     cp "$PROJECT_DIR/values.styles.xml" "$staged/values/styles.xml"
+    cp -R "$PROJECT_DIR/native/android/res/." "$staged/"
 }
 
 list_application_sources() {
