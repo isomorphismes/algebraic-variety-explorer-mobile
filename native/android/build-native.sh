@@ -74,6 +74,7 @@ work="$(mktemp -d "$out/build.XXXXXXXX")"
 trap 'rm -rf -- "$work"' EXIT
 mkdir -p "$work/obj" "$work/res/values" "$work/lib/$abi"
 cp "$root/native/android/values.strings.xml" "$work/res/values/strings.xml"
+cp -R "$root/native/android/res/." "$work/res/"
 cflags=(--sysroot="$sysroot"
   -isystem "$sysroot/usr/include"
   -isystem "$sysroot/usr/include/$target_include"
