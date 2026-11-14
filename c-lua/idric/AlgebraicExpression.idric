@@ -1,0 +1,232 @@
+module AlgebraicExpression
+
+import Data.Text
+
+-- Derived from Christian Stussak's AlgebraicExpression.g (2008), Apache-2.0.
+-- Continues the token-only parser retained on C+Lua; see the attempt record.
+
+public export
+data Token
+  = Plus | Minus | Multiply | Divide | Power | Open | Close
+  | Decimal Text | Floating Text | Identifier Text
+
+public export
+data Expression
+  = DecimalValue Text
+  | FloatingValue Text
+  | NamedValue Text
+  | Sum Expression Expression
+  | Difference Expression Expression
+  | Product Expression Expression
+  | Quotient Expression Expression
+  | Raised Expression Expression
+  | Negative Expression
+  | Called Text Expression
+  | Grouped Expression
+
+digit : Char → Bool
+digit character = character >= '0' && character <= '9'
+
+letter : Char → Bool
+letter character = (character >= 'A' && character <= 'Z') ||
+                   (character >= 'a' && character <= 'z') || character ≟ '_'
+
+whitespace : Char → Bool
+whitespace character = character ≟ ' ' || character ≟ '\t' ||
+                       character ≟ '\r' || character ≟ '\n' || character ≟ '\f'
+
+take_characters : (Char → Bool) → List Char → (List Char, List Char)
+take_characters predicate [] = ([], [])
+take_characters predicate (character :: remaining) =
+  if predicate character
+    then let (taken, tail) = take_characters predicate remaining in
+         (character :: taken, tail)
+    else ([], character :: remaining)
+
+exponent_digits : List Char → Either Text (List Char, List Char)
+exponent_digits characters =
+  let (digits, remaining) = take_characters digit characters in
+  case digits of
+    [] ⇒ Left "expected digits in scientific exponent"
+    _ ⇒ Right (digits, remaining)
+
+exponent : List Char → Either Text (List Char, List Char)
+exponent ('+' :: remaining) = do
+  (digits, tail) ← exponent_digits remaining
+  Right ('+' :: digits, tail)
+exponent ('-' :: remaining) = do
+  (digits, tail) ← exponent_digits remaining
+  Right ('-' :: digits, tail)
+exponent characters = exponent_digits characters
+
+finish_number : List Char → Bool → List Char →
+                Either Text (Token, List Char)
+finish_number digits floating ('e' :: remaining) = do
+  (power, tail) ← exponent remaining
+  Right (Floating (pack (digits ++ ('e' :: power))), tail)
+finish_number digits floating ('E' :: remaining) = do
+  (power, tail) ← exponent remaining
+  Right (Floating (pack (digits ++ ('E' :: power))), tail)
+finish_number digits True remaining = Right (Floating (pack digits), remaining)
+finish_number digits False remaining =
+  -- The original decimal rule permits only a single leading zero. A sequence
+  -- such as 01 must not acquire a new meaning during migration.
+  case digits of
+    '0' :: _ :: _ ⇒ Left "leading zero in decimal literal"
+    _ ⇒ Right (Decimal (pack digits), remaining)
+
+number : List Char → Either Text (Token, List Char)
+number ('.' :: remaining) =
+  let (fraction, tail) = take_characters digit remaining in
+  case fraction of
+    [] ⇒ Left "expected digits after decimal point"
+    _ ⇒ finish_number ('.' :: fraction) True tail
+number characters =
+  let (whole, remaining) = take_characters digit characters in
+  case remaining of
+    '.' :: tail ⇒
+      let (fraction, rest) = take_characters digit tail in
+      finish_number (whole ++ ('.' :: fraction)) True rest
+    _ ⇒ finish_number whole False remaining
+
+-- The budget decreases at every token. Scanning a token only consumes source
+-- characters, but that relationship is not available to the totality checker.
+lex_characters : Number → List Char → Either Text (List Token)
+lex_characters budget [] = Right []
+lex_characters Z (_ :: _) = Left "formula token budget exhausted"
+lex_characters (S budget) (character :: remaining) =
+  if whitespace character then lex_characters budget remaining else
+  if digit character || character ≟ '.' then do
+    (token, tail) ← number (character :: remaining)
+    tokens ← lex_characters budget tail
+    Right (token :: tokens)
+  else if letter character then do
+    let (name, tail) = take_characters (\next ⇒ letter next || digit next) remaining
+    tokens ← lex_characters budget tail
+    Right (Identifier (pack (character :: name)) :: tokens)
+  else do
+    token ← case character of
+      '+' ⇒ Right Plus
+      '-' ⇒ Right Minus
+      '*' ⇒ Right Multiply
+      '/' ⇒ Right Divide
+      '^' ⇒ Right Power
+      '(' ⇒ Right Open
+      ')' ⇒ Right Close
+      _ ⇒ Left ("unexpected character: " ++ singleton character)
+    tokens ← lex_characters budget remaining
+    Right (token :: tokens)
+
+export
+lex_formula : Text → Either Text (List Token)
+lex_formula source = let characters = unpack source in
+  lex_characters (length characters) characters
+
+public export
+record Parsed where
+  constructor ParsedExpression
+  expression : Expression
+  remaining : List Token
+
+-- Each mutually recursive parser step consumes budget. Eight steps per token
+-- cover all precedence layers, a function call and the closing-parenthesis
+-- check; multiplication and addition tails also consume a step per token.
+mutual
+  primary : Number → List Token → Either Text Parsed
+  primary Z _ = Left "formula nesting budget exhausted"
+  primary (S budget) (Decimal text :: remaining) =
+    Right (ParsedExpression (DecimalValue text) remaining)
+  primary (S budget) (Floating text :: remaining) =
+    Right (ParsedExpression (FloatingValue text) remaining)
+  primary (S budget) (Identifier name :: Open :: remaining) = do
+    parsed ← addition budget remaining
+    case parsed.remaining of
+      Close :: tail ⇒ Right (ParsedExpression (Called name parsed.expression) tail)
+      _ ⇒ Left "expected ')' after function argument"
+  primary (S budget) (Identifier name :: remaining) =
+    Right (ParsedExpression (NamedValue name) remaining)
+  primary (S budget) (Open :: remaining) = do
+    parsed ← addition budget remaining
+    case parsed.remaining of
+      Close :: tail ⇒ Right (ParsedExpression (Grouped parsed.expression) tail)
+      _ ⇒ Left "expected ')'"
+  primary (S budget) _ = Left "expected number, name or '('"
+
+  power : Number → List Token → Either Text Parsed
+  power Z _ = Left "formula nesting budget exhausted"
+  power (S budget) tokens = do
+    parsed ← primary budget tokens
+    case parsed.remaining of
+      Power :: remaining ⇒ do
+        raised ← power budget remaining
+        Right (ParsedExpression (Raised parsed.expression raised.expression) raised.remaining)
+      _ ⇒ Right parsed
+
+  negative : Number → List Token → Either Text Parsed
+  negative Z _ = Left "formula nesting budget exhausted"
+  negative (S budget) (Minus :: remaining) = do
+    parsed ← power budget remaining
+    Right (ParsedExpression (Negative parsed.expression) parsed.remaining)
+  negative (S budget) tokens = power budget tokens
+
+  multiplication_tail : Number → Expression → List Token → Either Text Parsed
+  multiplication_tail Z _ _ = Left "formula nesting budget exhausted"
+  multiplication_tail (S budget) left (Multiply :: remaining) = do
+    right ← negative budget remaining
+    multiplication_tail budget (Product left right.expression) right.remaining
+  multiplication_tail (S budget) left (Divide :: remaining) = do
+    right ← negative budget remaining
+    multiplication_tail budget (Quotient left right.expression) right.remaining
+  multiplication_tail (S budget) left remaining = Right (ParsedExpression left remaining)
+
+  multiplication : Number → List Token → Either Text Parsed
+  multiplication Z _ = Left "formula nesting budget exhausted"
+  multiplication (S budget) tokens = do
+    parsed ← negative budget tokens
+    multiplication_tail budget parsed.expression parsed.remaining
+
+  addition_tail : Number → Expression → List Token → Either Text Parsed
+  addition_tail Z _ _ = Left "formula nesting budget exhausted"
+  addition_tail (S budget) left (Plus :: remaining) = do
+    right ← multiplication budget remaining
+    addition_tail budget (Sum left right.expression) right.remaining
+  addition_tail (S budget) left (Minus :: remaining) = do
+    right ← multiplication budget remaining
+    addition_tail budget (Difference left right.expression) right.remaining
+  addition_tail (S budget) left remaining = Right (ParsedExpression left remaining)
+
+  addition : Number → List Token → Either Text Parsed
+  addition Z _ = Left "formula nesting budget exhausted"
+  addition (S budget) tokens = do
+    parsed ← multiplication budget tokens
+    addition_tail budget parsed.expression parsed.remaining
+
+export
+parse_formula : Text → Either Text Expression
+parse_formula source = do
+  tokens ← lex_formula source
+  parsed ← addition (8 × (S (length tokens))) tokens
+  case parsed.remaining of
+    [] ⇒ Right parsed.expression
+    _ ⇒ Left "unexpected token after expression"
+
+export
+expression_shape : Expression → Text
+expression_shape (DecimalValue text) = "decimal[" ++ text ++ "]"
+expression_shape (FloatingValue text) = "float[" ++ text ++ "]"
+expression_shape (NamedValue name) = "name[" ++ name ++ "]"
+expression_shape (Sum left right) = "add(" ++ expression_shape left ++ "," ++ expression_shape right ++ ")"
+expression_shape (Difference left right) = "sub(" ++ expression_shape left ++ "," ++ expression_shape right ++ ")"
+expression_shape (Product left right) = "mul(" ++ expression_shape left ++ "," ++ expression_shape right ++ ")"
+expression_shape (Quotient left right) = "div(" ++ expression_shape left ++ "," ++ expression_shape right ++ ")"
+expression_shape (Raised left right) = "pow(" ++ expression_shape left ++ "," ++ expression_shape right ++ ")"
+expression_shape (Negative value) = "neg(" ++ expression_shape value ++ ")"
+expression_shape (Called name value) = "call[" ++ name ++ "](" ++ expression_shape value ++ ")"
+expression_shape (Grouped value) = "group(" ++ expression_shape value ++ ")"
+
+%export "dex:formula_shape"
+export
+formula_shape : Text → Text
+formula_shape source = case parse_formula source of
+  Left reason ⇒ "error: " ++ reason
+  Right expression ⇒ expression_shape expression

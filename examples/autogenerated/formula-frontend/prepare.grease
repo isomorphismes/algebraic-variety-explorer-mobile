@@ -1,0 +1,23 @@
+#!/usr/bin/env grease
+if (len(ARGV) !== 3) { echo 'usage: grease prepare.grease FRONTEND ANDROID_NDK ORACLES' >&2; exit 2 }
+var frontend = ARGV[0]
+var android = ARGV[1]
+var oracles = ARGV[2]
+for path in (ARGV) {
+  if (path[0] !== '/') { echo 'FAIL absolute path required' >&2; exit 2 }
+}
+setglobal ENV.CHEZ = "$frontend/_/.tools/bin/scheme"
+setglobal ENV.PATH = "$frontend/_/.tools/bin:" ++ ENV.PATH
+setglobal ENV.IDRIS2_PREFIX = "$frontend/_/bootstrap-build"
+setglobal ENV.IDRIS2_PACKAGE_PATH = "$frontend/_/bootstrap-build/idris2-0.8.0"
+var compiler = "$frontend/_/build/exec/idris2"
+make -C "$android/dex/idric" driver IDRIC="$compiler"
+mkdir -p "$oracles"
+curl --fail --location --retry 3 \
+  https://github.com/baksmali/smali/releases/download/3.0.10/baksmali-3.0.10-fat-release.jar \
+  -o "$oracles/baksmali.jar"
+curl --fail --location --retry 3 \
+  https://github.com/baksmali/smali/releases/download/3.0.10/smali-3.0.10-fat-release.jar \
+  -o "$oracles/smali.jar"
+printf '%s  %s\n' 37ae4a41a8886e15c20b8362fa4250f96bbdb55e1a608199ad8b5dff068b588f "$oracles/baksmali.jar" | sha256sum -c -
+printf '%s  %s\n' 32fa0e88a6c397b3922201adf5f3e534fbaed5a663c71d0c558c3ddce0af844a "$oracles/smali.jar" | sha256sum -c -

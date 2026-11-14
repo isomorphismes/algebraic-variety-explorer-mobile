@@ -1,0 +1,17 @@
+module CoefficientCheck
+
+import Data.Text
+import System
+
+-- Explicit inherited binary64 boundary: matches the original jsurf Double
+-- coefficients. Float16 defaulting would change the program being translated.
+coefficient : Double
+coefficient = 0.4
+
+main : IO ()
+main = do
+  arguments ← getArgs
+  let supplied = case arguments of
+        _ :: value :: _ ⇒ value
+        _ ⇒ "0.1"
+  putStrLn (show (coefficient + cast supplied))
