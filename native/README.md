@@ -92,8 +92,8 @@ do not qualify the full FINAL preset corpus or general image equivalence.
 
 ## Error and ownership contract
 
-Public operations return `SURFER_OK`, `SURFER_MISS`, `SURFER_INVALID_INPUT` or
-`SURFER_OUT_OF_MEMORY`. Clip/root misses are successful geometric misses;
+Public operations return `SURFER_OK`, `SURFER_MISS`, `SURFER_INVALID_INPUT`,
+`SURFER_OUT_OF_MEMORY` or `SURFER_CANCELLED`. Clip/root misses are successful geometric misses;
 image success is `SURFER_OK` even when all pixels are background. Ray traces
 carry one authoritative status rather than a separate hit boolean. Root and
 clip outputs are written only on success. Rendering takes an explicit pixel
