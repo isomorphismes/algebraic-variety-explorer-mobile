@@ -15,9 +15,15 @@ _Static_assert(sizeof(jdouble) == sizeof(double) && DBL_MANT_DIG == 53 &&
     DBL_MAX_EXP == 1024, "JNI and native binary64 required");
 
 #ifdef SURFER_SURFACE_JNI_TESTING
+#ifndef SURFER_SURFACE_STORE_TESTING
+#error "JNI store allocation controls require the test-only store API"
+#endif
 static _Thread_local size_t test_fail_at = SIZE_MAX;
 static _Thread_local size_t test_attempts;
 static _Thread_local size_t test_live_allocations;
+static _Thread_local size_t test_store_fail_at = SIZE_MAX;
+static _Thread_local size_t test_store_attempts;
+static _Thread_local int64_t test_copy_calls;
 
 int surfer_surface_jni_test_reset_allocator(size_t fail_at)
 {
@@ -29,6 +35,16 @@ int surfer_surface_jni_test_reset_allocator(size_t fail_at)
 
 size_t surfer_surface_jni_test_allocation_attempts(void) { return test_attempts; }
 size_t surfer_surface_jni_test_live_allocations(void) { return test_live_allocations; }
+
+int surfer_surface_jni_test_reset_store_allocator(size_t fail_at)
+{
+    test_store_fail_at = fail_at;
+    test_store_attempts = 0;
+    return 1;
+}
+
+size_t surfer_surface_jni_test_store_allocation_attempts(void) { return test_store_attempts; }
+jlong surfer_surface_jni_test_copy_calls(void) { return test_copy_calls; }
 #endif
 
 static void *allocate_temporary(size_t bytes)
@@ -70,6 +86,10 @@ static jlong copy_arrays(
     jint offset0, jint offset1, jint offset2, jint offset3, jint offset4,
     jdoubleArray coefficients, jintArray xyz)
 {
+#ifdef SURFER_SURFACE_JNI_TESTING
+    if (test_copy_calls == INT64_MAX) abort();
+    test_copy_calls++;
+#endif
     if ((*environment)->ExceptionCheck(environment)) return 0;
     if (!array_type(environment, coefficients, "[D") ||
         !array_type(environment, xyz, "[I")) {
@@ -113,6 +133,19 @@ static jlong copy_arrays(
         }
     }
     surfer_surface_handle handle = 0;
+#ifdef SURFER_SURFACE_JNI_TESTING
+    /* This per-invocation probe is never retained. The actual JNI path still
+     * performs the complete store copy, validation and atomic publication. */
+    surfer_surface_allocation_probe probe = {test_store_fail_at, 0};
+    const surfer_status status = replacing ?
+        surfer_surface_test_replace_copied(previous, version, family_degree, offsets, 5,
+            coefficient_copy, (size_t)coefficient_count,
+            xyz_copy, (size_t)xyz_count, &handle, &probe) :
+        surfer_surface_test_create_copied(version, family_degree, offsets, 5,
+            coefficient_copy, (size_t)coefficient_count,
+            xyz_copy, (size_t)xyz_count, &handle, &probe);
+    test_store_attempts = probe.attempts;
+#else
     const surfer_status status = replacing ?
         surfer_surface_replace_copied(previous, version, family_degree, offsets, 5,
             coefficient_copy, (size_t)coefficient_count,
@@ -120,6 +153,7 @@ static jlong copy_arrays(
         surfer_surface_create_copied(version, family_degree, offsets, 5,
             coefficient_copy, (size_t)coefficient_count,
             xyz_copy, (size_t)xyz_count, &handle);
+#endif
     free_temporary(xyz_copy);
     free_temporary(coefficient_copy);
     return status == SURFER_OK ? handle : -(jlong)status;

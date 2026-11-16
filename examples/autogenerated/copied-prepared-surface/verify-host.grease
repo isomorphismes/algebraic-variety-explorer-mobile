@@ -1,4 +1,5 @@
 #!/usr/bin/env grease
+set -eu -o pipefail
 if (len(ARGV) !== 3) { echo 'usage: grease verify-host.grease EXPLORER QUALIFIED_ICK FRESH_OUTPUT' >&2; exit 2 }
 var repository = ARGV[0]
 var compiler = ARGV[1]

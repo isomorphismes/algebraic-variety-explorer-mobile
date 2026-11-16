@@ -16,6 +16,9 @@ JNIEXPORT jint JNICALL Java_Idric_Generated_releasePreparedSurface(JNIEnv *, jcl
 int surfer_surface_jni_test_reset_allocator(size_t fail_at);
 size_t surfer_surface_jni_test_allocation_attempts(void);
 size_t surfer_surface_jni_test_live_allocations(void);
+int surfer_surface_jni_test_reset_store_allocator(size_t fail_at);
+size_t surfer_surface_jni_test_store_allocation_attempts(void);
+jlong surfer_surface_jni_test_copy_calls(void);
 #endif
 
 #endif

@@ -62,11 +62,15 @@ retained pinned runtime with its relocated Python/source paths. The archived
 launcher itself first failed with exit127 because it retained CI absolute
 paths; the restored invocation used the same runtime, not another parser.
 
-Strict ICK host compilation and execution: PENDING. The retained qualified
-compiler bundle exceeded the provider's download limit; no `cc`, Clang or other
-compiler was substituted. JNI native compilation/linking and ART execution:
-PENDING. No generated Idriç producer, APK or physical-device result follows
-from observer assembly, independent decode or source review.
+The retained qualified compiler was reconstructed from independently checked
+archive parts after the original combined bundle exceeded the download limit.
+Strict ICK C17 host compilation and ordinary receiver tests now PASS. The same
+ICK-built ASan/UBSan receiver tests PASS with local leak detection explicitly
+disabled. The maintained helper's leak-enabled run is preserved as a failure:
+LeakSanitizer cannot run under this environment's ptrace. Hosted leak checking
+remains required. No `cc`, Clang or other compiler was substituted. JNI native
+compilation/linking and ART execution remain PENDING. No generated Idriç
+producer, APK or physical-device result follows from these host tests.
 
 `verify-host.grease` takes the repository, qualified host ICK executable and a
 fresh output directory. It builds/runs the real numerical core with the store
@@ -99,3 +103,31 @@ execution remain a separate integration gate owned by the semantic producer.
 The application must load `libave_prepared_surface.so` and use the native
 declarations in `prepared_surface_jni.h`. Test forwarding symbols are confined
 to the qualification library.
+
+The retained Grease runtime was also checked directly: an ordinary failing
+command and a failing left side of a pipeline both stopped before a following
+marker. All three receiver helpers now state `set -eu -o pipefail` explicitly
+and parse through that same runtime. JNI C compilation disables stack
+protection to avoid host compiler-default canary ABI assumptions during Android
+cross-compilation. The helper records dynamic imports for both libraries and
+requires no `__stack_chk` import. Actual JNI builds and these import checks
+remain pending; no native result follows from helper parsing.
+
+The qualification library also supports store-allocation controls through the
+actual JNI create/replace path. Each call creates a local store allocation
+probe; no probe pointer or allocator state is retained by a snapshot. Observer
+methods `failStoreAllocation` and `storeAllocationAttempts` select/check node0
+and terms1 failures, while `liveStoreAllocations` and `liveBorrows` expose the
+existing test-only cleanup counters. These controls compile out of production
+and let the generated producer observer require actual native -3 propagation.
+Execution of this additional generated-producer fault path remains pending.
+The current-thread `copyCalls` counter observes actual JNI entry even when it
+rejects before allocation, so a producer-level semantic error can be checked
+to leave the receiver completely uncalled rather than inferred from mallocs.
+
+The first hosted ICK JNI build at source91d8e7a compiled the production store,
+then failed in the qualification store because NDK29 `stdatomic.h` expands to
+Clang-only `__c11_atomic_*` intrinsics. The test counter now uses C17 `_Atomic`
+scalar increment, decrement and load directly, preserving sequentially
+consistent operations without that incompatible header. Production ownership
+code does not include the counter. Rebuilt JNI/ART execution remains pending.

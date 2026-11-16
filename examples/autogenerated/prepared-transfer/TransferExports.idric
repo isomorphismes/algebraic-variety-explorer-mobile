@@ -1,0 +1,52 @@
+module TransferExports
+
+import PreparedSurfaceTransfer
+import OrderedExpansion
+import CoefficientValue
+import Data.Text
+
+-- Qualification adapters only. Production callers retain the typed Either and
+-- NativeSurface value; zero below is a failed observation, never a valid handle.
+%export "dex:actual_prepare_handle"
+actual_prepare_handle : Text → IO Int64
+actual_prepare_handle source = do
+  prepared ← prepare_native_surface (BoundedExpansion 4096 262144) (\name ⇒ Nothing) source
+  pure (case prepared of
+    Left _ ⇒ 0
+    Right surface ⇒ native_surface_handle surface)
+
+%export "dex:actual_prepare_error"
+actual_prepare_error : Text → IO Text
+actual_prepare_error source = do
+  prepared ← prepare_native_surface (BoundedExpansion 4096 262144) (\name ⇒ Nothing) source
+  case prepared of
+    Left reason ⇒ pure reason
+    Right surface ⇒ do
+      released ← release_native_surface surface
+      pure (case released of
+        Left reason ⇒ "release error: " ++ reason
+        Right () ⇒ "accepted and released")
+
+%export "dex:actual_replace_cycle"
+actual_replace_cycle : Text → IO Text
+actual_replace_cycle source = do
+  prepared ← prepare_native_surface (BoundedExpansion 4096 262144) (\name ⇒ Nothing) "x"
+  case prepared of
+    Left reason ⇒ pure ("initial error: " ++ reason)
+    Right previous ⇒ do
+      replacement ← replace_native_formula previous (BoundedExpansion 4096 262144)
+        (\name ⇒ Nothing) source
+      case replacement of
+        Left reason ⇒ do
+          released ← release_native_surface previous
+          pure (case released of
+            Left problem ⇒ "previous surface lost: " ++ problem
+            Right () ⇒ "replacement rejected: " ++ reason)
+        Right current ⇒ do
+          released ← release_native_surface current
+          pure (case released of
+            Left reason ⇒ "replacement release error: " ++ reason
+            Right () ⇒ "replaced and released")
+
+main : IO ()
+main = pure ()

@@ -1,4 +1,5 @@
 #!/usr/bin/env grease
+set -eu -o pipefail
 if (len(ARGV) !== 3) { echo 'usage: grease observe-jni.grease ADB SERIAL EVIDENCE' >&2; exit 2 }
 var adb = ARGV[0]
 var serial = ARGV[1]

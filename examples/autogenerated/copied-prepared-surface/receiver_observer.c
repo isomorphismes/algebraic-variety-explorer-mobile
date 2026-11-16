@@ -96,3 +96,34 @@ JNIEXPORT jint JNICALL Java_CopiedSurfaceObserver_liveSnapshots(JNIEnv *environm
     (void)environment; (void)owner;
     return (jint)surfer_surface_test_live_snapshots();
 }
+
+JNIEXPORT jint JNICALL Java_CopiedSurfaceObserver_failStoreAllocation(
+    JNIEnv *environment, jclass owner, jint index)
+{
+    (void)environment; (void)owner;
+    return surfer_surface_jni_test_reset_store_allocator(index < 0 ? SIZE_MAX : (size_t)index);
+}
+
+JNIEXPORT jint JNICALL Java_CopiedSurfaceObserver_storeAllocationAttempts(JNIEnv *environment, jclass owner)
+{
+    (void)environment; (void)owner;
+    return (jint)surfer_surface_jni_test_store_allocation_attempts();
+}
+
+JNIEXPORT jint JNICALL Java_CopiedSurfaceObserver_liveStoreAllocations(JNIEnv *environment, jclass owner)
+{
+    (void)environment; (void)owner;
+    return (jint)surfer_surface_test_live_allocations();
+}
+
+JNIEXPORT jint JNICALL Java_CopiedSurfaceObserver_liveBorrows(JNIEnv *environment, jclass owner)
+{
+    (void)environment; (void)owner;
+    return (jint)surfer_surface_test_live_borrows();
+}
+
+JNIEXPORT jlong JNICALL Java_CopiedSurfaceObserver_copyCalls(JNIEnv *environment, jclass owner)
+{
+    (void)environment; (void)owner;
+    return surfer_surface_jni_test_copy_calls();
+}

@@ -110,3 +110,38 @@ an unchanged root output on `SURFER_MISS` and a successful all-background frame;
 each actually reached allocation is separately failed and must report
 `SURFER_OUT_OF_MEMORY`, never a miss or successful blank frame. These controls
 remain pending hosted ICK execution with the rest of this gate.
+
+## First hosted execution and verifier repair
+
+At source `91d8e7a16c13b6dbca1f8e5583849ee7f9079b4d`, CI run43800812201
+job133080375550 compiled and passed both ordinary numerical tests and the
+AddressSanitizer/UndefinedBehaviorSanitizer numerical and allocation/status
+tests, with leak detection enabled. The compiled blank-on-error mutant was
+correctly rejected with exit1. Its first diagnostic came from the newly earlier
+zero-surface control, while the verifier still required the later ordinary
+frame-control diagnostic. The gate therefore failed in the diagnostic checker;
+the successful-byte comparison and copied-receiver step were skipped.
+
+The verifier now requires the exact observed whole-line zero-surface diagnostic
+and retains the designated exit1 requirement. This does not accept arbitrary
+crashes or weaken the mutant to a source-text check. Artifact14196303377 was
+downloaded and its ZIP SHA256 matched the uploaded
+`e27a086a67b9233e90838d1930f3fa97fa060133bc56baf00cb1e623aa450d0e`.
+The corrected match passed against the actual retained `mutant/result.txt`.
+The repaired helper parses through the retained pinned Grease runtime.
+
+The retained ICK-compiled numerical binary also passed local replay. Local leak
+checking is blocked because LeakSanitizer detects the execution environment's
+ptrace; with local leak detection explicitly disabled, the retained sanitizer
+tests passed and the mutant again produced the same designated failure. This
+local replay adds no leak-check claim; the hosted execution above supplied it.
+No compiler was substituted. Full repaired-gate execution remains pending.
+
+After recovering that exact qualified compiler, an independent local build and
+execution of the helper's successful-byte stage compared the frozen d4bc9b3
+core with the published91d8e7a status core. Both seven-preset observations are
+32179 bytes and have SHA256
+`65f44c201676e330068804e4059a369cb6479efa1673660fd78a42681a1f55ca`.
+Compiler/cc1, all input sources, both executables and both observations were
+hashed in the local replay evidence. This supplies the narrow unchanged-success
+comparison skipped by the initial hosted gate; it is not Java or image parity.

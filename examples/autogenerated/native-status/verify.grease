@@ -84,7 +84,7 @@ try {
 var mutant_status = _error.code
 cat "$output/mutant/result.txt"
 if (mutant_status !== 1) { echo 'FAIL missing designated blank-on-error mutation rejection' >&2; exit 1 }
-rg -F 'FAIL injected frame failure is not blank success: success (SURFER_OK); expected out of memory (SURFER_OUT_OF_MEMORY)' "$output/mutant/result.txt"
+rg -x -F 'FAIL zero surface frame allocation failure is not blank success: success (SURFER_OK); expected out of memory (SURFER_OUT_OF_MEMORY)' "$output/mutant/result.txt"
 
 printf '\033[36mACTION\033[0m compare successful numerical bytes against the unchanged base core\n'
 "$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O2 \

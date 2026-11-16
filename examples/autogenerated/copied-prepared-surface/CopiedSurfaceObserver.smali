@@ -18,3 +18,13 @@
 .end method
 .method public static native liveSnapshots()I
 .end method
+.method public static native failStoreAllocation(I)I
+.end method
+.method public static native storeAllocationAttempts()I
+.end method
+.method public static native liveStoreAllocations()I
+.end method
+.method public static native liveBorrows()I
+.end method
+.method public static native copyCalls()J
+.end method

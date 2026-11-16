@@ -4,9 +4,6 @@
 #include <math.h>
 #include <pthread.h>
 #include <stdlib.h>
-#ifdef SURFER_SURFACE_STORE_TESTING
-#include <stdatomic.h>
-#endif
 
 typedef struct snapshot snapshot;
 struct snapshot {
@@ -35,6 +32,8 @@ static int64_t next_identifier = 1;
 
 #ifdef SURFER_SURFACE_STORE_TESTING
 typedef surfer_surface_allocation_probe allocation_probe;
+/* C17 atomic scalar operators preserve sequential consistency without using
+ * the Android NDK stdatomic.h macros, which require Clang-only intrinsics. */
 static _Atomic size_t live_allocations;
 #else
 typedef struct { size_t unused; } allocation_probe;
@@ -54,7 +53,7 @@ static void *allocate(size_t bytes, allocation_probe *probe)
 #endif
     void *result = malloc(bytes);
 #ifdef SURFER_SURFACE_STORE_TESTING
-    if (result != NULL) (void)atomic_fetch_add(&live_allocations, 1);
+    if (result != NULL) live_allocations++;
 #endif
     return result;
 }
@@ -62,7 +61,7 @@ static void *allocate(size_t bytes, allocation_probe *probe)
 static void deallocate(void *value)
 {
 #ifdef SURFER_SURFACE_STORE_TESTING
-    if (value != NULL) (void)atomic_fetch_sub(&live_allocations, 1);
+    if (value != NULL) live_allocations--;
 #endif
     free(value);
 }
@@ -382,6 +381,6 @@ size_t surfer_surface_test_live_borrows(void)
 
 size_t surfer_surface_test_live_allocations(void)
 {
-    return atomic_load(&live_allocations);
+    return live_allocations;
 }
 #endif

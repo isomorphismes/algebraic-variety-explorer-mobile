@@ -1,8 +1,47 @@
 # Semantic preparation and the numerical handoff
 
 Source audit at `f61f534fffbe29e41a19ae9133ab11301404a793`.
-This records the next integration boundary, not an implemented transfer or
-acceptance result. Scalar coefficient evaluation is being continued separately.
+The audit below preserves the original ownership and order requirements.
+Subsequent implementation and execution evidence is recorded here separately.
+
+## Implemented stages and remaining acceptance
+
+`PreparedFormula.idric` now owns family degree, parameter simplification and
+symbolic derivatives. Its actual source passed API34 ART comparisons with the
+retained original visitors at `0f980e5a00761aac145d756ec81ca4da819f863f`
+([run43794450670](https://github.com/isomorphismes/algebraic-variety-explorer-mobile/actions/runs/43794450670)).
+
+`OrderedExpansion.idric` now owns the ordered sparse expansion below. At
+`5d43e830c3180db68b6ce4e3bb40e187606fdb68`, actual API34 ART execution matched
+the original coefficient bits, exponents, family degree and all three gradients
+for the seven presets, the user quartic and sensitive collection cases. Compiled
+Kahan and family-degree mutations were rejected
+([run43795348438](https://github.com/isomorphismes/algebraic-variety-explorer-mobile/actions/runs/43795348438)).
+The producer explicitly refuses nonfinite intermediates, unsafe signed-byte
+exponents and caller-specified resource limits; this is bounded equivalence.
+
+`surfer_surface_store` and `android/prepared_surface_jni` now implement copied
+immutable snapshots, checked replacement/release and worker borrows. The first
+host run at `91d8e7a16c13b6dbca1f8e5583849ee7f9079b4d` passed strict numerical,
+allocation and sanitizer checks, then stopped at a stale expected mutation
+diagnostic before the receiver step
+([run43800812201](https://github.com/isomorphismes/algebraic-variety-explorer-mobile/actions/runs/43800812201)).
+No receiver execution is inferred from that run. The source-level
+`PreparedSurfaceTransfer.idric` connects the real expanded values to primitive
+arrays and generated JNI; its actual native/ART observation remains pending.
+After reconstruction of the same qualified ICK compiler, strict host receiver
+tests passed. The fixed and frozen numerical observers separately produced
+identical 32179-byte outputs for the seven presets, SHA256
+`65f44c201676e330068804e4059a369cb6479efa1673660fd78a42681a1f55ca`.
+Local ASan/UBSan receiver execution passed with leak detection explicitly
+disabled; the maintained leak-enabled run stops because this environment uses
+ptrace. Hosted leak-enabled receiver execution remains required.
+
+The accepted normal Activity still needs checked callback returns and state,
+additional lifecycle methods, float-valued touch/scale calls and reliable
+provider-stream cleanup. The NativeActivity keypad remains a bootstrap. These
+semantic and transport stages do not remove the shipping Java implementation
+or establish a complete APK or physical-device behavior.
 
 ## Existing ownership
 
@@ -17,8 +56,9 @@ The C numerical core already consumes `surfer_prepared_surface` in
 `surfer_sparse_polynomial` values. Each polynomial has a borrowed
 `const surfer_term *terms` and `size_t term_count`; each term has a binary64
 coefficient and three `int32_t` exponents. This is an in-process C interface.
-It has no version field, transport layout, JNI constructor, release operation,
-managed-array ownership contract or async lifetime protocol.
+The record itself has no version field or transport layout. Those now belong
+to the separate copied-snapshot interface; the pointer fields remain an
+in-process C interface rather than a serializable representation.
 
 `android/formula.h` is a bounded C bootstrap, not that missing transport.
 Its `ave_formula` embeds storage and points into itself. Its explicit
@@ -78,10 +118,10 @@ Derivative expansion after symbolic differentiation can round differently
 from differentiating a previously expanded polynomial. A conventional symbolic
 formula is not sufficient evidence for this numerical boundary.
 
-## Next implementation stage
+## Semantic-stage requirements
 
-First implement the semantic preparation in Idriç, without JNI or rendering.
-Its conceptual types are:
+The original requirements for semantic preparation, now implemented separately
+from rendering, use these conceptual types:
 
 - `PreparedCoefficient`: the explicit original binary64 compatibility value.
 - `PreparedPolynomial`: the original ordered polynomial terms with the
@@ -114,8 +154,8 @@ version and integer size arithmetic, then copy the four polynomials into one
 native-owned immutable snapshot. Publish only after every validation and copy
 succeeds, and keep that snapshot alive while any render worker uses it.
 Replacement and destruction cannot race an active render. No AST, parameter
-object graph or serialized Text crosses this cut. This remains an unimplemented
-contract until the actual generated DEX/JNI path is observed. Do not retain
+object graph or serialized Text crosses this cut. The receiver is implemented;
+the full actual generated producer-to-JNI path still requires execution. Do not retain
 temporary array access pointers through asynchronous rendering.
 
 ## Required observations
