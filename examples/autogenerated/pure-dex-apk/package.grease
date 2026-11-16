@@ -113,6 +113,7 @@ for abi in arm64-v8a armeabi-v7a x86_64 {
   }
   for header in native/surfer_raytracer.h native/surfer_vecmath.h native/surfer_original_camera.inc native/surfer_original_specialization.inc \
     native/surfer_surface_store.h native/surfer_frame_output.h native/surfer_render_session.h \
+    native/surfer_original_workers.inc \
     native/android/prepared_surface_jni.h native/android/render_surface_jni.h native/android/render_session_jni.h {
     var expected = $(artifact_hash "$built/native-headers.sha256" "$header")
     test "$expected" = $(sha256sum "$repository/$header" | cut -d ' ' -f 1)

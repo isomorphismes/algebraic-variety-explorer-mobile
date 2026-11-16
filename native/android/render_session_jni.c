@@ -71,6 +71,35 @@ static void cancel_at_commit(void *state, surfer_render_session_test_phase phase
 }
 #endif
 
+/* Query the same standard platform value used by the original Activity.
+ * All class/object refs are synchronous locals on this calling thread. The
+ * numerical owner receives only the checked scalar and never sees JNIEnv.
+ */
+static bool platform_processor_count(JNIEnv *environment, size_t *processors)
+{
+    if (processors == NULL || (*environment)->ExceptionCheck(environment)) return false;
+    bool success = false;
+    jobject runtime = NULL;
+    jclass runtime_class = (*environment)->FindClass(environment, "java/lang/Runtime");
+    if (runtime_class == NULL || (*environment)->ExceptionCheck(environment)) goto cleanup;
+    jmethodID get_runtime = (*environment)->GetStaticMethodID(environment, runtime_class,
+        "getRuntime", "()Ljava/lang/Runtime;");
+    if (get_runtime == NULL || (*environment)->ExceptionCheck(environment)) goto cleanup;
+    runtime = (*environment)->CallStaticObjectMethod(environment, runtime_class, get_runtime);
+    if (runtime == NULL || (*environment)->ExceptionCheck(environment)) goto cleanup;
+    jmethodID available_processors = (*environment)->GetMethodID(environment, runtime_class,
+        "availableProcessors", "()I");
+    if (available_processors == NULL || (*environment)->ExceptionCheck(environment)) goto cleanup;
+    const jint count = (*environment)->CallIntMethod(environment, runtime, available_processors);
+    if ((*environment)->ExceptionCheck(environment) || count <= 0) goto cleanup;
+    *processors = (size_t)count;
+    success = true;
+cleanup:
+    if (runtime != NULL) (*environment)->DeleteLocalRef(environment, runtime);
+    if (runtime_class != NULL) (*environment)->DeleteLocalRef(environment, runtime_class);
+    return success;
+}
+
 JNIEXPORT jlong JNICALL Java_Idric_Generated_createRenderSession(JNIEnv *environment, jclass owner)
 {
     (void)owner;
@@ -79,13 +108,16 @@ JNIEXPORT jlong JNICALL Java_Idric_Generated_createRenderSession(JNIEnv *environ
     record_call(&create_calls);
 #endif
     if ((*environment)->ExceptionCheck(environment)) return 0;
+    size_t processors = 0;
+    if (!platform_processor_count(environment, &processors))
+        return (*environment)->ExceptionCheck(environment) ? 0 : -SURFER_INVALID_INPUT;
     surfer_render_session_handle session = 0;
 #ifdef SURFER_RENDER_SESSION_JNI_TESTING
     surfer_render_session_probe probe = {create_fail_at, 0, 0, 0, NULL, NULL};
-    const surfer_status status = surfer_render_session_test_create(&session, &probe);
+    const surfer_status status = surfer_render_session_test_create_for_processors(processors, &session, &probe);
     create_attempts = probe.attempts;
 #else
-    const surfer_status status = surfer_render_session_create(&session);
+    const surfer_status status = surfer_render_session_create_for_processors(processors, &session);
 #endif
     return status == SURFER_OK ? session : -(jlong)status;
 }
@@ -218,17 +250,19 @@ JNIEXPORT jint JNICALL Java_Idric_Generated_renderSessionSurface(
     const surfer_render_quality selected = {
         quality == 0 ? SURFER_AA_OG_1X1 : SURFER_AA_QUINCUNX, 0.3f
     };
+    size_t processors = 0;
+    if (!platform_processor_count(environment, &processors)) return SURFER_INVALID_INPUT;
 #ifdef SURFER_RENDER_SESSION_JNI_TESTING
     surfer_render_session_handle hook_session = session;
     surfer_render_session_probe probe = {render_fail_at, 0, 0, 0,
         cancel_before_publish ? cancel_at_commit : NULL, &hook_session};
-    const surfer_status status = surfer_render_session_test_render_publish(session, epoch, surface,
-        &settings, (size_t)width, (size_t)height, camera_height, yaw, pitch, zoom, selected,
-        publish_android_rows, &publication, (size_t)count, &probe);
+    const surfer_status status = surfer_render_session_test_render_tiled_publish(session, epoch, surface,
+        &settings, processors, (size_t)width, (size_t)height, camera_height, yaw, pitch, zoom, selected,
+        publish_android_rows, &publication, (size_t)count, &probe, NULL);
     render_attempts = probe.attempts;
 #else
-    const surfer_status status = surfer_render_session_render_publish(session, epoch, surface,
-        &settings, (size_t)width, (size_t)height, camera_height, yaw, pitch, zoom, selected,
+    const surfer_status status = surfer_render_session_render_tiled_publish(session, epoch, surface,
+        &settings, processors, (size_t)width, (size_t)height, camera_height, yaw, pitch, zoom, selected,
         publish_android_rows, &publication, (size_t)count);
 #endif
     return (jint)status;

@@ -34,6 +34,7 @@ sha256sum "$repository/native/surfer_raytracer.c" "$repository/native/surfer_ray
   "$repository/native/surfer_original_specialization.inc" "$repository/native/surfer_original_camera.inc" "$repository/native/surfer_vecmath.h" "$repository/native/surfer_vecmath.c" \
   "$repository/native/surfer_cancel_test.c" "$repository/native/surfer_render_session.c" \
   "$repository/native/surfer_render_session.h" "$repository/native/surfer_render_session_test.c" \
+  "$repository/native/surfer_original_workers.inc" \
   "$repository/native/surfer_surface_store.c" "$repository/native/surfer_surface_store.h" \
   > "$output/inputs.sha256"
 
@@ -102,7 +103,7 @@ reject_core_mutant bisection '/^static double bisect_root_interval/,/^}/s/if (!c
 proc reject_registry_mutant(name, expression, diagnostic) {
   var destination = "$output/mutants/$name"
   mkdir -p "$destination"
-  cp "$repository/native/surfer_render_session.h" "$destination/"
+  cp "$repository/native/surfer_render_session.h" "$repository/native/surfer_original_workers.inc" "$destination/"
   sed "$expression" "$repository/native/surfer_render_session.c" > "$destination/surfer_render_session.c"
   try { cmp -s "$repository/native/surfer_render_session.c" "$destination/surfer_render_session.c" }
   if (_error.code !== 1) { echo 'FAIL unchanged registry mutant or comparison failure' >&2; exit 1 }

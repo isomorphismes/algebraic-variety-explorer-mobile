@@ -1,17 +1,21 @@
 #!/usr/bin/env grease
 set -eu -o pipefail
-if (len(ARGV) !== 8) {
-  echo 'usage: grease qualify-installed.grease EXPLORER SDK ADB SERIAL UNSIGNED_APK_EVIDENCE FRESH_OUTPUT SMALI BAKSMALI' >&2
+if (len(ARGV) !== 9) {
+  echo 'usage: grease qualify-installed.grease EXPLORER SDK ADB SERIAL EXPECTED_API UNSIGNED_APK_EVIDENCE FRESH_OUTPUT SMALI BAKSMALI' >&2
   exit 2
 }
 var repository = ARGV[0]
 var sdk = ARGV[1]
 var adb = ARGV[2]
 var serial = ARGV[3]
-var packaged = ARGV[4]
-var output = ARGV[5]
-var smali = ARGV[6]
-var baksmali = ARGV[7]
+var expected_api = ARGV[4]
+var packaged = ARGV[5]
+var output = ARGV[6]
+var smali = ARGV[7]
+var baksmali = ARGV[8]
+if (expected_api !== '23' and expected_api !== '34' and expected_api !== '35') {
+  echo 'FAIL expected API must be exactly 23, 34 or 35' >&2; exit 2
+}
 for path in "$repository" "$sdk" "$adb" "$packaged" "$output" "$smali" "$baksmali" {
   if (path[0] !== '/') { echo 'FAIL absolute installed-qualification paths required' >&2; exit 2 }
 }
@@ -40,19 +44,62 @@ var state = $("$timeout" 20 "$adb" -s "$serial" get-state | tr -d '\r')
 var sdk_level = $("$timeout" 20 "$adb" -s "$serial" shell getprop ro.build.version.sdk | tr -d '\r')
 var abi = $("$timeout" 20 "$adb" -s "$serial" shell getprop ro.product.cpu.abi | tr -d '\r')
 var qemu = $("$timeout" 20 "$adb" -s "$serial" shell getprop ro.kernel.qemu | tr -d '\r')
-var user = $("$timeout" 20 "$adb" -s "$serial" shell am get-current-user | tr -d '\r')
-var remote_timeout = $("$timeout" 20 "$adb" -s "$serial" shell 'command -v timeout' | tr -d '\r')
+var user = 'UNKNOWN'
+if (expected_api === '23') {
+  # AOSP6 am has no get-current-user. Its process dump exposes the exact
+  # started-user set and current-user history; require both to contain only0.
+  "$timeout" 20 "$adb" -s "$serial" shell dumpsys activity processes > "$output/diagnostics/api23-user-processes.raw.txt"
+  tr -d '\r' < "$output/diagnostics/api23-user-processes.raw.txt" > "$output/diagnostics/api23-user-processes.txt"
+  var only_zero = true
+  for label in mStartedUserArray mUserLru {
+    # The explicit processes dump uses dumpAll=true and prints its started
+    # array twice. Both declarations must be the same singleton [0].
+    var expected_declarations = '1'
+    if (label === 'mStartedUserArray') { setvar expected_declarations = '2' }
+    var declared = '^[[:space:]]*' ++ label ++ ':'
+    var singleton = '^[[:space:]]*' ++ label ++ r': \[0\]$'
+    try { rg -c "$declared" "$output/diagnostics/api23-user-processes.txt" > "$output/diagnostics/$label-declarations.txt" }
+    var declared_status = _error.code
+    try { rg -c "$singleton" "$output/diagnostics/api23-user-processes.txt" > "$output/diagnostics/$label-singleton-zero.txt" }
+    var singleton_status = _error.code
+    if (declared_status !== 0 or singleton_status !== 0 or \
+        $(cat "$output/diagnostics/$label-declarations.txt") !== expected_declarations or \
+        $(cat "$output/diagnostics/$label-singleton-zero.txt") !== expected_declarations) {
+      setvar only_zero = false
+    }
+  }
+  if (only_zero) { setvar user = '0' }
+  echo 'API23_exact_singleton_started_users_and_current_user_history' > "$output/diagnostics/user-identity-scope.txt"
+} else {
+  setvar user = $("$timeout" 20 "$adb" -s "$serial" shell am get-current-user | tr -d '\r')
+  echo 'direct_am_get_current_user' > "$output/diagnostics/user-identity-scope.txt"
+}
+try { "$timeout" 20 "$adb" -s "$serial" shell 'command -v timeout' > "$output/diagnostics/remote-timeout-probe.txt" 2>&1 }
+var timeout_probe = _error.code
+var remote_timeout = $(tr -d '\r\n' < "$output/diagnostics/remote-timeout-probe.txt")
 "$timeout" 20 "$adb" -s "$serial" shell pm list packages -u > "$output/diagnostics/packages-before.txt"
-printf 'state\t%s\nAPI\t%s\nABI\t%s\nqemu\t%s\nuser\t%s\nserial\t%s\n' \
-  "$state" "$sdk_level" "$abi" "$qemu" "$user" "$serial" > "$output/diagnostics/preflight.tsv"
-if (state !== 'device' or sdk_level !== '34' or abi !== 'x86_64' or qemu !== '1' or user !== '0' or remote_timeout !== '/system/bin/timeout') {
-  echo 'FAIL installed observer requires the declared API34 x86_64 emulator/user0' >&2; exit 1
+printf 'state\t%s\nexpected_API\t%s\nobserved_API\t%s\nABI\t%s\nqemu\t%s\nuser\t%s\nserial\t%s\nremote_timeout_probe_exit\t%s\nremote_timeout_path\t%s\n' \
+  "$state" "$expected_api" "$sdk_level" "$abi" "$qemu" "$user" "$serial" \
+  "$timeout_probe" "$remote_timeout" > "$output/diagnostics/preflight.tsv"
+if (state !== 'device' or sdk_level !== expected_api or abi !== 'x86_64' or qemu !== '1' or user !== '0') {
+  echo 'FAIL installed observer target differs from the exact declared API/x86_64/qemu1/user0' >&2; exit 1
+}
+var instrument_prefix = ''
+if (remote_timeout === '/system/bin/timeout' and timeout_probe === 0) {
+  setvar instrument_prefix = '/system/bin/timeout -s KILL 720 '
+  echo 'remote_720seconds_and_host_740seconds' > "$output/diagnostics/instrumentation-timeout-scope.txt"
+} else {
+  if (expected_api !== '23' or remote_timeout !== '' or (timeout_probe !== 0 and timeout_probe !== 1)) {
+    echo 'FAIL missing or unexpected system timeout outside the explicit API23 floor case' >&2; exit 1
+  }
+  echo 'API23_without_remote_timeout_host_740seconds_only' > "$output/diagnostics/instrumentation-timeout-scope.txt"
 }
 try { rg '^package:org\.algebraicvarietyexplorer(\.idricqualification)?\r?$' "$output/diagnostics/packages-before.txt" }
 if (_error.code !== 1) { echo 'FAIL preexisting AVE package/data or package checker; no install attempted' >&2; exit 1 }
 # This key exists only to exercise a fresh isolated emulator. It is not a
 # production, C67, Wegert or IB identity and is never used by the producer.
-var test_key = "$output/AVE-EMULATOR-TEST-ONLY.p12"
+var test_key_directory = $(mktemp -d /tmp/ave-emulator-signer.XXXXXXXX)
+var test_key = "$test_key_directory/AVE-EMULATOR-TEST-ONLY.p12"
 "$keytool" -genkeypair -noprompt -storetype PKCS12 -keystore "$test_key" \
   -storepass ave-emulator-test-only -keypass ave-emulator-test-only \
   -alias ave-emulator-test-only -keyalg RSA -keysize 2048 -validity 2 \
@@ -82,6 +129,7 @@ zip -X -0 "$output/observer/unaligned.apk" classes.dex
   --ks-pass pass:ave-emulator-test-only --key-pass pass:ave-emulator-test-only \
   --out "$output/OBSERVER-EMULATOR-TEST-ONLY.apk" "$output/observer/unsigned.apk" > "$output/test-only-observer-signing.txt" 2>&1
 rm "$test_key"
+rmdir "$test_key_directory"
 for name in AVE OBSERVER {
   "$signer" verify --verbose --print-certs "$output/$name-EMULATOR-TEST-ONLY.apk" > "$output/$name-certificate.txt"
   "$align" -P 16 -c -v 4 "$output/$name-EMULATOR-TEST-ONLY.apk" > "$output/$name-alignment.txt"
@@ -103,12 +151,18 @@ rg -F "package: name='org.algebraicvarietyexplorer'" "$output/app-badging.txt"
 rg -F "package: name='org.algebraicvarietyexplorer.idricqualification'" "$output/observer-badging.txt"
 sha256sum "$candidate" "$output/AVE-EMULATOR-TEST-ONLY.apk" "$output/OBSERVER-EMULATOR-TEST-ONLY.apk" \
   "$output/AVE-EMULATOR-TEST-ONLY.cer" "$output/observer/classes.dex" > "$output/artifacts.sha256"
-printf 'scope\tisolated API34 x86_64 emulator only\nsigner\tAVE throwaway TEST ONLY\ncertificate_SHA256\t%s\nproduction_C67_update_identity\tNOT_RUN\n' \
-  "$app_certificate" > "$output/signing-scope.tsv"
+printf 'scope\tisolated API%s x86_64 emulator only\nsigner\tAVE throwaway TEST ONLY\ncertificate_SHA256\t%s\nproduction_C67_update_identity\tNOT_RUN\n' \
+  "$expected_api" "$app_certificate" > "$output/signing-scope.tsv"
 proc snapshot(phase) {
   try { "$timeout" 30 "$adb" -s "$serial" logcat -b all -d -v threadtime > "$output/diagnostics/$phase-logcat.txt" 2>&1 }
   var logs = _error.code
-  try { "$timeout" 20 "$adb" -s "$serial" shell ps -A > "$output/diagnostics/$phase-processes.txt" 2>&1 }
+  try {
+    if (expected_api === '23') {
+      "$timeout" 20 "$adb" -s "$serial" shell ps > "$output/diagnostics/$phase-processes.txt" 2>&1
+    } else {
+      "$timeout" 20 "$adb" -s "$serial" shell ps -A > "$output/diagnostics/$phase-processes.txt" 2>&1
+    }
+  }
   var processes = _error.code
   try { "$timeout" 20 "$adb" -s "$serial" shell dumpsys activity activities > "$output/diagnostics/$phase-activities.txt" 2>&1 }
   var activities = _error.code
@@ -129,7 +183,7 @@ if (checkjni === '1') {
 } else {
   echo 'CheckJNI unavailable through emulator shell; no checked-JNI execution claim' > "$output/diagnostics/checkjni-result.txt"
 }
-printf '\033[36mACTION\033[0m install test-signed copies on empty API34 x86_64 emulator\n'
+printf '\033[36mACTION\033[0m install test-signed copies on empty API%s x86_64 emulator\n' "$expected_api"
 try { "$timeout" 120 "$adb" -s "$serial" install --no-streaming -t "$output/AVE-EMULATOR-TEST-ONLY.apk" > "$output/install-app.txt" 2>&1 }
 var install_app = _error.code
 printf '%s\n' "$install_app" > "$output/install-app.exit"
@@ -153,12 +207,40 @@ for name in negative positive {
   var extra = ''
   if (name === 'negative') { setvar extra = '-e ave_negative_control blank_bitmap' }
   snapshot "$name-before"
+  var marker_file = $(mktemp "$output/diagnostics/exit-token.XXXXXXXX")
+  var nonce = $(basename "$marker_file" | tr -cd 'A-Za-z0-9')
+  var marker = 'AVE_INSTALLED_API23_EXIT_' ++ name ++ '_' ++ nonce
+  var marker_pattern = '^' ++ marker ++ '=[0-9]+$'
   try {
-    "$timeout" --signal=TERM --kill-after=10s 740 "$adb" -s "$serial" shell \
-      "$remote_timeout -s KILL 720 am instrument -w -r $extra org.algebraicvarietyexplorer.idricqualification/org.algebraicvarietyexplorer.idricqualification.InstalledObserver" \
-      > "$output/instrumentation-$name.txt" 2>&1
+    if (expected_api === '23') {
+      # Android's fixed shell frames a remote status absent from legacy adbd.
+      "$timeout" --signal=TERM --kill-after=10s 740 "$adb" -s "$serial" shell -tt \
+        "${instrument_prefix}am instrument -w -r $extra org.algebraicvarietyexplorer.idricqualification/org.algebraicvarietyexplorer.idricqualification.InstalledObserver; printf '\\n$marker=%s\\n' \"\$?\"" \
+        > "$output/instrumentation-$name.pty.txt" 2>&1
+    } else {
+      "$timeout" --signal=TERM --kill-after=10s 740 "$adb" -s "$serial" shell -T \
+        "${instrument_prefix}am instrument -w -r $extra org.algebraicvarietyexplorer.idricqualification/org.algebraicvarietyexplorer.idricqualification.InstalledObserver" \
+        > "$output/instrumentation-$name.txt" 2>&1
+    }
   }
-  var execution = _error.code
+  var transport = _error.code
+  var execution = transport
+  printf '%s\n' "$transport" > "$output/instrumentation-$name.transport-exit"
+  if (expected_api === '23') {
+    tr -d '\r' < "$output/instrumentation-$name.pty.txt" > "$output/instrumentation-$name.txt"
+    printf '%s\n' "$marker" > "$output/instrumentation-$name.exit-marker"
+    if (transport === 0) {
+      try { rg -c "$marker_pattern" "$output/instrumentation-$name.txt" > "$output/instrumentation-$name.exit-marker-count" }
+      var marker_status = _error.code
+      if (marker_status !== 0 or $(cat "$output/instrumentation-$name.exit-marker-count") !== '1') {
+        setvar execution = 1
+      } else {
+        var remote_exit = $(sed -n "s/^$marker=//p" "$output/instrumentation-$name.txt")
+        printf '%s\n' "$remote_exit" > "$output/instrumentation-$name.remote-exit"
+        if (remote_exit !== '0') { setvar execution = 1 }
+      }
+    }
+  }
   printf '%s\n' "$execution" > "$output/instrumentation-$name.exit"
   snapshot "$name-after"
   cat "$output/instrumentation-$name.txt"
@@ -192,5 +274,5 @@ test "$png_magic" = 89504e470d0a1a0a
 sha256sum "$output/actual-provider-export.png" >> "$output/artifacts.sha256"
 "$timeout" 20 "$adb" -s "$serial" shell pm list packages -u > "$output/diagnostics/packages-after.txt"
 sha256sum "$output/installed-base.apk" >> "$output/artifacts.sha256"
-printf 'installed_API34_x86_64\tPASS\nexact_installed_candidate\tPASS\nblank_real_Bitmap_control_rejected\tPASS\nframework_Activity_9_scenarios\tPASS\nactual_ImageView_Bitmap\tPASS\nerror_keeps_prior_frame\tPASS\nDone_callback\tPASS\nExamples_dialog\tPASS\nPNG_picker_cancel_staging\tPASS\nactual_provider_PNG_signature_dimensions_pixels\tPASS\nactual_provider_PNG_descriptor_close\tPASS\nActivity_recreation_close\tPASS\nphysical_IME_pinch_system_picker_UI\tNOT_RUN\nproduction_update_identity\tNOT_RUN\nphysical_device\tNOT_RUN\n' > "$output/result.tsv"
-printf '\033[32mPASS\033[0m installed checked-DEX Activity in isolated API34 emulator; update identity and physical acceptance separate\n'
+printf 'installed_API%s_x86_64\tPASS\nexact_installed_candidate\tPASS\nblank_real_Bitmap_control_rejected\tPASS\nframework_Activity_9_scenarios\tPASS\nactual_ImageView_Bitmap\tPASS\nerror_keeps_prior_frame\tPASS\nDone_callback\tPASS\nExamples_dialog\tPASS\nPNG_picker_cancel_staging\tPASS\nactual_provider_PNG_signature_dimensions_pixels\tPASS\nactual_provider_PNG_descriptor_close\tPASS\nActivity_recreation_close\tPASS\nphysical_IME_pinch_system_picker_UI\tNOT_RUN\nproduction_update_identity\tNOT_RUN\nphysical_device\tNOT_RUN\n' "$expected_api" > "$output/result.tsv"
+printf '\033[32mPASS\033[0m installed checked-DEX Activity in isolated API%s emulator; update identity and physical acceptance separate\n' "$expected_api"

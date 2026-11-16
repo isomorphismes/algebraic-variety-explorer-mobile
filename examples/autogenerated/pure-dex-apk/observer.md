@@ -12,7 +12,52 @@ Drawable and displayed pixel snapshots run through `runOnMainSync`; only the
 instrumentation thread waits/polls. A main-thread exception is relayed back to
 the instrumentation thread. Each frame deadline is90seconds, dialog selection
 10seconds, recreation monitor90seconds and destruction10seconds. An external
-720second device timeout and740second host timeout bound each complete invocation.
+740second host timeout bounds each complete invocation. The known system
+timeout also bounds the remote command to720seconds where present. API23 may
+use the explicit host-only bound described below; its absence is recorded.
+
+## Exact installed targets
+
+`qualify-installed.grease` takes `EXPECTED_API` immediately after `SERIAL`.
+It admits exactly23,34 or35 and requires the observed level to equal that
+argument, plus x86_64, qemu1, user0 and no preexisting candidate/test package or
+retained package data. API34 retains the same nine positive scenarios and
+zero-scenario applied blank-Bitmap negative control. No target shares another
+target's success receipt.
+
+The native workflow compiles source and three native ABIs once, then packages
+one unsigned candidate. That artifact has a single upload root, so download
+places `apk-name.txt`, `result.tsv`, the unsigned APK, extracted payload and
+`oracles/` directly in the named destination. The pinned observation JARs sit
+beside the candidate evidence; they are never added to the APK. Three separate
+fresh emulator jobs download those same unsigned bytes, create their own
+test-only signed copies and retain API-specific installed artifacts. Packaging
+and each installation are distinct jobs with distinct pass/failure boundaries.
+
+API23's adbd does not provide the modern raw shell/remote-exit protocol. The
+qualifier uses `shell -tt` there, retains raw PTY output, removes CR only for
+text assertions and requires exactly one fresh per-invocation exit marker with
+remote status0. A transport failure, absent/duplicate marker, nonzero remote
+status or missing instrumentation fields fails. API34/35 use `shell -T` and
+require the actual shell-v2 exit status0. All existing negative/positive
+instrumentation-code, scenario-count, cleanup and PNG assertions stay intact.
+Binary PNG retrieval remains `exec-out`; it is never read through a PTY.
+
+API23 also lacks `am get-current-user`. Its retained `dumpsys activity processes`
+must contain exactly two declarations of `mStartedUserArray: [0]` and one of
+`mUserLru: [0]`, with no additional declarations. The AOSP6 explicit processes
+dump uses dumpAll=true and prints its started array twice; both must agree.
+This intentionally admits only
+a fresh emulator with singleton started-user/current-user-history lists. Newer
+targets keep the direct current-user query. API23 uses its supported plain
+`ps` diagnostic; newer targets retain `ps -A`.
+
+Only `/system/bin/timeout` is admitted as the remote timer. It remains required
+on API34/35; an empty API23 lookup permits the explicit host-only timeout scope.
+Unknown timeout paths and a timed-out lookup fail. A host-only bound cannot
+prove the remote instrumentation stopped after a host timeout; that case fails
+qualification and the fresh emulator job terminates. It cannot produce a PASS.
+Actual per-target execution is pending until its own installed evidence exists.
 
 The nine scenarios are:
 
@@ -59,8 +104,8 @@ requires Instrumentation.finish(-1) and Bundle fields
 the completed scenario count and `stack` containing the first Throwable trace.
 The host must inspect those exact fields and code, not only adb exit status.
 
-The Smali observer is independently assembled and decoded locally. Android
-framework execution is pending. Pixel observations prove actual image content,
+The unchanged Smali observer is independently assembled and decoded locally.
+Android framework execution for the matrix is pending. Pixel observations prove actual image content,
 change, retention and deterministic recreation; they are not an independent
 numerical implementation. Pinch, physical IME, interaction with the real system
 picker UI, physical devices and production signing/update compatibility remain

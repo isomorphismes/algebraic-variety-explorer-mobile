@@ -114,6 +114,23 @@ with the full canvas; `ordered_summary` reports ID, tile count and differing
 pixel count. `serial_ordered_match` is emitted only after the actual serial
 production method matches exactly. The whole mode must repeat byte for byte.
 
+The maintained reference additionally invokes that same mode with the actual
+JVM option `-XX:ActiveProcessorCount=1`, `2`, `4` and `8`. The unchanged
+renderer reads each value through its own `Runtime.availableProcessors()`;
+the adapter verifies every recorded profile reports the requested count.
+The original formulas still determine the pool size and tile steps, including
+the minimum denominator of two in the horizontal step calculation when the
+count is one. Integer division can yield more tiles than that denominator:
+the 11 × 9 identity frame at count one has `xStep = 5`, `yStep = 3` and nine
+inclusive tiles, with horizontal starts 0, 5 and 10.
+Each count runs the full 44-frame corpus twice and must reproduce both its
+private-tile composition and the actual serial original draw. Plain files are
+named `ordered-workers-count-N.tsv`, with corresponding summary files.
+Together they contain 176 frame results and 21648 ordered pixels. These are
+controlled JVM processor-count profiles, not executions on four physical
+machines. The unmodified default-host racing worker observations remain
+separate and retain their observed nondeterminism.
+
 These observations are the expected values, not evidence that candidate C
 matches them. The C consumer must independently verify raw fields/pixels and
 reject compiled mutations. Target libm, Android execution, worker partitions

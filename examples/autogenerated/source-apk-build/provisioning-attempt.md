@@ -51,3 +51,21 @@ the two narrow host-tool scan declarations do not establish scanner approval.
 No new Idriç language primitive is required. The remaining acceptance boundary
 is execution of this exact toolchain and application path in the pinned F-Droid
 buildserver, followed by actual unsigned APK equality and scanner acceptance.
+
+## Canonical metadata formatting
+
+The first hosted source-recipe attempt reached the pinned F-Droid lint and
+metadata writer, then stopped at the required canonical-byte comparison.
+`fdroidserver` revision `6af4c4216e43d0fcb29e33919cd0fe8fef7e7400`
+moves `timeout` before `sudo` and folds long command scalars. The template now
+matches that observed output, including the writer's two trailing blanks
+before wrapped long Smali URLs. Its two sudo, eight prebuild and three build
+command values are unchanged, as are every version, source pin and digest.
+
+The cheap metadata guard now requires the executable and all arguments of the
+folded reproducibility invocation in their three adjacent canonical lines.
+Both a wrong executable and a wrong SDK argument were rejected with the
+intended diagnostic; the canonical template and existing stale-version test
+passed. The canonical writer comparison is retained unchanged. This repair
+does not establish schema, compiler-bootstrap, source/APK scanning or complete
+F-Droid build success; those later stages had not executed in that attempt.

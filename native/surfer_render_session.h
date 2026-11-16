@@ -12,6 +12,11 @@ typedef int64_t surfer_render_epoch;
  * returning the new one; allocation failure leaves the old epoch current.
  */
 surfer_status surfer_render_session_create(surfer_render_session_handle *session);
+/* Original numerical pool limit is fixed at creation: min(4, processors).
+ * The platform adapter supplies the actual Runtime.availableProcessors value;
+ * numerical host tests inject it explicitly. */
+surfer_status surfer_render_session_create_for_processors(
+    size_t processors, surfer_render_session_handle *session);
 surfer_status surfer_render_session_begin(
     surfer_render_session_handle session, surfer_render_epoch *epoch);
 surfer_status surfer_render_session_cancel(surfer_render_session_handle session);
@@ -56,10 +61,30 @@ surfer_status surfer_render_session_render_publish(
     double yaw, double pitch, double zoom, surfer_render_quality quality,
     surfer_render_session_publisher publish, void *publish_state, size_t pixel_capacity);
 
+/* Original overlapping tile partition, private tile buffers, at most the
+ * creation-time pool limit, deterministic submission-order tile composition.
+ * processors is queried afresh for this draw; it controls the original xStep.
+ * Every numerical worker joins before the locked whole-frame publisher runs.
+ */
+surfer_status surfer_render_session_render_tiled_publish(
+    surfer_render_session_handle session, surfer_render_epoch epoch,
+    surfer_surface_handle surface, const surfer_scene *scene_settings,
+    size_t processors, size_t width, size_t height, double camera_height,
+    double yaw, double pitch, double zoom, surfer_render_quality quality,
+    surfer_render_session_publisher publish, void *publish_state, size_t pixel_capacity);
+
+surfer_status surfer_render_session_render_tiled(
+    surfer_render_session_handle session, surfer_render_epoch epoch,
+    surfer_surface_handle surface, const surfer_scene *scene_settings,
+    size_t processors, size_t width, size_t height, double camera_height,
+    double yaw, double pitch, double zoom, surfer_render_quality quality,
+    uint32_t *argb_pixels, size_t pixel_capacity);
+
 #ifdef SURFER_RENDER_SESSION_TESTING
 typedef enum {
     SURFER_SESSION_AFTER_RETAINS = 1,
-    SURFER_SESSION_BEFORE_PUBLISH = 2
+    SURFER_SESSION_BEFORE_PUBLISH = 2,
+    SURFER_SESSION_TILE_STARTED = 3
 } surfer_render_session_test_phase;
 
 /* Per-call fault and synchronization state; no global injection settings.
@@ -78,6 +103,8 @@ typedef struct {
 
 surfer_status surfer_render_session_test_create(
     surfer_render_session_handle *session, surfer_render_session_probe *probe);
+surfer_status surfer_render_session_test_create_for_processors(
+    size_t processors, surfer_render_session_handle *session, surfer_render_session_probe *probe);
 surfer_status surfer_render_session_test_begin(
     surfer_render_session_handle session, surfer_render_epoch *epoch,
     surfer_render_session_probe *probe);
@@ -97,6 +124,21 @@ surfer_status surfer_render_session_test_render_publish(
 size_t surfer_render_session_test_live_sessions(void);
 size_t surfer_render_session_test_live_epochs(void);
 size_t surfer_render_session_test_live_allocations(void);
+
+typedef struct {
+    size_t fail_thread_at; /* SIZE_MAX disables thread-start fault injection. */
+    size_t threads_started;
+    size_t peak_workers;
+    size_t committed_tiles;
+} surfer_parallel_render_probe;
+
+surfer_status surfer_render_session_test_render_tiled_publish(
+    surfer_render_session_handle session, surfer_render_epoch epoch,
+    surfer_surface_handle surface, const surfer_scene *scene_settings,
+    size_t processors, size_t width, size_t height, double camera_height,
+    double yaw, double pitch, double zoom, surfer_render_quality quality,
+    surfer_render_session_publisher publish, void *publish_state, size_t pixel_capacity,
+    surfer_render_session_probe *probe, surfer_parallel_render_probe *parallel_probe);
 #endif
 
 #endif

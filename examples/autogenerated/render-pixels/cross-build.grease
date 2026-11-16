@@ -69,6 +69,7 @@ sha256sum "$repository/native/surfer_raytracer.h" \
   "$repository/native/surfer_original_camera.inc" "$repository/native/surfer_vecmath.h" \
   "$repository/native/surfer_surface_store.h" "$repository/native/surfer_frame_output.h" \
   "$repository/native/surfer_render_session.h" "$repository/native/android/prepared_surface_jni.h" \
+  "$repository/native/surfer_original_workers.inc" \
   "$repository/native/android/render_surface_jni.h" "$repository/native/android/render_session_jni.h" \
   > "$output/native-headers.sha256"
 var sources = ['native/surfer_raytracer.c', 'native/surfer_vecmath.c', 'native/surfer_surface_store.c',

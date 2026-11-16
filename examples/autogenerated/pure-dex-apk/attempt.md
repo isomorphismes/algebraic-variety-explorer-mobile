@@ -1,5 +1,47 @@
 # Unsigned checked-DEX application packaging
 
+## API floor and target matrix sketch, 2026-11-16
+
+Extend the same independent nine-scenario observer to an explicit finite target
+set: API23 floor, API34 compatibility control and API35 declared target. The
+qualifier takes an expected API and requires that exact observed level, x86_64,
+qemu1, user0 and no existing app/test package or retained data. This does not
+admit arbitrary phones or weaken the existing API34 target checks.
+
+One unsigned APK and exact payload receipts flow to three fresh emulator jobs.
+Source compilation, the three ABI native builds and unsigned packaging occur
+once. Each installation job signs fresh test-only copies of that same unsigned
+candidate and records its own certificate, installed bytes, observations and
+target identity. No matrix job can imply another target's acceptance.
+
+API23 requires its supported legacy PTY transport plus a unique remote-exit
+marker; newer targets use raw shell-v2 transport and its actual exit status.
+The host timeout always bounds instrumentation. A known remote timeout is used
+where available; an absent API23 timeout is recorded explicitly and does not
+pretend to provide a remote execution bound. The actual observer still requires
+negative0/applied/cleanup and positive9/PASS/PNG evidence without relaxed cases.
+
+The maintained qualifier now parses under the exact recovered Grease runtime.
+Its unsupported expected-API24 control exits2 with the designated refusal
+before SDK checks, output creation or installation. The unchanged three-class
+observer assembles and independently decodes; DEX SHA256 remains
+5e40f8fb6235da1c8bbe168cf2cc50e0deccb53ccd2293adc457bb4645d97245.
+Independent reassembly is byte-identical. A direct Grease expansion check of
+the actual API23 command expression preserves the literal remote `$?` and its
+nonce-framed printf; it does not execute Android instrumentation.
+Neither the positive scenarios nor the zero-scenario sensitivity control was
+weakened. SDK/ART matrix execution remains NOT_RUN until real per-target
+observations succeed; parsing/assembly do not establish API23/35 execution.
+
+The API23 current-user command gap was checked against the official
+[AOSP6 Am source](https://github.com/aosp-mirror/platform_frameworks_base/blob/android-6.0.1_r81/cmds/am/src/com/android/commands/am/Am.java),
+which has no get-current-user operation. The stronger fresh-emulator guard uses
+the singleton started-user and current-user-history lists emitted by
+[AOSP6 ActivityManagerService.dumpProcessesLocked](https://github.com/aosp-mirror/platform_frameworks_base/blob/android-6.0.1_r81/services/core/java/com/android/server/am/ActivityManagerService.java).
+The raw and normalized dumps, exact declaration counts, transport status,
+remote exit marker and timeout scope are retained. Source review does not
+replace installed execution of this preflight.
+
 ## Type and ownership sketch before code
 
 The candidate is one exact checked Idriç `candidate.dex`, its source/emission
@@ -21,8 +63,8 @@ tools; Idriç application source remains the sole candidate owner.
 
 The installed qualification is a separate application containing only an
 independent Smali Instrumentation observer. A qualifier-owned throwaway signer
-may sign temporary copies of both APKs solely for the declared API34 x86_64
-emulator. It cannot establish compatibility with any existing production/C67
+may sign temporary copies of both APKs solely for the declared API23,34 or35
+x86_64 emulator. It cannot establish compatibility with any existing production/C67
 installation. The qualifier checks exact emulator identity and package absence
 before installing, never replaces or uninstalls an existing application and
 records signed/unsigned digests and the temporary certificate fingerprint.
@@ -119,3 +161,8 @@ The retained badging confirms min23, target35 and Idric.Generated. The producer
 now requires the exact aapt2 field. The separate APK policy intentionally uses
 legacy aapt and retains that tool's field. Full packaging and installed behavior
 still require a fresh successful run; the partial APK is not a qualified update.
+
+Qualification now creates its throwaway private signer in a private temporary
+directory outside the uploaded evidence tree. Successful signing removes it;
+an earlier SDK failure cannot publish that private key as an evidence artifact.
+The exported test certificate remains with its explicit emulator-only scope.

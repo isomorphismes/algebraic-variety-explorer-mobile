@@ -124,3 +124,24 @@ and a deterministic publication ordering; it does not recreate the task's
 root, sampling or shading arithmetic. Candidate C must independently match
 the original tiles and ordered result. The original racing worker results
 remain recorded separately, with their differing values and nondeterminism.
+
+## Controlled original processor-count profiles
+
+The maintained reference now runs the unchanged ordered-tile adapter with
+the real JVM `-XX:ActiveProcessorCount` values 1, 2, 4 and 8, verifying the
+count actually observed by the original renderer. The Java 21 development
+diagnostic passed all four profiles: each complete 44-frame run repeated
+exactly and matched the actual serial original draw. The profiles yielded
+468, 468, 888 and 1812 original tiles respectively, with 5412 ordered pixels
+per profile. No default-host racing worker run was altered by those options.
+
+| JVM processor count | Exploratory ordered-output SHA-256 |
+| --- | --- |
+| 1 | `ff3d759812d14bc513ecff7f6c3eecdc8313eed557ad39f3b217737d23148da9` |
+| 2 | `9eded09b89c3b72a6e8d28de383e19e7ce4c04325c41e865bdc7590c9592c103` |
+| 4 | `d9fe2ab0aa8004cd0b1354604679020e1bd86cbca738103231c49bc39440a0aa` |
+| 8 | `d9c386f1cdb4b3ec985ef89c3322a1cf97d1b70a29248f370bf0cd6f72b41930` |
+
+These are controlled Java 21 JVM observations on one development host, not
+JDK 17, candidate C or physical multicore-device acceptance. The maintained
+JDK 17 gate and separate C consumer must execute their own exact inputs.

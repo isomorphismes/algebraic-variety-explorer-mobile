@@ -2088,9 +2088,10 @@ static surfer_status quality_sample(
     return SURFER_OK;
 }
 
-static surfer_status render_orthographic_quality_prepared(
+static surfer_status render_orthographic_tile_prepared(
     surfer_operation_context *context, const surfer_scene *scene,
     size_t width, size_t height,
+    size_t x_start, size_t y_start, size_t x_end, size_t y_end,
     double camera_height, double yaw, double pitch, double zoom,
     surfer_render_quality quality, uint32_t *argb_pixels, size_t pixel_capacity,
     original_render_pipeline *pipeline)
@@ -2098,13 +2099,18 @@ static surfer_status render_orthographic_quality_prepared(
     if (!continue_operation(context)) return context->status;
     if (argb_pixels == NULL || width < 2 || height < 2 ||
         width > SIZE_MAX / height || width * height > SIZE_MAX / sizeof(*argb_pixels) ||
-        pixel_capacity < width * height || !isfinite(camera_height) ||
+        x_start > x_end || y_start > y_end || x_end >= width || y_end >= height ||
+        !isfinite(camera_height) ||
         !isfinite(yaw) || !isfinite(pitch) || !isfinite(zoom) ||
         !(camera_height > 0.0) || !(zoom > 0.0) || !valid_scene(context, scene) ||
         (quality.pattern != SURFER_AA_OG_1X1 && quality.pattern != SURFER_AA_QUINCUNX) ||
         !isfinite(quality.threshold) || quality.threshold < 0.0f) {
         return context->status == SURFER_OK ? SURFER_INVALID_INPUT : context->status;
     }
+    const size_t tile_width = x_end - x_start + 1;
+    const size_t tile_height = y_end - y_start + 1;
+    if (tile_width > SIZE_MAX / tile_height || pixel_capacity < tile_width * tile_height)
+        return SURFER_INVALID_INPUT;
     original_camera_view camera;
     orthographic_view view;
     if (!make_original_orthographic_view(context, width, height, camera_height,
@@ -2119,9 +2125,11 @@ static surfer_status render_orthographic_quality_prepared(
     const double v_increment = ((camera.voffset + camera.vscale) -
         (camera.voffset - camera.vscale)) / (double)(height - 1);
     const double start_fraction_u = quality.pattern == SURFER_AA_OG_1X1 ?
-        0.0 : -0.5 / (double)(width - 1);
+        (double)x_start / (double)(width - 1) :
+        ((double)x_start - 0.5) / (double)(width - 1);
     const double start_fraction_v = quality.pattern == SURFER_AA_OG_1X1 ?
-        0.0 : -0.5 / (double)(height - 1);
+        (double)y_start / (double)(height - 1) :
+        ((double)y_start - 0.5) / (double)(height - 1);
     const double u_start = camera.uoffset + camera.uscale * (2.0 * start_fraction_u - 1.0);
     const double v_start = camera.voffset + camera.vscale * (2.0 * start_fraction_v - 1.0);
     if (!isfinite(u_increment) || !isfinite(v_increment) ||
@@ -2130,28 +2138,28 @@ static surfer_status render_orthographic_quality_prepared(
     if (!original_initialize_pipeline(context, scene->surface, view, pipeline)) return context->status;
 
     if (quality.pattern == SURFER_AA_OG_1X1) {
-        if (!isfinite(u_start + (double)(width - 1) * u_increment) ||
-            !isfinite(v_start + (double)(height - 1) * v_increment)) return SURFER_INVALID_INPUT;
-        for (size_t y = 0; y < height; ++y) {
+        if (!isfinite(u_start + (double)(tile_width - 1) * u_increment) ||
+            !isfinite(v_start + (double)(tile_height - 1) * v_increment)) return SURFER_INVALID_INPUT;
+        for (size_t y = 0; y < tile_height; ++y) {
             const double v = v_start + (double)y * v_increment;
-            for (size_t x = 0; x < width; ++x) {
+            for (size_t x = 0; x < tile_width; ++x) {
                 const double u = u_start + (double)x * u_increment;
                 surfer_color color;
                 const surfer_status status = quality_sample(context, scene, view, pipeline, u, v, &color);
                 if (status != SURFER_OK) return status;
-                argb_pixels[y * width + x] = color_to_argb_validated(color);
+                argb_pixels[y * tile_width + x] = color_to_argb_validated(color);
             }
         }
         return continue_operation(context) ? SURFER_OK : context->status;
     }
 
-    if (width == SIZE_MAX || height == SIZE_MAX) return SURFER_INVALID_INPUT;
-    const size_t corner_width = width + 1;
-    const size_t corner_height = height + 1;
+    if (tile_width == SIZE_MAX || tile_height == SIZE_MAX) return SURFER_INVALID_INPUT;
+    const size_t corner_width = tile_width + 1;
+    const size_t corner_height = tile_height + 1;
     if (corner_width > SIZE_MAX / corner_height ||
         corner_width * corner_height > SIZE_MAX / sizeof(surfer_color) ||
-        !isfinite(u_start + (double)width * u_increment) ||
-        !isfinite(v_start + (double)height * v_increment)) return SURFER_INVALID_INPUT;
+        !isfinite(u_start + (double)tile_width * u_increment) ||
+        !isfinite(v_start + (double)tile_height * v_increment)) return SURFER_INVALID_INPUT;
     mark_allocation_path(context, UINT32_C(0x100)); /* AA corner storage. */
     surfer_color *corners = allocate_array(context,
         corner_width * corner_height, sizeof(*corners), false);
@@ -2181,7 +2189,7 @@ static surfer_status render_orthographic_quality_prepared(
                 const surfer_color color = antialias_color(quality,
                     upper_left, upper_right, lower_left, lower_right, center);
                 if (!finite_color(color)) { result = SURFER_INVALID_INPUT; break; }
-                argb_pixels[(y - 1) * width + x - 1] = color_to_argb_validated(color);
+                argb_pixels[(y - 1) * tile_width + x - 1] = color_to_argb_validated(color);
             }
         }
     }
@@ -2196,8 +2204,27 @@ static surfer_status render_orthographic_quality_request(
     surfer_render_quality quality, uint32_t *argb_pixels, size_t pixel_capacity)
 {
     original_render_pipeline pipeline = {0};
-    const surfer_status status = render_orthographic_quality_prepared(context, scene,
-        width, height, camera_height, yaw, pitch, zoom, quality, argb_pixels, pixel_capacity, &pipeline);
+    const surfer_status status = render_orthographic_tile_prepared(context, scene,
+        width, height, 0, 0, width - 1, height - 1,
+        camera_height, yaw, pitch, zoom, quality, argb_pixels, pixel_capacity, &pipeline);
+    original_destroy_pipeline(&pipeline);
+    return status;
+}
+
+surfer_status surfer_render_orthographic_tile(
+    const surfer_scene *scene, size_t width, size_t height,
+    size_t x_start, size_t y_start, size_t x_end, size_t y_end,
+    double camera_height, double yaw, double pitch, double zoom,
+    surfer_render_quality quality, const surfer_cancellation *cancellation,
+    uint32_t *argb_pixels, size_t pixel_capacity)
+{
+    if (cancellation != NULL && cancellation->cancelled == NULL) return SURFER_INVALID_INPUT;
+    surfer_operation_context context = new_operation_context();
+    context.cancellation = cancellation;
+    original_render_pipeline pipeline = {0};
+    const surfer_status status = render_orthographic_tile_prepared(&context, scene,
+        width, height, x_start, y_start, x_end, y_end, camera_height, yaw, pitch, zoom,
+        quality, argb_pixels, pixel_capacity, &pipeline);
     original_destroy_pipeline(&pipeline);
     return status;
 }
@@ -2247,5 +2274,24 @@ surfer_status surfer_test_render_orthographic_quality(
     context.probe = probe;
     return render_orthographic_quality_request(&context, scene, width, height,
         camera_height, yaw, pitch, zoom, quality, argb_pixels, pixel_capacity);
+}
+
+surfer_status surfer_test_render_orthographic_tile(
+    const surfer_scene *scene, size_t width, size_t height,
+    size_t x_start, size_t y_start, size_t x_end, size_t y_end,
+    double camera_height, double yaw, double pitch, double zoom,
+    surfer_render_quality quality, const surfer_cancellation *cancellation,
+    uint32_t *argb_pixels, size_t pixel_capacity, surfer_allocation_probe *probe)
+{
+    if (cancellation != NULL && cancellation->cancelled == NULL) return SURFER_INVALID_INPUT;
+    surfer_operation_context context = new_operation_context();
+    context.probe = probe;
+    context.cancellation = cancellation;
+    original_render_pipeline pipeline = {0};
+    const surfer_status status = render_orthographic_tile_prepared(&context, scene,
+        width, height, x_start, y_start, x_end, y_end, camera_height, yaw, pitch, zoom,
+        quality, argb_pixels, pixel_capacity, &pipeline);
+    original_destroy_pipeline(&pipeline);
+    return status;
 }
 #endif

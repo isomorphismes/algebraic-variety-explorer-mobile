@@ -1,0 +1,89 @@
+#!/usr/bin/env grease
+set -eu -o pipefail
+if (len(ARGV) !== 6) { echo 'usage: grease verify.grease EXPLORER ICK_SOURCE QUALIFIED_ICK JNI_INCLUDE JNI_PLATFORM_INCLUDE FRESH_OUTPUT' >&2; exit 2 }
+var repository = ARGV[0]
+var ick_source = ARGV[1]
+var compiler = ARGV[2]
+var jni_include = ARGV[3]
+var platform_include = ARGV[4]
+var output = ARGV[5]
+for path in (ARGV) { if (path[0] !== '/') { echo 'FAIL absolute processor-query paths required' >&2; exit 2 } }
+if test -e "$output" { echo 'FAIL refusing reused processor-query evidence' >&2; exit 1 }
+test $(git -C "$ick_source" rev-parse HEAD) = fbe86e23d55cfec2000c08e61deea2a407fd7175
+test -x "$compiler"
+test -f "$jni_include/jni.h"
+test -f "$platform_include/jni_md.h"
+if test -f "$jni_include/jni_md.h" { cmp "$jni_include/jni_md.h" "$platform_include/jni_md.h" }
+command -v rg > /dev/null
+var manifest = "$repository/ci/processor-query-toolchain.tsv"
+rg -x -F b'build_id\ttarget\ttoolchain\tick_revision\tick_status\tick_evidence' "$manifest"
+for stage in test count-mutant exception-mutant reference-mutant sanitizers {
+  printf 'processor-query-%s\tx86_64-pc-linux-gnu\tick\tfbe86e23d55cfec2000c08e61deea2a407fd7175\tqualified\treceipt:ai-ci-ick-host-32cb45b3\n' "$stage" | rg -x -F -f - "$manifest"
+}
+test $(wc -l < "$manifest") = 6
+mkdir -p "$output/mutants"
+"$compiler" --version > "$output/ick-version.txt"
+"$compiler" -dumpmachine > "$output/ick-target.txt"
+rg -x -F x86_64-pc-linux-gnu "$output/ick-target.txt"
+var cc1 = $("$compiler" -print-prog-name=cc1)
+test -x "$cc1"
+sha256sum "$compiler" "$cc1" > "$output/toolchain.sha256"
+sha256sum "$repository/native/surfer_processor_query_test.c" \
+  "$repository/native/android/render_session_jni.c" "$repository/native/android/render_session_jni.h" \
+  "$repository/native/surfer_render_session.c" "$repository/native/surfer_render_session.h" \
+  "$repository/native/surfer_original_workers.inc" \
+  "$repository/native/surfer_surface_store.c" "$repository/native/surfer_surface_store.h" \
+  "$repository/native/surfer_raytracer.c" "$repository/native/surfer_raytracer.h" \
+  "$repository/native/surfer_original_specialization.inc" "$repository/native/surfer_original_camera.inc" \
+  "$repository/native/surfer_vecmath.c" "$repository/native/surfer_vecmath.h" \
+  "$jni_include/jni.h" "$platform_include/jni_md.h" > "$output/inputs.sha256"
+cp "$manifest" "$output/toolchain.tsv"
+git -C "$repository" rev-parse HEAD > "$output/source-revision.txt"
+proc compile_query(directory, destination) {
+  "$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O2 \
+    -fno-fast-math -ffp-contract=off \
+    -DSURFER_RENDER_SESSION_JNI_TESTING -DSURFER_RENDER_SESSION_TESTING -DSURFER_SURFACE_STORE_TESTING \
+    -I "$jni_include" -I "$platform_include" \
+    "$directory/surfer_processor_query_test.c" "$repository/native/surfer_render_session.c" \
+    "$repository/native/surfer_surface_store.c" "$repository/native/surfer_raytracer.c" \
+    "$repository/native/surfer_vecmath.c" -pthread -lm \
+    -Wl,--wrap=pthread_create -Wl,--wrap=pthread_join -o "$destination"
+}
+var expected = 'PASS processor query caller thread scalar transfer query faults local references owners and publication after joins'
+compile_query "$repository/native" "$output/test"
+"$output/test" > "$output/test.txt" 2>&1
+cat "$output/test.txt"
+rg -x -F "$expected" "$output/test.txt"
+proc reject_mutant(name, expression) {
+  var destination = "$output/mutants/$name"
+  mkdir -p "$destination/android"
+  cp "$repository/native/surfer_processor_query_test.c" "$repository/native/surfer_render_session.h" \
+    "$repository/native/surfer_surface_store.h" "$repository/native/surfer_raytracer.h" "$destination/"
+  cp "$repository/native/android/render_session_jni.h" "$destination/android/"
+  sed "$expression" "$repository/native/android/render_session_jni.c" > "$destination/android/render_session_jni.c"
+  try { cmp -s "$repository/native/android/render_session_jni.c" "$destination/android/render_session_jni.c" }
+  if (_error.code !== 1) { echo 'FAIL processor-query mutation unchanged or comparison failed' >&2; exit 1 }
+  compile_query "$destination" "$destination/test"
+  try { "$destination/test" > "$destination/result.txt" 2>&1 }
+  if (_error.code !== 1) { echo "FAIL missing designated query mutation rejection: $name" >&2; exit 1 }
+  cat "$destination/result.txt"
+  rg '^FAIL processor query:' "$destination/result.txt"
+}
+reject_mutant count 's/\*processors = (size_t)count;/*processors = 8;/'
+reject_mutant exception 's/if ((\*environment)->ExceptionCheck(environment) || count <= 0) goto cleanup;/if (count <= 0) goto cleanup;/'
+reject_mutant reference 's/if (runtime != NULL) (\*environment)->DeleteLocalRef(environment, runtime);/if (runtime != NULL) (void)runtime;/'
+"$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O1 -g \
+  -fno-fast-math -ffp-contract=off -fsanitize=address,undefined -fno-omit-frame-pointer \
+  -DSURFER_RENDER_SESSION_JNI_TESTING -DSURFER_RENDER_SESSION_TESTING -DSURFER_SURFACE_STORE_TESTING \
+  -I "$jni_include" -I "$platform_include" \
+  "$repository/native/surfer_processor_query_test.c" "$repository/native/surfer_render_session.c" \
+  "$repository/native/surfer_surface_store.c" "$repository/native/surfer_raytracer.c" \
+  "$repository/native/surfer_vecmath.c" -pthread -lm \
+  -Wl,--wrap=pthread_create -Wl,--wrap=pthread_join -o "$output/sanitized"
+env ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 \
+  "$output/sanitized" > "$output/sanitizers.txt" 2>&1
+cat "$output/sanitizers.txt"
+rg -x -F "$expected" "$output/sanitizers.txt"
+sha256sum "$output/test" "$output/sanitized" > "$output/binaries.sha256"
+printf 'actual_Runtime_query_mock_JNI_table\tPASS\nquery_stage_faults_and_pending_exceptions\tPASS\nlocal_references_balanced\tPASS\ncreate_render_refusals_preserve_owners_and_output\tPASS\nJNI_calls_on_original_caller_thread\tPASS\nactual_worker_joins_before_array_publication\tPASS\nthree_compiled_query_mutants\tPASS\nASAN_UBSAN_leaks\tPASS\nactual_JVM\tNOT_RUN\nAndroid_JNI_ABI\tNOT_RUN\nART\tNOT_RUN\nphysical_devices\tNOT_RUN\n' > "$output/result.tsv"
+printf '\033[32mPASS\033[0m host JNI query and actual native owners; ART acceptance separate\n'

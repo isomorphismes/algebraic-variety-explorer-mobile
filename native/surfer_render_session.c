@@ -16,6 +16,7 @@ struct render_session {
     surfer_render_session_handle identity;
     bool open;
     size_t active;
+    size_t worker_limit;
     render_epoch *current;
     render_session *next;
 };
@@ -96,12 +97,14 @@ static bool is_current_locked(const render_session *session, const render_epoch 
     return session->open && session->current == epoch && !epoch->cancelled;
 }
 
-static surfer_status create_session(surfer_render_session_handle *result, session_probe *probe)
+static surfer_status create_session(size_t processors,
+    surfer_render_session_handle *result, session_probe *probe)
 {
-    if (result == NULL) return SURFER_INVALID_INPUT;
+    if (result == NULL || processors == 0 || processors > INT32_MAX) return SURFER_INVALID_INPUT;
     render_session *session = allocate(sizeof(*session), SESSION_ALLOCATION, probe);
     if (session == NULL) return SURFER_OUT_OF_MEMORY;
     *session = (render_session){0};
+    session->worker_limit = processors < 4 ? processors : 4;
     if (pthread_mutex_lock(&registry_mutex) != 0) {
         deallocate(session, SESSION_ALLOCATION);
         return SURFER_INVALID_INPUT;
@@ -122,7 +125,13 @@ static surfer_status create_session(surfer_render_session_handle *result, sessio
 
 surfer_status surfer_render_session_create(surfer_render_session_handle *result)
 {
-    return create_session(result, NULL);
+    return create_session(1, result, NULL);
+}
+
+surfer_status surfer_render_session_create_for_processors(
+    size_t processors, surfer_render_session_handle *result)
+{
+    return create_session(processors, result, NULL);
 }
 
 static surfer_status begin_epoch(
@@ -248,9 +257,11 @@ static bool epoch_cancelled(void *opaque)
     const bool cancelled = state->epoch->cancelled;
 #ifdef SURFER_RENDER_SESSION_TESTING
     if (state->probe != NULL) {
+        (void)pthread_mutex_lock(&allocation_mutex);
         if (state->probe->cancellation_checks != SIZE_MAX) state->probe->cancellation_checks++;
         if (cancelled && state->probe->observed_cancellation != SIZE_MAX)
             state->probe->observed_cancellation++;
+        (void)pthread_mutex_unlock(&allocation_mutex);
     }
 #endif
     return cancelled;
@@ -266,6 +277,8 @@ static void run_hook(session_probe *probe, int phase)
     (void)phase;
 #endif
 }
+
+#include "surfer_original_workers.inc"
 
 static surfer_status finish_render(
     render_session *session, render_epoch *epoch, surfer_surface_borrow *borrow,
@@ -308,11 +321,12 @@ static surfer_status render_publish(
     surfer_surface_handle surface, const surfer_scene *settings,
     size_t width, size_t height, double camera_height,
     double yaw, double pitch, double zoom, surfer_render_quality quality,
-    surfer_render_session_publisher publish, void *publish_state, size_t capacity, session_probe *probe)
+    surfer_render_session_publisher publish, void *publish_state, size_t capacity, session_probe *probe,
+    size_t processors, parallel_probe *parallel)
 {
     if (identity <= 0 || epoch_identity <= 0 || surface <= 0 || settings == NULL || publish == NULL ||
         width < 2 || height < 2 || width > SIZE_MAX / height ||
-        width * height > SIZE_MAX / sizeof(uint32_t) || capacity < width * height)
+        width * height > SIZE_MAX / sizeof(uint32_t) || capacity < width * height || processors > INT32_MAX)
         return SURFER_INVALID_INPUT;
     const size_t count = width * height;
     const size_t bytes = count * sizeof(uint32_t);
@@ -333,8 +347,12 @@ static surfer_status render_publish(
     scene.surface = borrow.surface;
     cancellation_state state = {epoch, probe};
     const surfer_cancellation cancellation = {epoch_cancelled, &state};
-    status = surfer_render_orthographic_cancellable(&scene, width, height, camera_height,
-        yaw, pitch, zoom, quality, &cancellation, staging, count);
+    if (processors == 0)
+        status = surfer_render_orthographic_cancellable(&scene, width, height, camera_height,
+            yaw, pitch, zoom, quality, &cancellation, staging, count);
+    else
+        status = render_original_workers(&scene, processors, session->worker_limit, width, height,
+            camera_height, yaw, pitch, zoom, quality, &cancellation, staging, probe, parallel);
     run_hook(probe, 2);
     return finish_render(session, epoch, &borrow, true, staging, count, publish, publish_state, status);
 }
@@ -353,7 +371,7 @@ surfer_status surfer_render_session_render_publish(
     surfer_render_session_publisher publish, void *publish_state, size_t capacity)
 {
     return render_publish(session, epoch, surface, settings, width, height, camera_height,
-        yaw, pitch, zoom, quality, publish, publish_state, capacity, NULL);
+        yaw, pitch, zoom, quality, publish, publish_state, capacity, NULL, 0, NULL);
 }
 
 surfer_status surfer_render_session_render(
@@ -365,14 +383,57 @@ surfer_status surfer_render_session_render(
 {
     if (pixels == NULL) return SURFER_INVALID_INPUT;
     return render_publish(session, epoch, surface, settings, width, height, camera_height,
-        yaw, pitch, zoom, quality, copy_pixels, pixels, capacity, NULL);
+        yaw, pitch, zoom, quality, copy_pixels, pixels, capacity, NULL, 0, NULL);
+}
+
+surfer_status surfer_render_session_render_tiled_publish(
+    surfer_render_session_handle session, surfer_render_epoch epoch,
+    surfer_surface_handle surface, const surfer_scene *settings,
+    size_t processors, size_t width, size_t height, double camera_height,
+    double yaw, double pitch, double zoom, surfer_render_quality quality,
+    surfer_render_session_publisher publish, void *publish_state, size_t capacity)
+{
+    if (processors == 0) return SURFER_INVALID_INPUT;
+    return render_publish(session, epoch, surface, settings, width, height, camera_height,
+        yaw, pitch, zoom, quality, publish, publish_state, capacity, NULL, processors, NULL);
+}
+
+surfer_status surfer_render_session_render_tiled(
+    surfer_render_session_handle session, surfer_render_epoch epoch,
+    surfer_surface_handle surface, const surfer_scene *settings,
+    size_t processors, size_t width, size_t height, double camera_height,
+    double yaw, double pitch, double zoom, surfer_render_quality quality,
+    uint32_t *pixels, size_t capacity)
+{
+    if (pixels == NULL || processors == 0) return SURFER_INVALID_INPUT;
+    return render_publish(session, epoch, surface, settings, width, height, camera_height,
+        yaw, pitch, zoom, quality, copy_pixels, pixels, capacity, NULL, processors, NULL);
 }
 
 #ifdef SURFER_RENDER_SESSION_TESTING
+surfer_status surfer_render_session_test_create_for_processors(
+    size_t processors, surfer_render_session_handle *session, surfer_render_session_probe *probe)
+{
+    return create_session(processors, session, probe);
+}
+
+surfer_status surfer_render_session_test_render_tiled_publish(
+    surfer_render_session_handle session, surfer_render_epoch epoch,
+    surfer_surface_handle surface, const surfer_scene *settings,
+    size_t processors, size_t width, size_t height, double camera_height,
+    double yaw, double pitch, double zoom, surfer_render_quality quality,
+    surfer_render_session_publisher publish, void *publish_state, size_t capacity,
+    surfer_render_session_probe *probe, surfer_parallel_render_probe *parallel)
+{
+    if (processors == 0) return SURFER_INVALID_INPUT;
+    return render_publish(session, epoch, surface, settings, width, height, camera_height,
+        yaw, pitch, zoom, quality, publish, publish_state, capacity, probe, processors, parallel);
+}
+
 surfer_status surfer_render_session_test_create(
     surfer_render_session_handle *session, surfer_render_session_probe *probe)
 {
-    return create_session(session, probe);
+    return create_session(1, session, probe);
 }
 
 surfer_status surfer_render_session_test_begin(
@@ -391,7 +452,7 @@ surfer_status surfer_render_session_test_render(
 {
     if (pixels == NULL) return SURFER_INVALID_INPUT;
     return render_publish(session, epoch, surface, settings, width, height, camera_height,
-        yaw, pitch, zoom, quality, copy_pixels, pixels, capacity, probe);
+        yaw, pitch, zoom, quality, copy_pixels, pixels, capacity, probe, 0, NULL);
 }
 
 surfer_status surfer_render_session_test_render_publish(
@@ -403,7 +464,7 @@ surfer_status surfer_render_session_test_render_publish(
     surfer_render_session_probe *probe)
 {
     return render_publish(session, epoch, surface, settings, width, height, camera_height,
-        yaw, pitch, zoom, quality, publish, publish_state, capacity, probe);
+        yaw, pitch, zoom, quality, publish, publish_state, capacity, probe, 0, NULL);
 }
 
 static size_t live_count(int kind)

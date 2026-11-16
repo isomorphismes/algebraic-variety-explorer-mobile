@@ -7,6 +7,7 @@ static const char *frame_identity = "before first frame";
 
 static void frame_fail(const char *reason)
 {
+    (void)fflush(stdout);
     fprintf(stderr, "FAIL original lit frame: %s %s\n", frame_identity, reason);
     exit(1);
 }

@@ -199,6 +199,22 @@ surfer_status surfer_render_orthographic_cancellable(
     surfer_render_quality quality, const surfer_cancellation *cancellation,
     uint32_t *argb_pixels, size_t pixel_capacity);
 
+/* One original RenderingTask rectangle in the complete canvas coordinate
+ * system. Bounds are inclusive. Output is a tightly packed rectangle of
+ * (x_end-x_start+1)*(y_end-y_start+1) pixels in mathematical row order.
+ * Its transformed polynomial/row/corner storage is private to this call.
+ * No scene, cancellation state or pixel pointer is retained. NULL cancellation
+ * selects no cancellation; a supplied predicate must be safe on this worker.
+ * Invalid inputs write no pixels; runtime failure invalidates the whole tile.
+ * The caller owns overlapping-tile ordering and complete-frame publication.
+ */
+surfer_status surfer_render_orthographic_tile(
+    const surfer_scene *scene, size_t width, size_t height,
+    size_t x_start, size_t y_start, size_t x_end, size_t y_end,
+    double camera_height, double yaw, double pitch, double zoom,
+    surfer_render_quality quality, const surfer_cancellation *cancellation,
+    uint32_t *argb_pixels, size_t pixel_capacity);
+
 surfer_scene surfer_default_scene(const surfer_prepared_surface *surface);
 surfer_status surfer_color_to_argb(surfer_color color, uint32_t *argb);
 
@@ -230,6 +246,12 @@ surfer_status surfer_test_render_orthographic_quality(
     double camera_height, double yaw, double pitch, double zoom,
     surfer_render_quality quality, uint32_t *argb_pixels, size_t pixel_capacity,
     surfer_allocation_probe *probe);
+surfer_status surfer_test_render_orthographic_tile(
+    const surfer_scene *scene, size_t width, size_t height,
+    size_t x_start, size_t y_start, size_t x_end, size_t y_end,
+    double camera_height, double yaw, double pitch, double zoom,
+    surfer_render_quality quality, const surfer_cancellation *cancellation,
+    uint32_t *argb_pixels, size_t pixel_capacity, surfer_allocation_probe *probe);
 #endif
 
 #endif

@@ -74,6 +74,26 @@ test $(rg -c b'^ordered_pixel\t' "$output/ordered-workers.tsv") = 5412
 test $(rg -c b'^serial_ordered_match\t' "$output/ordered-workers.tsv") = 44
 rg b'^ordered_profile\t|^ordered_summary\t|^serial_ordered_match\t' \
   "$output/ordered-workers.tsv" > "$output/ordered-summaries.tsv"
+for processors in 1 2 4 8 {
+  var counted = "$output/ordered-workers-count-$processors.tsv"
+  var repeated = "$output/repeat/ordered-workers-count-$processors.tsv"
+  for copy in observations repeat {
+    var destination = counted
+    if (copy === 'repeat') { setvar destination = repeated }
+    java -XX:-UsePerfData "-XX:ActiveProcessorCount=$processors" -cp "$output/classes:$antlr:$vecmath" \
+      de.mfo.jsurf.rendering.cpu.OriginalLightingOracle ordered-workers \
+      > "$destination" 2> "$destination.stderr"
+    test ! -s "$destination.stderr"
+  }
+  cmp "$counted" "$repeated"
+  test $(rg -c b'^frame\t' "$counted") = 44
+  test $(rg -c "^ordered_profile\\t[^\\t]+\\t$processors\\t" "$counted") = 44
+  test $(rg -c b'^ordered_summary\t' "$counted") = 44
+  test $(rg -c b'^ordered_pixel\t' "$counted") = 5412
+  test $(rg -c b'^serial_ordered_match\t' "$counted") = 44
+  rg b'^ordered_profile\t|^ordered_summary\t|^serial_ordered_match\t' \
+    "$counted" > "$output/ordered-summaries-count-$processors.tsv"
+}
 # Observe the actual production partition three times per frame. Differing
 # overlapping-task results are retained rather than forced into equality.
 java -XX:-UsePerfData -cp "$output/classes:$antlr:$vecmath" \
@@ -86,6 +106,8 @@ test $(rg -c b'^worker_pixel\t' "$output/workers.tsv") = 16236
 rg b'^worker_summary\t' "$output/workers.tsv" > "$output/worker-summaries.tsv"
 sha256sum "$output/lighting.tsv" "$output/pixels.tsv" "$output/additional-pixels.tsv" "$output/rays.tsv" \
   "$output/ordered-workers.tsv" "$output/ordered-summaries.tsv" \
+  "$output/ordered-workers-count-1.tsv" "$output/ordered-workers-count-2.tsv" \
+  "$output/ordered-workers-count-4.tsv" "$output/ordered-workers-count-8.tsv" \
   "$output/workers.tsv" "$output/worker-summaries.tsv" > "$output/observations.sha256"
-printf 'frozen_original_source\tPASS\noriginal_Java17_compile\tPASS\nactual_collected_ambient_and_products\tPASS\nactual_RenderingTask_shade\tPASS\nactual_full_canvas_default_lit_frames\tPASS\nactual_selected_ray_components\tPASS\nactual_ordered_private_RenderingTask_tiles\tPASS\nactual_serial_draw_matches_ordered_tiles\tPASS\nrepeat_bytes\tPASS\nscenes\t6\nshade_cases\t288\nframes\t44\npixels\t5412\nselected_ray_records\t238\nadditional_Madore_frames\t2\nadditional_Madore_pixels\t286\nactual_production_worker_draws\t132\nworker_partition_comparison\tsee-worker-summaries.tsv\nordered_tile_comparison\tsee-ordered-summaries.tsv\ncandidate_C\tNOT_RUN\nfull_image_worker_parity\tNOT_ESTABLISHED\nAndroid\tNOT_RUN\nphysical_devices\tNOT_RUN\n' > "$output/result.tsv"
+printf 'frozen_original_source\tPASS\noriginal_Java17_compile\tPASS\nactual_collected_ambient_and_products\tPASS\nactual_RenderingTask_shade\tPASS\nactual_full_canvas_default_lit_frames\tPASS\nactual_selected_ray_components\tPASS\nactual_ordered_private_RenderingTask_tiles\tPASS\nactual_serial_draw_matches_ordered_tiles\tPASS\nactual_processor_count_tile_profiles_1_2_4_8\tPASS\nrepeat_bytes\tPASS\nscenes\t6\nshade_cases\t288\nframes\t44\npixels\t5412\nselected_ray_records\t238\nadditional_Madore_frames\t2\nadditional_Madore_pixels\t286\nactual_production_worker_draws\t132\nworker_partition_comparison\tsee-worker-summaries.tsv\nordered_tile_comparison\tsee-ordered-summaries.tsv\nprocessor_count_tile_profiles\t1,2,4,8\nprocessor_count_frames\t176\nprocessor_count_ordered_pixels\t21648\ncandidate_C\tNOT_RUN\nfull_image_worker_parity\tNOT_ESTABLISHED\nAndroid\tNOT_RUN\nphysical_devices\tNOT_RUN\n' > "$output/result.tsv"
 printf '\033[32mPASS\033[0m actual original lighting and full-canvas reference; candidate C qualification separate\n'

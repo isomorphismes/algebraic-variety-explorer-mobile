@@ -33,7 +33,14 @@ grep -Fxq '      - sdkmanager "platforms;android-35" "build-tools;35.0.1" "ndk;2
     fail "F-Droid prebuild must install the pinned SDK and build tools"
 grep -Fq '      - make -f fdroid/Makefile FRONTEND="$$AVEIdric$$"' "$METADATA" ||
     fail "F-Droid build must source-build the pinned compiler prerequisites"
-grep -Fq 'grease fdroid/reproducible.grease "$PWD" "$$AVEIdric$$" "$$AVEDEX$$" "$$SDK$$"' "$METADATA" ||
+# The pinned F-Droid writer folds this one invocation onto three canonical
+# lines. Require the executable and every argument in that adjacent sequence.
+awk \
+    -v command='      - PATH="$PWD/.build/fdroid-tools/runtime/.build/grease/bin:$PATH" .build/fdroid-tools/runtime/.build/grease/bin/grease' \
+    -v arguments='        fdroid/reproducible.grease "$PWD" "$$AVEIdric$$" "$$AVEDEX$$" "$$SDK$$" "$PWD/.build/fdroid-tools"' \
+    -v tail='        "$PWD/.build/reproducible-source" "$(git rev-parse HEAD)"' \
+    '$0 == command { found++; if ((getline) <= 0 || $0 != arguments) bad = 1; if ((getline) <= 0 || $0 != tail) bad = 1 }
+     END { exit bad || found != 1 }' "$METADATA" ||
     fail "F-Droid build must perform two disjoint checked Activity source builds"
 [[ "$(field 's/^CurrentVersion: \(.*\)$/\1/p' "$METADATA")" == "$AVE_VERSION_NAME" ]] ||
     fail "CurrentVersion does not match build.sh"
