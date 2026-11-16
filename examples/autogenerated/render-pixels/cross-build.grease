@@ -1,0 +1,102 @@
+#!/usr/bin/env grease
+set -eu -o pipefail
+if (len(ARGV) !== 6) {
+  echo 'usage: grease cross-build.grease EXPLORER ICK_SOURCE QUALIFIED_ICK ABI NDK FRESH_OUTPUT' >&2
+  exit 2
+}
+var repository = ARGV[0]
+var ick_source = ARGV[1]
+var compiler = ARGV[2]
+var abi = ARGV[3]
+var ndk = ARGV[4]
+var output = ARGV[5]
+for path in "$repository" "$ick_source" "$compiler" "$ndk" "$output" {
+  if (path[0] !== '/') { echo 'FAIL absolute cross-build paths required' >&2; exit 2 }
+}
+var gnu = ''
+var include = ''
+var linker_name = ''
+var machine = ''
+var flags = []
+if (abi === 'arm64-v8a') {
+  setvar gnu = 'aarch64-linux-gnu'
+  setvar include = 'aarch64-linux-android'
+  setvar linker_name = 'aarch64-linux-android23-clang'
+  setvar machine = 'AArch64'
+  setvar flags = ['-ffixed-x18']
+} elif (abi === 'armeabi-v7a') {
+  setvar gnu = 'arm-linux-gnueabi'
+  setvar include = 'arm-linux-androideabi'
+  setvar linker_name = 'armv7a-linux-androideabi23-clang'
+  setvar machine = 'ARM'
+  setvar flags = ['-march=armv7-a', '-marm', '-mfpu=vfpv3-d16', '-mfloat-abi=softfp']
+} elif (abi === 'x86_64') {
+  setvar gnu = 'x86_64-linux-gnu'
+  setvar include = 'x86_64-linux-android'
+  setvar linker_name = 'x86_64-linux-android23-clang'
+  setvar machine = 'Advanced Micro Devices X86-64'
+  setvar flags = ['-march=x86-64-v2', '-mno-avx', '-mno-movbe']
+} else {
+  echo 'FAIL undeclared Android ABI' >&2; exit 2
+}
+# This is the existing three-ABI source-built compiler, separate from the
+# fbe86e23 host-only qualification. Do not accept a same-named ambient compiler.
+test $(git -C "$ick_source" rev-parse HEAD) = c61e448251744a2f40ad743ebef1a027bdcd2f9d
+test -x "$compiler"
+test $(readlink -f "$compiler") = $(readlink -f "$ick_source/stage/bin/$gnu-gcc")
+test $("$compiler" -dumpmachine) = "$gnu"
+var cc1 = $("$compiler" -print-prog-name=cc1)
+test -x "$cc1"
+var resolved_cc1 = $(readlink -f "$cc1")
+var resolved_stage = $(readlink -f "$ick_source/stage")
+if (not resolved_cc1.startsWith(resolved_stage ++ '/')) { echo 'FAIL cross cc1 escaped qualified stage' >&2; exit 1 }
+rg '^Pkg.Revision[[:space:]]*=[[:space:]]*29\.0\.14206865$' "$ndk/source.properties"
+var platform = "$ndk/toolchains/llvm/prebuilt/linux-x86_64"
+var sysroot = "$platform/sysroot"
+var linker = "$platform/bin/$linker_name"
+var nm = "$platform/bin/llvm-nm"
+var readelf = "$platform/bin/llvm-readelf"
+for program in "$linker" "$nm" "$readelf" { test -x "$program" }
+test -s "$sysroot/usr/include/jni.h"
+if test -e "$output" { echo 'FAIL refusing reused cross-build evidence' >&2; exit 1 }
+mkdir -p "$output/objects"
+printf '\033[36mACTION\033[0m compile actual native render and ownership sources for %s API23\n' "$abi"
+printf 'application\t%s\nick\t%s\nabi\t%s\nminimum_API\t23\nNDK\t29.0.14206865\n' \
+  $(git -C "$repository" rev-parse HEAD) $(git -C "$ick_source" rev-parse HEAD) "$abi" > "$output/inputs.tsv"
+sha256sum "$compiler" "$cc1" "$linker" > "$output/toolchain.sha256"
+var sources = ['native/surfer_raytracer.c', 'native/surfer_surface_store.c',
+  'native/surfer_frame_output.c', 'native/surfer_render_session.c',
+  'native/android/prepared_surface_jni.c', 'native/android/render_surface_jni.c',
+  'native/android/render_session_jni.c']
+var objects = []
+for source in (sources) {
+  var object = "$output/objects/$(basename "$source" .c).o"
+  sha256sum "$repository/$source" >> "$output/sources.sha256"
+  "$compiler" @flags --sysroot="$sysroot" -isystem "$sysroot/usr/include" \
+    -isystem "$sysroot/usr/include/$include" -I "$repository/native" \
+    -D__ANDROID__ -D__ANDROID_API__=23 -DBIONIC_IOCTL_NO_SIGNEDNESS_OVERLOAD \
+    -std=c17 -Wall -Wextra -Werror -pedantic -O2 -fPIC -fno-stack-protector \
+    -fno-fast-math -ffp-contract=off -c "$repository/$source" -o "$object"
+  call objects->append(object)
+}
+"$nm" --undefined-only @objects > "$output/object-imports.txt"
+try { rg '__atomic_|__sync_|__stack_chk' "$output/object-imports.txt" }
+if (_error.code !== 1) { echo 'FAIL undeclared atomic/stack runtime import or checker failure' >&2; exit 1 }
+# Platform linking receives only the objects just compiled by ICK.
+"$linker" -shared -Wl,-z,defs -Wl,-z,relro -Wl,-z,now -Wl,-z,max-page-size=16384 \
+  -Wl,-soname,libave_prepared_surface.so @objects -lm -o "$output/libave_prepared_surface.so"
+"$readelf" -h -lW -d "$output/libave_prepared_surface.so" > "$output/elf.txt"
+rg -F "Machine:                           $machine" "$output/elf.txt"
+"$nm" -D --defined-only "$output/libave_prepared_surface.so" > "$output/exports.txt"
+"$nm" -D --undefined-only "$output/libave_prepared_surface.so" > "$output/imports.txt"
+for method in copyPreparedSurface replacePreparedSurface releasePreparedSurface renderPreparedSurface \
+  createRenderSession beginRenderEpoch isRenderEpochCurrent cancelRenderSession releaseRenderSession renderSessionSurface {
+  rg -e " Java_Idric_Generated_$method\$" "$output/exports.txt"
+}
+try { rg '__atomic_|__sync_|__stack_chk|libatomic' "$output/imports.txt" "$output/elf.txt" }
+if (_error.code !== 1) { echo 'FAIL undeclared linked runtime import or checker failure' >&2; exit 1 }
+try { rg 'surfer_(surface|frame|render|session)_.*test|Java_(CopiedSurface|RenderPixel|RenderSession)Observer' "$output/exports.txt" }
+if (_error.code !== 1) { echo 'FAIL production cross-build contains test symbols or checker failed' >&2; exit 1 }
+sha256sum @objects "$output/libave_prepared_surface.so" > "$output/artifacts.sha256"
+printf 'production_ICK_cross_compile\tPASS\nAPI23_link\tPASS\nABI\t%s\natomic_imports\tNONE\nproduction_test_symbols\tNONE\nART\tNOT_RUN\nAPK\tNOT_RUN\nphysical_device\tNOT_RUN\n' "$abi" > "$output/result.tsv"
+printf '\033[32mPASS\033[0m actual production native render sources for %s; target execution separate\n' "$abi"
