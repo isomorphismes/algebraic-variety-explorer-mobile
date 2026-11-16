@@ -119,7 +119,12 @@ replay. The updated grouping-source host suite now executes PASS through the
 exact retained frontend, including explicit repeated-group refusals, original
 single-group positives, direct-AST exponent provenance and lexical refusals.
 The updated combined source also emits direct DEX and its independent runner
-assembles. Actual semantic ART qualification remains pending.
+assembles. At application sourced4bc9b3, run43792136217 then executed the actual
+updated parser and qualifier on API34 ART and rejected their compiled source
+mutations with designated statuses73/75. The original semantic-admission corpus
+completed, preserving clean acceptance, explicit walker refusals and leading-zero
+lexical-recovery output as separate outcomes. That same run also passed the
+actual scalar coefficient evaluator against the original jsurf bit oracle.
 
 ## Remaining work
 

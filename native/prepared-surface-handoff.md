@@ -97,14 +97,25 @@ transport failures distinguishable. An invalid replacement must preserve the
 previous usable surface. Do not use the C bootstrap as the candidate Idriç
 producer.
 
-Only after the producer's observed behavior is established should the managed
-to C interface be implemented. A proposed primitive-array bridge must define
-its version, array lengths, exact coefficient/exponent types, complete
-validation, and error behavior. A practical ownership option is to copy all
-four validated polynomials into one native-owned snapshot, publish only after
-all copies succeed, and keep that snapshot alive while any render worker uses
-it. This is a proposal requiring implementation and evidence, not a claim that
-JNI array pinning or native handles are already supported. Do not retain
+The accepted Boundary B′ design in the September translation audit specifies
+the logical managed/native representation; arrays are not a newly selected
+wire format:
+
+| Value | Representation |
+| --- | --- |
+| ABI version and original family degree | Two Int32 scalars |
+| Four polynomial ranges | Five Int32 offsets |
+| Concatenated coefficients | F64 primitive array |
+| Corresponding exponents | Int32 primitive array, interleaved x/y/z |
+| Prepared native snapshot | Opaque jlong handle |
+
+The native prepare call must check lengths, ordering, bounds, coefficients,
+version and integer size arithmetic, then copy the four polynomials into one
+native-owned immutable snapshot. Publish only after every validation and copy
+succeeds, and keep that snapshot alive while any render worker uses it.
+Replacement and destruction cannot race an active render. No AST, parameter
+object graph or serialized Text crosses this cut. This remains an unimplemented
+contract until the actual generated DEX/JNI path is observed. Do not retain
 temporary array access pointers through asynchronous rendering.
 
 ## Required observations

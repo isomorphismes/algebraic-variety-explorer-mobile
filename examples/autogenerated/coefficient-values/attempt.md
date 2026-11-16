@@ -66,7 +66,18 @@ attempt; those broader language operations remain explicitly unsupported.
 The replacement requires original-platform parsing/math and stronger bit-level
 observations rather than weakening the binary64 requirement.
 
-PENDING: hosted source generation, repeated-byte comparison, original-oracle
-comparison, and actual ART execution of the producer and compiled source
-mutation. No host numerical execution, polynomial expansion, APK or physical
-device result is inferred from successful generation or decoding.
+At source `d4bc9b3c84d8adeb4c82d1354c84833aace5aec9`, hosted
+run43792136217 completed successfully. It generated and independently decoded
+the actual producer, reproduced identical bytes, packaged the retained original
+jsurf separately, then executed both on API34 x86_64 ART. Every coefficient
+expectation matched both the original evaluator and candidate bits. The compiled
+sum-to-subtraction mutation failed with designated status76 and the required
+coefficient-value marker. Parser and semantic-qualification observations and
+their two source mutations also passed in that run.
+
+The retained evidence artifact14193296338 has ZIP SHA256
+`129ce28f674f2eb655048d6a1da8fde99025c3c784b4e6ecffa9e97fdd3a5555`.
+This qualifies that scalar stage and exact dependency pin, not later source
+changes, positive parameter bindings, expansion, native transfer, an APK or a
+physical device. The next producer requires the separately implemented Int32
+exponent conversion in backend682515f1c90c77b509940f90a696965d6139b5bd.

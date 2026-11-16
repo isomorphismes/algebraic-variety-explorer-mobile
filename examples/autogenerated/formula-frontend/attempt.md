@@ -100,3 +100,15 @@ The next qualification must compile the real parser rather than a backend-owned
 substitute. A separate F64 coefficient program checks whether the numerical
 primitives required by the actual polynomial producer are implemented. Preserve
 its exact compiler diagnostic before assigning any remaining compiler work.
+
+## Actual scalar producer execution
+
+Application source `d4bc9b3c84d8adeb4c82d1354c84833aace5aec9` completed
+run43792136217 successfully through backend73dc476. The real parser,
+scalar/polynomial qualifier and app-owned coefficient evaluator all executed on
+API34 ART. The coefficient observer checked exact value bits against both
+independent constants and the retained original jsurf evaluator. The parser,
+divisor-rule and coefficient-sum compiled mutations failed their designated
+assertions. The old generic Show/cast experiment is retained as history;
+the actual producer does not use those broader operations. New semantic
+preparation/expansion and managed/native transfer remain separate stages.

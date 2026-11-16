@@ -1,0 +1,79 @@
+module PreparationExports
+
+import PreparedFormula
+import PolynomialQualification
+import CoefficientValue
+import Data.Text
+
+%foreign "dex:static:Ljava/lang/Double;:doubleToLongBits:(D)J"
+canonical_bits : Coefficient → Int64
+
+%foreign "dex:static:Ljava/lang/Long;:toHexString:(J)Ljava/lang/String;"
+hexadecimal_bits : Int64 → Text
+
+calculation_name : CoefficientCalculation → Text
+calculation_name AddPreparedCoefficients = "s+"
+calculation_name SubtractPreparedCoefficients = "s-"
+calculation_name MultiplyPreparedCoefficients = "s*"
+calculation_name DividePreparedCoefficients = "s/"
+calculation_name RaisePreparedCoefficient = "s^"
+
+function_name : CoefficientFunction → Text
+function_name NegateCoefficient = "neg"
+function_name SineCoefficient = "sin"
+function_name CosineCoefficient = "cos"
+function_name TangentCoefficient = "tan"
+function_name ArcSineCoefficient = "asin"
+function_name ArcCosineCoefficient = "acos"
+function_name ArcTangentCoefficient = "atan"
+function_name ExponentialCoefficient = "exp"
+function_name LogarithmicCoefficient = "log"
+function_name SquareRootCoefficient = "sqrt"
+function_name CeilingCoefficient = "ceil"
+function_name FloorCoefficient = "floor"
+function_name AbsoluteCoefficient = "abs"
+function_name SignCoefficient = "sign"
+
+scalar_shape : PreparedScalar → Text
+scalar_shape (EvaluatedCoefficient value) = "v(" ++ hexadecimal_bits (canonical_bits value) ++ ")"
+scalar_shape (UnassignedCoefficient name) = "name(" ++ name ++ ")"
+scalar_shape (CoefficientCalculationValue calculation left right) =
+  calculation_name calculation ++ "(" ++ scalar_shape left ++ "," ++ scalar_shape right ++ ")"
+scalar_shape (CoefficientFunctionValue function argument) =
+  function_name function ++ "(" ++ scalar_shape argument ++ ")"
+
+expression_shape : PreparedExpression → Text
+expression_shape (PreparedScalarValue scalar) = scalar_shape scalar
+expression_shape (PreparedCoordinate CoordinateX) = "x"
+expression_shape (PreparedCoordinate CoordinateY) = "y"
+expression_shape (PreparedCoordinate CoordinateZ) = "z"
+expression_shape (PreparedSum left right) = "p+(" ++ expression_shape left ++ "," ++ expression_shape right ++ ")"
+expression_shape (PreparedDifference left right) = "p-(" ++ expression_shape left ++ "," ++ expression_shape right ++ ")"
+expression_shape (PreparedProduct left right) = "p*(" ++ expression_shape left ++ "," ++ expression_shape right ++ ")"
+expression_shape (PreparedQuotient dividend divisor) = "p/(" ++ expression_shape dividend ++ "," ++ scalar_shape divisor ++ ")"
+expression_shape (PreparedPower base exponent) = "p^(" ++ expression_shape base ++ "," ++ cast exponent ++ ")"
+expression_shape (PreparedNegative expression) = "pneg(" ++ expression_shape expression ++ ")"
+
+report_prepared : Either Text PreparedFormula → Text
+report_prepared (Left reason) = reason
+report_prepared (Right prepared) =
+  "degree=" ++ cast prepared.family_degree ++ ";surface=" ++ expression_shape prepared.surface ++
+  ";dx=" ++ expression_shape prepared.gradient_x ++ ";dy=" ++ expression_shape prepared.gradient_y ++
+  ";dz=" ++ expression_shape prepared.gradient_z ++ ";notices=" ++ show (length prepared.notices)
+
+%export "dex:preparation_report"
+preparation_report : Text → Text
+preparation_report source = report_prepared (prepare_formula (\name ⇒ Nothing) source)
+
+bound_parameters : Text → Maybe Coefficient
+bound_parameters "radius" = Just 2
+bound_parameters "zero" = Just 0
+bound_parameters "unit" = Just 1
+bound_parameters _ = Nothing
+
+%export "dex:bound_preparation_report"
+bound_preparation_report : Text → Text
+bound_preparation_report source = report_prepared (prepare_formula bound_parameters source)
+
+main : IO ()
+main = pure ()
