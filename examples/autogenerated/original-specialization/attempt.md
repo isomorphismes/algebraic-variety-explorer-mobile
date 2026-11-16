@@ -63,9 +63,21 @@ remain pending. No alternate compiler or candidate Java was introduced.
 
 ## Finite arithmetic boundary
 
-The native finite-intermediate validation contract remains. In particular,
-the original power routine performs an unused final square. A generic map
+The native finite-intermediate validation contract remains for used results.
+The original power routine also performs an unused final square. A generic map
 coefficient such as 1e80 raised to three has a finite used result but its unused
-square overflows, so this native routine refuses it. This is not full finite
-Java equivalence. The renderer's current rotation-derived map coefficients
-are bounded; complete camera/original-image acceptance still remains required.
+square overflows. The native routine now skips that dead square instead of
+rejecting the finite result. Six independent original observations cover
+positive and negative constants raised to three, five and seven. Every used
+multiply retains its original order; discarded allocations are not part of
+the surface value. Complete finite-domain, camera and image acceptance still
+remains required.
+
+The six added actual original power observations pass locally with the exact
+qualified ICK compiler and the explicitly labelled Java21/source17 reference.
+After eliminating dead squares, the same fault sweep observes 216 Interactive
+and 305 Final allocation points; every one still returns out-of-memory on its
+designated fault. These replace the earlier counts for this revision. The
+maintained gate additionally compiles a mutation restoring the dead square and
+requires rejection by the finite original power observations. Hosted JDK17 and
+leak acceptance must be rerun for this changed source.

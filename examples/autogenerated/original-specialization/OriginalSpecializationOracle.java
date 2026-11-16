@@ -133,6 +133,17 @@ public final class OriginalSpecializationOracle {
 
     public static void main(String[] arguments) throws Exception {
         if (arguments.length != 0) throw new IllegalArgumentException("no oracle options");
+        for (int exponent : new int[] {3, 5, 7}) {
+            double magnitude = exponent == 3 ? 1e80 : exponent == 5 ? 1e50 : 1e40;
+            for (double coefficient : new double[] {magnitude, -magnitude}) {
+                XYZPolynomial result = new XYZPolynomial(coefficient).pow(exponent);
+                XYZPolynomial.Term[] terms = result.getTerms();
+                if (terms.length != 1 || !Double.isFinite(terms[0].coeff))
+                    throw new AssertionError("finite original used power result required");
+                System.out.println("unused_square\tconstant-" + exponent + "-" + bits(coefficient)
+                        + "\t" + exponent + "\t" + bits(coefficient) + "\t" + bits(terms[0].coeff));
+            }
+        }
         for (String[] formula : FORMULAS) {
             for (int profile = 0; profile < MAPS.length; profile++) observe(formula, profile);
         }

@@ -100,12 +100,28 @@ int main(int argc, char **argv)
     original_xyz_polynomial polynomials[4] = {{0}}, transformed[4] = {{0}};
     original_xy_polynomial row = {0};
     univariate_polynomial column = {0};
-    size_t cases = 0, transformations = 0, rows = 0, columns = 0, evaluations = 0;
+    size_t cases = 0, transformations = 0, rows = 0, columns = 0, evaluations = 0, unused_squares = 0;
     bool reduced_difference = false;
     while (fgets(line, sizeof(line), input) != NULL) {
         ++record_number;
         if (strchr(line, '\n') == NULL || sscanf(line, "%63s%119s", tag, identity) != 2)
             specialization_fail("malformed record");
+        if (strcmp(tag, "unused_square") == 0) {
+            int exponent;
+            uint64_t base, expected;
+            if (sscanf(line, "%*s%*s%d%" SCNx64 "%" SCNx64, &exponent, &base, &expected) != 3)
+                specialization_fail("unused final square observation");
+            surfer_operation_context power_context = new_operation_context();
+            original_xyz_polynomial original_base = original_constant_xyz(&power_context,
+                double_from_bits(base));
+            original_xyz_polynomial power = original_power_xyz(&power_context, &original_base, exponent);
+            if (power_context.status != SURFER_OK || power.count != 1 ||
+                double_bits(power.terms[0].coefficient) != expected)
+                specialization_fail("finite used power rejected by unused square");
+            original_free_xyz(power); original_free_xyz(original_base);
+            ++unused_squares;
+            continue;
+        }
         if (strcmp(tag, "case") == 0) {
             strcpy(current_identity, identity); case_name = current_identity;
             context = new_operation_context(); ++cases;
@@ -215,7 +231,7 @@ int main(int argc, char **argv)
         if (context.status != SURFER_OK) specialization_fail("native status");
     }
     if (ferror(input) || fclose(input) != 0 || cases != 30 || transformations != 120 ||
-        rows != 840 || columns != 840 || evaluations != 5880 || !reduced_difference)
+        rows != 840 || columns != 840 || evaluations != 5880 || unused_squares != 6 || !reduced_difference)
         specialization_fail("corpus coverage");
     check_specialization_failures();
     puts("PASS original transformed XYZ row column and gradient univariate bytes");

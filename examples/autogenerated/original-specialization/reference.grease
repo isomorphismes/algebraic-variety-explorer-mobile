@@ -51,6 +51,7 @@ test $(rg -c b'^input\t' "$output/observations.tsv") = 120
 test $(rg -c b'^transformed\t' "$output/observations.tsv") = 120
 test $(rg -c b'^column\t' "$output/observations.tsv") = 840
 test $(rg -c b'^evaluation\t' "$output/observations.tsv") = 5880
+test $(rg -c b'^unused_square\t' "$output/observations.tsv") = 6
 sha256sum "$output/observations.tsv" > "$output/observations.sha256"
 printf 'frozen_original_source\tPASS\noriginal_Java17_compile\tPASS\nactual_XYZ_substitute_evaluateZ_XY_evaluateY\tPASS\nactual_Univariate_evaluateAt\tPASS\noriginal_derivatives\tPASS\nrepeat_bytes\tPASS\ncases\t30\ncolumns\t840\nevaluations\t5880\ncandidate_C\tNOT_RUN\nfull_camera_lighting_image_parity\tNOT_ESTABLISHED\n' > "$output/result.tsv"
 printf '\033[32mPASS\033[0m actual original specialization and gradient reference; candidate qualification separate\n'

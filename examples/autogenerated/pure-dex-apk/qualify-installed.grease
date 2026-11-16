@@ -173,7 +173,8 @@ for name in negative positive {
     rg -F 'actual ImageView Bitmap must contain more than one opaque pixel color' "$output/instrumentation-$name.txt"
   } else {
     rg -x 'INSTRUMENTATION_RESULT: ave_observer_result=PASS Explorer installed checked-DEX Activity\r?' "$output/instrumentation-$name.txt"
-    rg -x 'INSTRUMENTATION_RESULT: scenarios=8\r?' "$output/instrumentation-$name.txt"
+    rg -x 'INSTRUMENTATION_RESULT: scenarios=9\r?' "$output/instrumentation-$name.txt"
+    rg -x 'INSTRUMENTATION_RESULT: png_export=PASS actual provider bytes dimensions pixels and descriptor close\r?' "$output/instrumentation-$name.txt"
     rg -x 'INSTRUMENTATION_CODE: -1\r?' "$output/instrumentation-$name.txt"
     try { rg 'FAIL Explorer installed' "$output/instrumentation-$name.txt" }
     if (_error.code !== 1) { echo 'FAIL positive instrumentation reported target failure or checker' >&2; exit 1 }
@@ -181,7 +182,15 @@ for name in negative positive {
   try { rg 'INSTRUMENTATION_FAILED|INSTRUMENTATION_ABORTED|shortMsg=' "$output/instrumentation-$name.txt" }
   if (_error.code !== 1) { echo 'FAIL instrumentation aborted or checker' >&2; exit 1 }
 }
+var png_token = $(sed -n 's/^INSTRUMENTATION_RESULT: png_export_token=\([0-9a-f]\{32\}\)\r\{0,1\}$/\1/p' "$output/instrumentation-positive.txt")
+printf '%s\n' "$png_token" | rg -x '[0-9a-f]{32}'
+"$timeout" 30 "$adb" -s "$serial" exec-out run-as org.algebraicvarietyexplorer.idricqualification \
+  cat "files/export-$png_token.png" > "$output/actual-provider-export.png"
+test -s "$output/actual-provider-export.png"
+var png_magic = $(od -An -N8 -tx1 "$output/actual-provider-export.png" | tr -d ' \n')
+test "$png_magic" = 89504e470d0a1a0a
+sha256sum "$output/actual-provider-export.png" >> "$output/artifacts.sha256"
 "$timeout" 20 "$adb" -s "$serial" shell pm list packages -u > "$output/diagnostics/packages-after.txt"
 sha256sum "$output/installed-base.apk" >> "$output/artifacts.sha256"
-printf 'installed_API34_x86_64\tPASS\nexact_installed_candidate\tPASS\nblank_real_Bitmap_control_rejected\tPASS\nframework_Activity_8_scenarios\tPASS\nactual_ImageView_Bitmap\tPASS\nerror_keeps_prior_frame\tPASS\nDone_callback\tPASS\nExamples_dialog\tPASS\nPNG_picker_cancel_staging\tPASS\nActivity_recreation_close\tPASS\nphysical_IME_pinch_document_provider_PNG\tNOT_RUN\nproduction_update_identity\tNOT_RUN\nphysical_device\tNOT_RUN\n' > "$output/result.tsv"
+printf 'installed_API34_x86_64\tPASS\nexact_installed_candidate\tPASS\nblank_real_Bitmap_control_rejected\tPASS\nframework_Activity_9_scenarios\tPASS\nactual_ImageView_Bitmap\tPASS\nerror_keeps_prior_frame\tPASS\nDone_callback\tPASS\nExamples_dialog\tPASS\nPNG_picker_cancel_staging\tPASS\nactual_provider_PNG_signature_dimensions_pixels\tPASS\nactual_provider_PNG_descriptor_close\tPASS\nActivity_recreation_close\tPASS\nphysical_IME_pinch_system_picker_UI\tNOT_RUN\nproduction_update_identity\tNOT_RUN\nphysical_device\tNOT_RUN\n' > "$output/result.tsv"
 printf '\033[32mPASS\033[0m installed checked-DEX Activity in isolated API34 emulator; update identity and physical acceptance separate\n'

@@ -21,6 +21,7 @@
 .field private negativeControl:Z
 .field private negativeApplied:Z
 .field private cleanupState:Ljava/lang/String;
+.field private exportUri:Landroid/net/Uri;
 
 .method public constructor <init>()V
     .registers 1
@@ -502,6 +503,252 @@
     return-void
 .end method
 
+# The observer supplies only a destination. The real Activity receives the
+# framework result, opens the provider and encodes its pending Bitmap itself.
+.method private inspectPng()Landroid/os/Bundle;
+    .registers 7
+    invoke-virtual {p0}, Landroid/app/Instrumentation;->getContext()Landroid/content/Context;
+    move-result-object v0
+    invoke-virtual {v0}, Landroid/content/Context;->getContentResolver()Landroid/content/ContentResolver;
+    move-result-object v0
+    iget-object v1, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->exportUri:Landroid/net/Uri;
+    const-string v2, "inspect"
+    invoke-virtual {v1}, Landroid/net/Uri;->getLastPathSegment()Ljava/lang/String;
+    move-result-object v3
+    const/4 v4, 0
+    invoke-virtual {v0, v1, v2, v3, v4}, Landroid/content/ContentResolver;->call(Landroid/net/Uri;Ljava/lang/String;Ljava/lang/String;Landroid/os/Bundle;)Landroid/os/Bundle;
+    move-result-object v0
+    const/4 v1, 0
+    if-eqz v0, :checked
+    const/4 v1, 1
+  :checked
+    const-string v2, "isolated PNG provider must return its own inspection"
+    invoke-static {v1, v2}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->require(ZLjava/lang/String;)V
+    return-object v0
+.end method
+
+.method private waitPngClosed()V
+    .registers 9
+    invoke-static {}, Landroid/os/SystemClock;->elapsedRealtime()J
+    move-result-wide v0
+    const-wide/32 v2, 90000
+    add-long/2addr v0, v2
+  :poll
+    invoke-direct {p0}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->inspectPng()Landroid/os/Bundle;
+    move-result-object v4
+    const-string v5, "failed"
+    invoke-virtual {v4, v5}, Landroid/os/Bundle;->getBoolean(Ljava/lang/String;)Z
+    move-result v5
+    xor-int/lit8 v5, v5, 1
+    const-string v6, "actual PNG output descriptor reported a close error"
+    invoke-static {v5, v6}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->require(ZLjava/lang/String;)V
+    const-string v5, "closed"
+    invoke-virtual {v4, v5}, Landroid/os/Bundle;->getBoolean(Ljava/lang/String;)Z
+    move-result v5
+    if-eqz v5, :later
+    const-string v5, "opened"
+    invoke-virtual {v4, v5}, Landroid/os/Bundle;->getBoolean(Ljava/lang/String;)Z
+    move-result v5
+    const-string v6, "PNG descriptor closed without the single fresh production w open"
+    invoke-static {v5, v6}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->require(ZLjava/lang/String;)V
+    const-string v5, "length"
+    invoke-virtual {v4, v5}, Landroid/os/Bundle;->getLong(Ljava/lang/String;)J
+    move-result-wide v2
+    const-wide/16 v4, 8
+    cmp-long v6, v2, v4
+    const/4 v5, 0
+    if-lez v6, :length_check
+    const/4 v5, 1
+  :length_check
+    const-string v6, "closed production PNG output is empty or only a signature"
+    invoke-static {v5, v6}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->require(ZLjava/lang/String;)V
+    return-void
+  :later
+    invoke-static {}, Landroid/os/SystemClock;->elapsedRealtime()J
+    move-result-wide v2
+    cmp-long v4, v2, v0
+    if-gez v4, :timeout
+    const-wide/16 v2, 100
+    invoke-static {v2, v3}, Landroid/os/SystemClock;->sleep(J)V
+    goto :poll
+  :timeout
+    const/4 v0, 0
+    const-string v1, "production PNG output descriptor did not close within90seconds"
+    invoke-static {v0, v1}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->require(ZLjava/lang/String;)V
+    return-void
+.end method
+
+.method private pngSignature()V
+    .registers 9
+    invoke-virtual {p0}, Landroid/app/Instrumentation;->getContext()Landroid/content/Context;
+    move-result-object v0
+    invoke-virtual {v0}, Landroid/content/Context;->getContentResolver()Landroid/content/ContentResolver;
+    move-result-object v0
+    iget-object v1, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->exportUri:Landroid/net/Uri;
+    invoke-virtual {v0, v1}, Landroid/content/ContentResolver;->openInputStream(Landroid/net/Uri;)Ljava/io/InputStream;
+    move-result-object v0
+    new-instance v1, Ljava/io/DataInputStream;
+    invoke-direct {v1, v0}, Ljava/io/DataInputStream;-><init>(Ljava/io/InputStream;)V
+  :read
+    invoke-virtual {v1}, Ljava/io/DataInputStream;->readLong()J
+    move-result-wide v2
+    const-wide v4, 0x89504e470d0a1a0aL
+    cmp-long v6, v2, v4
+    const/4 v7, 0
+    if-nez v6, :signature_check
+    const/4 v7, 1
+  :signature_check
+    const-string v6, "production export must contain the exact PNG signature"
+    invoke-static {v7, v6}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->require(ZLjava/lang/String;)V
+  :end
+    invoke-virtual {v1}, Ljava/io/DataInputStream;->close()V
+    return-void
+  :failed
+    move-exception v0
+    invoke-virtual {v1}, Ljava/io/DataInputStream;->close()V
+    throw v0
+    .catch Ljava/lang/Throwable; {:read .. :end} :failed
+.end method
+
+.method private pngPixels(Landroid/graphics/Bitmap;[I)V
+    .registers 12
+    invoke-direct {p0}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->pngSignature()V
+    invoke-virtual {p0}, Landroid/app/Instrumentation;->getContext()Landroid/content/Context;
+    move-result-object v0
+    invoke-virtual {v0}, Landroid/content/Context;->getContentResolver()Landroid/content/ContentResolver;
+    move-result-object v0
+    iget-object v1, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->exportUri:Landroid/net/Uri;
+    invoke-virtual {v0, v1}, Landroid/content/ContentResolver;->openInputStream(Landroid/net/Uri;)Ljava/io/InputStream;
+    move-result-object v8
+  :decode
+    invoke-static {v8}, Landroid/graphics/BitmapFactory;->decodeStream(Ljava/io/InputStream;)Landroid/graphics/Bitmap;
+    move-result-object v0
+  :decoded
+    invoke-virtual {v8}, Ljava/io/InputStream;->close()V
+    const/4 v1, 0
+    if-eqz v0, :decoded_check
+    const/4 v1, 1
+  :decoded_check
+    const-string v2, "actual production PNG bytes must decode to a Bitmap"
+    invoke-static {v1, v2}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->require(ZLjava/lang/String;)V
+    invoke-virtual {v0}, Landroid/graphics/Bitmap;->getWidth()I
+    move-result v6
+    invoke-virtual {v0}, Landroid/graphics/Bitmap;->getHeight()I
+    move-result v7
+    invoke-virtual {p1}, Landroid/graphics/Bitmap;->getWidth()I
+    move-result v1
+    const/4 v2, 0
+    if-ne v1, v6, :width_check
+    const/4 v2, 1
+  :width_check
+    const-string v1, "actual PNG width differs from the saved ImageView frame"
+    invoke-static {v2, v1}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->require(ZLjava/lang/String;)V
+    invoke-virtual {p1}, Landroid/graphics/Bitmap;->getHeight()I
+    move-result v1
+    const/4 v2, 0
+    if-ne v1, v7, :height_check
+    const/4 v2, 1
+  :height_check
+    const-string v1, "actual PNG height differs from the saved ImageView frame"
+    invoke-static {v2, v1}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->require(ZLjava/lang/String;)V
+    mul-int v1, v6, v7
+    new-array v1, v1, [I
+    move v3, v6
+    const/4 v2, 0
+    const/4 v4, 0
+    const/4 v5, 0
+    invoke-virtual/range {v0 .. v7}, Landroid/graphics/Bitmap;->getPixels([IIIIIII)V
+    invoke-virtual {v0}, Landroid/graphics/Bitmap;->recycle()V
+    invoke-static {v1, p2}, Ljava/util/Arrays;->equals([I[I)Z
+    move-result v1
+    const-string v2, "actual PNG pixels must exactly equal the saved ImageView frame"
+    invoke-static {v1, v2}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->require(ZLjava/lang/String;)V
+    return-void
+  :failed
+    move-exception v0
+    invoke-virtual {v8}, Ljava/io/InputStream;->close()V
+    throw v0
+    .catch Ljava/lang/Throwable; {:decode .. :decoded} :failed
+.end method
+
+.method private positivePng()V
+    .registers 13
+    invoke-static {}, Ljava/util/UUID;->randomUUID()Ljava/util/UUID;
+    move-result-object v0
+    invoke-virtual {v0}, Ljava/util/UUID;->toString()Ljava/lang/String;
+    move-result-object v0
+    const-string v1, "-"
+    const-string v2, ""
+    invoke-virtual {v0, v1, v2}, Ljava/lang/String;->replace(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)Ljava/lang/String;
+    move-result-object v0
+    const-string v1, "content://org.algebraicvarietyexplorer.idricqualification.export/exports/"
+    invoke-virtual {v1, v0}, Ljava/lang/String;->concat(Ljava/lang/String;)Ljava/lang/String;
+    move-result-object v0
+    invoke-static {v0}, Landroid/net/Uri;->parse(Ljava/lang/String;)Landroid/net/Uri;
+    move-result-object v0
+    iput-object v0, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->exportUri:Landroid/net/Uri;
+    invoke-direct {p0}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->inspectPng()Landroid/os/Bundle;
+    move-result-object v0
+    const-string v1, "opened"
+    invoke-virtual {v0, v1}, Landroid/os/Bundle;->getBoolean(Ljava/lang/String;)Z
+    move-result v1
+    xor-int/lit8 v1, v1, 1
+    const-string v2, "PNG destination must not have been opened before the Save click"
+    invoke-static {v1, v2}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->require(ZLjava/lang/String;)V
+    const-string v1, "length"
+    invoke-virtual {v0, v1}, Landroid/os/Bundle;->getLong(Ljava/lang/String;)J
+    move-result-wide v0
+    const-wide/16 v2, 0
+    cmp-long v1, v0, v2
+    const/4 v0, 0
+    if-nez v1, :fresh_check
+    const/4 v0, 1
+  :fresh_check
+    const-string v1, "PNG destination must have zero prior bytes"
+    invoke-static {v0, v1}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->require(ZLjava/lang/String;)V
+    new-instance v4, Landroid/content/IntentFilter;
+    const-string v0, "android.intent.action.CREATE_DOCUMENT"
+    invoke-direct {v4, v0}, Landroid/content/IntentFilter;-><init>(Ljava/lang/String;)V
+    const-string v0, "android.intent.category.OPENABLE"
+    invoke-virtual {v4, v0}, Landroid/content/IntentFilter;->addCategory(Ljava/lang/String;)V
+    const-string v0, "image/png"
+    invoke-virtual {v4, v0}, Landroid/content/IntentFilter;->addDataType(Ljava/lang/String;)V
+    new-instance v5, Landroid/content/Intent;
+    invoke-direct {v5}, Landroid/content/Intent;-><init>()V
+    iget-object v0, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->exportUri:Landroid/net/Uri;
+    invoke-virtual {v5, v0}, Landroid/content/Intent;->setData(Landroid/net/Uri;)Landroid/content/Intent;
+    new-instance v6, Landroid/app/Instrumentation$ActivityResult;
+    const/4 v0, -1
+    invoke-direct {v6, v0, v5}, Landroid/app/Instrumentation$ActivityResult;-><init>(ILandroid/content/Intent;)V
+    const/4 v0, 1
+    invoke-virtual {p0, v4, v6, v0}, Landroid/app/Instrumentation;->addMonitor(Landroid/content/IntentFilter;Landroid/app/Instrumentation$ActivityResult;Z)Landroid/app/Instrumentation$ActivityMonitor;
+    move-result-object v4
+    const/4 v0, 5
+    invoke-direct {p0, v0}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->step(I)V
+    iget-object v10, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->observedBitmap:Landroid/graphics/Bitmap;
+    iget-object v11, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->observedPixels:[I
+    invoke-virtual {p0}, Landroid/app/Instrumentation;->waitForIdleSync()V
+    invoke-virtual {v4}, Landroid/app/Instrumentation$ActivityMonitor;->getHits()I
+    move-result v0
+    const/4 v1, 1
+    if-ne v0, v1, :bad_hits
+    const/4 v0, 1
+    goto :hits_check
+  :bad_hits
+    const/4 v0, 0
+  :hits_check
+    const-string v1, "positive PNG Save must issue exactly one real CREATE_DOCUMENT request"
+    invoke-static {v0, v1}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->require(ZLjava/lang/String;)V
+    invoke-virtual {p0, v4}, Landroid/app/Instrumentation;->removeMonitor(Landroid/app/Instrumentation$ActivityMonitor;)V
+    invoke-direct {p0}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->waitPngClosed()V
+    invoke-direct {p0, v10, v11}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->pngPixels(Landroid/graphics/Bitmap;[I)V
+    const/16 v0, 8
+    invoke-direct {p0, v0}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->step(I)V
+    invoke-direct {p0, v10, v11}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->retained(Landroid/graphics/Bitmap;[I)V
+    invoke-direct {p0}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->count()V
+    return-void
+.end method
+
 .method private scenarios()V
     .registers 14
     new-instance v0, Landroid/content/Intent;
@@ -611,6 +858,7 @@
     invoke-direct {p0, v0}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->step(I)V
     invoke-direct {p0, v2, v3}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->retained(Landroid/graphics/Bitmap;[I)V
     invoke-direct {p0}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->count()V
+    invoke-direct {p0}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->positivePng()V
     # Framework recreation, not manual lifecycle calls or direct exports.
     const-string v4, "Idric.Generated"
     const/4 v5, 0
@@ -689,7 +937,7 @@
   :begin
     invoke-direct {p0}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->scenarios()V
     iget v1, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->completed:I
-    const/16 v2, 8
+    const/16 v2, 9
     if-ne v1, v2, :wrong_count
     const-string v1, "ave_observer_result"
     const-string v2, "PASS Explorer installed checked-DEX Activity"
@@ -697,12 +945,20 @@
     const-string v1, "scenarios"
     iget v2, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->completed:I
     invoke-virtual {v0, v1, v2}, Landroid/os/Bundle;->putInt(Ljava/lang/String;I)V
+    const-string v1, "png_export_token"
+    iget-object v2, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->exportUri:Landroid/net/Uri;
+    invoke-virtual {v2}, Landroid/net/Uri;->getLastPathSegment()Ljava/lang/String;
+    move-result-object v2
+    invoke-virtual {v0, v1, v2}, Landroid/os/Bundle;->putString(Ljava/lang/String;Ljava/lang/String;)V
+    const-string v1, "png_export"
+    const-string v2, "PASS actual provider bytes dimensions pixels and descriptor close"
+    invoke-virtual {v0, v1, v2}, Landroid/os/Bundle;->putString(Ljava/lang/String;Ljava/lang/String;)V
     const/4 v1, -1
     invoke-virtual {p0, v1, v0}, Landroid/app/Instrumentation;->finish(ILandroid/os/Bundle;)V
     return-void
   :wrong_count
     new-instance v1, Ljava/lang/AssertionError;
-    const-string v2, "installed observer did not finish all eight scenarios"
+    const-string v2, "installed observer did not finish all nine scenarios"
     invoke-direct {v1, v2}, Ljava/lang/AssertionError;-><init>(Ljava/lang/Object;)V
     throw v1
   :end

@@ -211,7 +211,12 @@ static original_xyz_polynomial original_power_xyz(surfer_operation_context *cont
             original_free_xyz(result); result = next;
             --exponent;
         }
-        /* The Java implementation also performs this final square. */
+        /* Java computes one last square whose value is never read. Skip that
+         * dead allocation/arithmetic: its possible overflow must not reject a
+         * finite used result (for example (1e80)^3). Every used multiply keeps
+         * the original order. No foreign floating-point exception is observed.
+         */
+        if (exponent == 0) break;
         original_xyz_polynomial next_power = original_multiply_xyz(context, &power, &power);
         original_free_xyz(power); power = next_power;
         exponent /= 2;

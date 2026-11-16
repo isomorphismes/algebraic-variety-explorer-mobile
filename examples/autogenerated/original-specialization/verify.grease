@@ -16,10 +16,10 @@ rg -x -F b'actual_Univariate_evaluateAt\tPASS' "$reference/result.tsv"
 rg -x -F b'repeat_bytes\tPASS' "$reference/result.tsv"
 var manifest = "$repository/ci/native-specialization-toolchain.tsv"
 rg -x -F b'build_id\ttarget\ttoolchain\tick_revision\tick_status\tick_evidence' "$manifest"
-for stage in numerical kahan-mutant row-direction-mutant column-direction-mutant exponent-mutant success sanitizers {
+for stage in numerical kahan-mutant row-direction-mutant column-direction-mutant exponent-mutant unused-square-mutant success sanitizers {
   printf 'native-specialization-%s\tx86_64-pc-linux-gnu\tick\tfbe86e23d55cfec2000c08e61deea2a407fd7175\tqualified\treceipt:ai-ci-ick-host-32cb45b3\n' "$stage" | rg -x -F -f - "$manifest"
 }
-test $(wc -l < "$manifest") = 8
+test $(wc -l < "$manifest") = 9
 mkdir -p "$output/mutants"
 "$compiler" --version > "$output/ick-version.txt"
 "$compiler" -dumpmachine > "$output/ick-target.txt"
@@ -61,6 +61,7 @@ reject_mutant kahan 's/coefficient - correction/coefficient + 0.0 * correction/'
 reject_mutant row-direction '/^static original_xy_polynomial original_evaluate_z/,/^}/s/const bool forwards = fabs(where) > 1.0;/const bool forwards = false;/'
 reject_mutant column-direction '/^static univariate_polynomial original_evaluate_y/,/^}/s/const bool forwards = fabs(where) > 1.0;/const bool forwards = false;/'
 reject_mutant exponent 's/previous.z_exponent - current.z_exponent))/previous.z_exponent - current.z_exponent + 1))/'
+reject_mutant unused-square '/if (exponent == 0) break;/d'
 "$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O2 \
   -fno-fast-math -ffp-contract=off -DSURFER_STATUS_API -I "$repository/native" -I "$repository/native/android" \
   "$repository/native/surfer_raytracer.c" "$repository/native/android/presets.c" \
@@ -76,5 +77,5 @@ env ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 \
 cat "$output/sanitizers.txt"
 rg -x -F 'PASS original transformed XYZ row column and gradient univariate bytes' "$output/sanitizers.txt"
 sha256sum "$output/test" "$output/sanitized" "$output/legacy-success" > "$output/binaries.sha256"
-printf 'original_method_raw_coefficient_gradient_bits\tPASS\nreference_profile\tsee-original-reference-profile.tsv\nactual_allocation_faults_Interactive_Final\tPASS\ncancelled_transformed_ownership\tPASS\nfour_compiled_mutants\tPASS\nlegacy_success_bytes\tPASS\nASAN_UBSAN_leaks\tPASS\nfull_original_camera_lighting_tiling\tNOT_ESTABLISHED\nAndroid\tNOT_RUN\nphysical_devices\tNOT_RUN\n' > "$output/result.tsv"
+printf 'original_method_raw_coefficient_gradient_bits\tPASS\nreference_profile\tsee-original-reference-profile.tsv\nfinite_used_power_despite_unused_overflow\tPASS\nactual_allocation_faults_Interactive_Final\tPASS\ncancelled_transformed_ownership\tPASS\nfive_compiled_mutants\tPASS\nlegacy_success_bytes\tPASS\nASAN_UBSAN_leaks\tPASS\nfull_original_camera_lighting_tiling\tNOT_ESTABLISHED\nAndroid\tNOT_RUN\nphysical_devices\tNOT_RUN\n' > "$output/result.tsv"
 printf '\033[32mPASS\033[0m original same-coordinate specialization; full camera/image acceptance separate\n'

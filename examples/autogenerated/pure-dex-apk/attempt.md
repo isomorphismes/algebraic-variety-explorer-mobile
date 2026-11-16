@@ -32,9 +32,12 @@ observes actual controls, status and ImageView Bitmap data. UI operations run
 on the main thread; waits are bounded on the instrumentation thread. The test
 must preserve the candidate and must not impersonate its exports or implement
 formula/render/UI logic. Close/recreation, error-preserves-prior-frame, editor
-Done and Examples are bounded intended scenarios. IME interaction, pinch,
-document-provider PNG behavior and physical-device acceptance remain separate
-unless actually observed. Logs and failure statuses survive failed runs.
+Done and Examples are bounded intended scenarios. The positive PNG scenario
+uses a separate test-only provider as the real ContentResolver destination and
+compares actual encoded bytes/dimensions/pixels with the displayed frame after
+observing output descriptor closure. IME interaction, pinch, real picker UI
+and physical-device acceptance remain separate unless actually observed.
+Logs and failure statuses survive failed runs.
 
 ## Attempt and current boundary
 
@@ -45,10 +48,11 @@ introduced. Test Smali is independent observation only.
 
 Both maintained Grease helpers parse under the recovered pinned Grease runtime.
 The independent Instrumentation observer assembles and decodes with the pinned
-Smali tools; final observer DEX SHA256 is
-`f0f2800bcfdcd68a01dd1520b1e39a150e6c730155d79f7eae27d9c4ab34937b`.
+Smali tools. The original eight-scenario observer had SHA256
+`f0f2800bcfdcd68a01dd1520b1e39a150e6c730155d79f7eae27d9c4ab34937b`;
+the positive provider-export follow-up is qualified separately below.
 The qualifier first requires rejection of an actually applied uniform Bitmap
-replacement in the real ImageView, then runs all eight positive scenarios in a
+replacement in the real ImageView, then runs all nine positive scenarios in a
 new instrumentation process. This observer mutation leaves the candidate DEX
 unchanged and is not an application defect or a numerical oracle.
 
@@ -78,3 +82,27 @@ parsing and assembly do not establish packaging, installation, interaction,
 update identity or physical-device acceptance. The existing checked Idriç
 application owns the semantics; these Grease helpers sequence the declared SDK
 tools and do not introduce an alternate candidate implementation.
+
+## Positive PNG follow-up, 2026-11-16
+
+The added logical observation is
+`FreshDestination → FrameworkActivityResult → ActualProviderBytes →
+Either ExportFailure ExactDisplayedPixels`. The provider owns only the fresh
+destination and close receipts; production source owns result handling, stream
+opening, Bitmap compression, worker scheduling and output-stream cleanup.
+Its random token starts with no open receipt or prior bytes, accepts one exact
+`w` open, and records actual remote-descriptor closure independently of the
+candidate. The observer reads the signature and decodes every pixel only after
+that close receipt. The host retains the same provider-private PNG and digest.
+
+The three-class test observer assembled, independently decoded and reassembled
+with the pinned Smali tools. Observer DEX SHA256 is
+`5e40f8fb6235da1c8bbe168cf2cc50e0deccb53ccd2293adc457bb4645d97245`.
+The modified qualifier parses under the exact recovered Grease runtime and
+requires nine positive scenarios, the PNG receipt and retained PNG signature.
+A separate read-only source review found no concrete register/type/API-arity
+or stale-file acceptance defect. This is structural evidence only: actual SDK
+packaging, provider execution, encoding, descriptor close and pixel comparison
+are NOT_RUN until the hosted installed qualification succeeds. No physical
+device, system picker UI, explicit-close versus finalization distinction,
+injected provider error or production update acceptance is implied.
