@@ -72,6 +72,7 @@ data QualificationError
   | PolynomialExponentRequiresDecimal
   | FunctionRequiresScalar Text
   | UnknownCoefficientFunction Text
+  | InheritedRepeatedGroupingLimitation
 
 public export
 data FormulaFailure
@@ -106,9 +107,17 @@ decimal_not_greater (digit :: remaining) (limit :: rest) =
   if digit < limit then True else
   if digit > limit then False else decimal_not_greater remaining rest
 
+-- Integer.parseInt accepts leading zeroes when given a decimal lexeme directly.
+-- Normalize only the comparison; the qualified value retains its source text.
+-- This does not broaden the expression lexer's independent admission rule.
+decimal_comparison_digits : List Char → List Char
+decimal_comparison_digits ['0'] = ['0']
+decimal_comparison_digits ('0' :: remaining) = decimal_comparison_digits remaining
+decimal_comparison_digits digits = digits
+
 decimal_exponent : Text → DecimalExponent
 decimal_exponent source =
-  let digits = unpack source
+  let digits = decimal_comparison_digits (unpack source)
       -- Integer.parseInt in the original walker uses the signed 32-bit maximum.
       maximum = unpack "2147483647"
       fits = length digits < length maximum ||
@@ -206,6 +215,11 @@ qualify_expression (Negative expression) = do
         ScalarMeaning scalar _ ⇒ ScalarMeaning (ScalarFunction NegateCoefficient scalar) Nothing
         PolynomialMeaning polynomial ⇒ PolynomialMeaning (PolynomialNegative polynomial)
   Right (FormulaMeaning negative qualified.notices)
+-- The retained generated parser prefixes every function argument with a
+-- PARENTHESES token. An explicit group there creates a repeated prefix that
+-- its tree walker rejects. Preserve this inherited limitation explicitly;
+-- it is not a mathematical restriction on coefficient functions.
+qualify_expression (Called _ (Grouped _)) = Left InheritedRepeatedGroupingLimitation
 qualify_expression (Called name expression) = do
   argument ← qualify_expression expression
   function ← coefficient_function name
@@ -213,6 +227,10 @@ qualify_expression (Called name expression) = do
     ScalarMeaning scalar _ ⇒
       Right (FormulaMeaning (ScalarMeaning (ScalarFunction function scalar) Nothing) argument.notices)
     PolynomialMeaning _ ⇒ Left (FunctionRequiresScalar name)
+-- Ordinary single grouping is admitted. The original generated walker's
+-- one-prefix limit rejects consecutive groups even though grammar parsing
+-- itself succeeds; see the retained original-oracle observations.
+qualify_expression (Grouped (Grouped _)) = Left InheritedRepeatedGroupingLimitation
 qualify_expression (Grouped expression) = do
   qualified ← qualify_expression expression
   let grouped = case qualified.meaning of
@@ -234,6 +252,7 @@ qualification_error PolynomialDivisor = "polynomial divisor"
 qualification_error PolynomialExponentRequiresDecimal = "polynomial exponent must be a decimal literal"
 qualification_error (FunctionRequiresScalar name) = "function requires scalar argument: " ++ name
 qualification_error (UnknownCoefficientFunction name) = "unknown coefficient function: " ++ name
+qualification_error InheritedRepeatedGroupingLimitation = "inherited repeated-grouping limitation"
 
 notice_report : List QualificationNotice → Text
 notice_report [] = ""

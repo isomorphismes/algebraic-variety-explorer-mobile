@@ -1,5 +1,8 @@
 module CoefficientCheck
 
+-- Retained standalone formatting/cast experiment. The maintained coefficient
+-- qualification compiles CoefficientValue through coefficient-values instead.
+
 import Data.Text
 import System
 

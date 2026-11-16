@@ -12,7 +12,8 @@ mkdir -p "$output"
 git -C "$repository" rev-parse HEAD > "$output/source-commit.txt"
 sha256sum "$repository/AlgebraicExpression.g" "$repository/AlgebraicExpressionWalker.g" \
   "$repository/AlgebraicExpressionLexer.java" "$repository/AlgebraicExpressionParser.java" \
-  "$repository/AlgebraicExpressionWalker.java" > "$output/sources.sha256"
+  "$repository/AlgebraicExpressionWalker.java" "$repository/DoubleValue.java" \
+  "$repository/ValueCalculator.java" > "$output/sources.sha256"
 var preview_status = 0
 proc preview(name, formula) {
   try {
@@ -22,22 +23,69 @@ proc preview(name, formula) {
   setglobal preview_status = _error.code
   printf '%s\t%s\n' "$name" "$preview_status" >> "$output/processes.tsv"
 }
+proc clean_parse(log) {
+  try { rg -n '(^line [0-9]+:[0-9]+ |AlgebraicExpressionWalker[.]g: node from)' "$log" }
+  var status = _error.code
+  if (status === 0) {
+    echo 'FAIL original preview produced output after parse diagnostics' >&2
+    exit 1
+  }
+  if (status !== 1) { echo 'FAIL original parse diagnostic checker' >&2; exit 1 }
+}
 proc accept(name, formula) {
   preview "$name" "$formula"
   if (preview_status !== 0) { cat "$output/$name.txt"; echo "FAIL original jsurf rejected $name" >&2; exit 1 }
+  clean_parse "$output/$name.txt"
   test -s "$output/$name.ppm"
 }
 proc grammar_refusal(log) {
-  try { rg 'RecognitionException|MismatchedTokenException|MismatchedSetException|NoViableAltException' "$log" }
-  var status = _error.code
-  if (status !== 0) {
-    if (status !== 1) { echo 'FAIL original grammar diagnostic checker' >&2; exit 1 }
-    # The retained generated walker loses RecognitionException.input and its
-    # ANTLR error reporter then throws. Admit only this exact reporting chain,
-    # never an arbitrary application NullPointerException or other crash.
-    rg -F 'java.lang.NullPointerException: Cannot invoke "org.antlr.runtime.tree.TreeNodeStream.getTreeAdaptor()" because "e.input" is null' "$log"
-    rg -F 'at org.antlr.runtime.tree.TreeParser.getErrorMessage(' "$log"
+  test -s "$log"
+  try { rg '^Exception in thread "main" org[.]antlr[.]runtime[.](RecognitionException|MismatchedTokenException|MismatchedSetException|NoViableAltException)(:|$)' "$log" }
+  var direct_status = _error.code
+  if (direct_status === 0) {
     rg -F 'at de.mfo.jsurf.parser.AlgebraicExpressionWalker.expr(' "$log"
+    rg -F 'at de.mfo.jsurf.parser.AlgebraicExpressionParser.parse(' "$log"
+  } else {
+    if (direct_status !== 1) { echo 'FAIL original grammar diagnostic checker' >&2; exit 1 }
+    try { rg -F 'java.lang.NullPointerException: Cannot invoke "org.antlr.runtime.tree.TreeNodeStream.getTreeAdaptor()" because "e.input" is null' "$log" }
+    var reporter_status = _error.code
+    if (reporter_status === 0) {
+      # The retained generated walker loses RecognitionException.input and its
+      # ANTLR error reporter then throws. Require its exact reporting chain.
+      rg -F 'at org.antlr.runtime.tree.TreeParser.getErrorMessage(' "$log"
+      rg -F 'at de.mfo.jsurf.parser.AlgebraicExpressionWalker.expr(' "$log"
+      rg -F 'at de.mfo.jsurf.parser.AlgebraicExpressionParser.parse(' "$log"
+    } else {
+      if (reporter_status !== 1) { echo 'FAIL original grammar diagnostic checker' >&2; exit 1 }
+      try { rg -F "java.util.NoSuchElementException: can't look backwards more than one token in this stream" "$log" }
+      var lookback_status = _error.code
+      if (lookback_status === 0) {
+        # sin((2)) fails while ANTLR constructs the recognition exception.
+        rg -F 'at org.antlr.runtime.misc.LookaheadStream.LB(' "$log"
+        rg -F 'at org.antlr.runtime.RecognitionException.extractInformationFromTreeNodeStream(' "$log"
+        rg -F 'at org.antlr.runtime.NoViableAltException.<init>(' "$log"
+        rg -F 'at de.mfo.jsurf.parser.AlgebraicExpressionWalker.expr(' "$log"
+        rg -F 'at de.mfo.jsurf.parser.AlgebraicExpressionParser.parse(' "$log"
+      } else {
+        if (lookback_status !== 1) { echo 'FAIL original grammar diagnostic checker' >&2; exit 1 }
+        # Repeated prefixes can report their grammar failure, return a null
+        # node and fail later. Accept only the observed diagnostic AND one of
+        # its exact downstream-null chains, never an arbitrary preview crash.
+        rg "AlgebraicExpressionWalker[.]g: node from (after )?line [0-9]+:[0-9]+ no viable alternative at input 'PARENTHESES'" "$log"
+        try { rg -F 'java.lang.NullPointerException: Cannot invoke "de.mfo.jsurf.algebra.DoubleOperation.accept(de.mfo.jsurf.algebra.Visitor, Object)" because the return value of "de.mfo.jsurf.algebra.DoubleBinaryOperation.getFirstOperand()" is null' "$log" }
+        var operand_status = _error.code
+        if (operand_status === 0) {
+          rg -F 'at de.mfo.jsurf.algebra.Simplificator.visit(' "$log"
+          rg -F 'at de.mfo.jsurf.algebra.DoubleBinaryOperation.accept(' "$log"
+          rg -F 'at de.mfo.jsurf.rendering.AlgebraicSurfaceRenderer.getSurfaceExpression(' "$log"
+        } else {
+          if (operand_status !== 1) { echo 'FAIL original grammar diagnostic checker' >&2; exit 1 }
+          rg -F 'java.lang.NullPointerException: Cannot invoke "de.mfo.jsurf.algebra.PolynomialOperation.accept(de.mfo.jsurf.algebra.Visitor, Object)" because "this.surfaceExpressionFamily" is null' "$log"
+          rg -F 'at de.mfo.jsurf.rendering.AlgebraicSurfaceRenderer.setSurfaceFamily(' "$log"
+        }
+        rg -F 'at org.algebraicvarietyexplorer.render.JsurfPreview.main(' "$log"
+      }
+    }
   }
 }
 proc refuse(name, formula) {
@@ -69,4 +117,42 @@ if (preview_status === 0) {
   printf 'nested_group\trejected\n' > "$output/nested-group.tsv"
 }
 cat "$output/nested-group.tsv"
+
+# Record exact formula admission, rather than assuming how the grammar's flat
+# PARENTHESES prefixes compose with the retained generated tree walker. Calls
+# insert a prefix around their argument even without an explicit nested group.
+printf 'case\tformula\tprocess_exit\tadmission\n' > "$output/grouping-admission.tsv"
+proc observe_grouping(name, formula) {
+  preview "$name" "$formula"
+  if (preview_status === 0) {
+    test -s "$output/$name.ppm"
+    try { rg -n '(^line [0-9]+:[0-9]+ |AlgebraicExpressionWalker[.]g: node from)' "$output/$name.txt" }
+    var diagnostic_status = _error.code
+    if (diagnostic_status === 0) {
+      printf '%s\t%s\t%s\toutput_with_parse_diagnostics\n' "$name" "$formula" "$preview_status" >> "$output/grouping-admission.tsv"
+    } else {
+      if (diagnostic_status !== 1) { echo 'FAIL original parse diagnostic checker' >&2; exit 1 }
+      printf '%s\t%s\t%s\taccepted_clean\n' "$name" "$formula" "$preview_status" >> "$output/grouping-admission.tsv"
+    }
+  } else {
+    if (preview_status !== 1) {
+      cat "$output/$name.txt"
+      echo "FAIL grouping oracle execution: $name" >&2
+      exit 1
+    }
+    grammar_refusal "$output/$name.txt"
+    printf '%s\t%s\t%s\trejected\n' "$name" "$formula" "$preview_status" >> "$output/grouping-admission.tsv"
+  }
+}
+observe_grouping grouped-exponent-exact 'x^(2)'
+observe_grouping nested-exponent-exact 'x^((2))'
+observe_grouping scalar-call-exact 'sin(2)'
+observe_grouping scalar-call-grouped-argument 'sin((2))'
+observe_grouping grouped-scalar-call '(sin(2))'
+observe_grouping nested-grouped-scalar-call '((sin(2)))'
+observe_grouping separately-grouped-coordinates '(x)+(y)'
+observe_grouping leading-zero-two 'x^000000000000000000002'
+observe_grouping leading-zero-zero 'x^000000000000000000000'
+observe_grouping leading-zero-overflow 'x^0000000000002147483648'
+cat "$output/grouping-admission.tsv"
 printf '\033[32mPASS\033[0m original jsurf semantic admission corpus; numerical parity separate\n'

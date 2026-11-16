@@ -1,4 +1,6 @@
 #!/usr/bin/env grease
+# Historical formatting/cast probe; retained as a failed language experiment.
+# The application workflow now qualifies the real coefficient-values producer.
 if (len(ARGV) !== 5) { echo 'usage: grease coefficients.grease EXPLORER FRONTEND ANDROID_NDK EVIDENCE ADB' >&2; exit 2 }
 var repository = ARGV[0]
 var frontend = ARGV[1]

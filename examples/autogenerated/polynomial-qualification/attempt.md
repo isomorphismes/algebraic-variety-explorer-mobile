@@ -39,8 +39,8 @@ polynomial representation or ABI.
   existing parser with the semantic stage. It preserves syntax failures and
   semantic failures separately.
 - `formula_qualification : Text → Text` is a small observation function. The
-  separate `PolynomialQualificationExports.idric` supplies the direct-DEX
-  export and required nullary entry; the semantic library has no main. The
+  shared `FormulaExports.idric` adapter supplies the direct-DEX
+  exports and required nullary entry; the semantic library has no main. The
   report does not replace the typed result used by a future polynomial producer.
 
 All operations in this stage are pure. Required runtime capabilities are lists,
@@ -60,53 +60,72 @@ F64 arithmetic is performed; that capability is being qualified separately.
    or negation. Scalar powers retain the original scalar rule.
 4. Function names are exactly the original `DoubleUnaryOperation.Op` names;
    functions require a scalar argument. The grammar exposes one argument only.
-5. Groups preserve expression category and decimal-literal provenance.
+5. Single groups preserve expression category and decimal-literal provenance.
+   Consecutive groups and an explicitly grouped function argument preserve the
+   original generated walker's repeated-prefix refusal. That inherited parser
+   limitation is named explicitly rather than presented as a mathematical rule.
 
-One inherited parser/walker interaction remains an oracle question: the grammar
-rewrites grouping into `PARENTHESES` prefixes, and the tree walker consumes one
-optional prefix at each operation. Verify nested grouping such as `x^((2))`
-against the actual Java parser before claiming full grouping parity. This module
-retains group nodes and their scalar/polynomial meaning; it does not erase that
-source-level question by claiming all inherited grouping has been qualified.
+The grouping boundary was executed using archived original classes from source
+`f61f534fffbe29e41a19ae9133ab11301404a793`, without recompilation, on OpenJDK
+21.0.13. The original preview accepted `x^(2)`, `sin(2)`, `(sin(2))` and
+`(x)+(y)` cleanly; `x^((2))`, `sin((2))` and `((sin(2)))` exited 1 through
+the recorded generated-walker failure chains. The qualifier now explicitly
+rejects `Grouped (Grouped _)` and `Called _ (Grouped _)`, retaining ordinary
+single groups. Host/source and ART regressions cover those same cases.
+
+Leading-zero range comparison is a separate boundary. `Integer.parseInt` accepts
+leading zeroes when supplied a decimal lexeme, so direct AST qualification strips
+them only while comparing against the signed 32-bit limit and preserves the
+entire original lexeme in the typed exponent and overflow notice. Expression
+lexing still rejects leading-zero decimal source. The original generated lexer
+reports lexical errors and can recover enough to produce an image for such
+source; an exit-zero preview alone is therefore not clean parse evidence.
+The original reference harness rejects parse diagnostics in clean acceptance
+cases and records recovery-with-output separately in its observation matrix.
 
 ## Verification and integration
 
-The working source compiled and passed its host suite through the exact retained
-frontend740bbf2b1. Backend153e7fc emitted the combined parser/qualification DEX,
-and pinned baksmali independently decoded both Text exports. The independent
-combined runner assembled. ART execution of this new semantic stage remains
-PENDING. `PolynomialQualificationCheck.idric` tests structural distinctions,
+The initial working source passed its host suite through the exact retained
+frontend740bbf2b1 and generated a combined parser/qualification DEX through
+backend153e7fc. Pinned baksmali decoded both Text exports and the independent
+combined runner assembled. `PolynomialQualificationCheck.idric` tests structural distinctions,
 valid/invalid powers and divisors, named coefficients, supported functions and
 overflow reporting. It must be compiled alongside the unchanged
 `AlgebraicExpression.idric` and the new `PolynomialQualification.idric`.
 
-Suggested integration with the existing formula qualification: copy the two
-production modules into the same staged source directory, compile/run the new
-check separately on the host, then generate direct DEX from the separate
-`PolynomialQualificationExports.idric` adapter and observe its exported
-`formula_qualification(Text) → Text` method. Existing parser checks and its
+The existing formula workflow copies the two production modules into the same
+staged source directory, compiles/runs the new check separately on the host,
+then generates direct DEX from the shared `FormulaExports.idric` adapter and
+observes its exported `formula_qualification(Text) → Text` method. Existing parser checks and its
 compiled mutation remain required. Do not present this source or host check as
 F64, PreparedSurface/JNI, APK or physical-device acceptance.
 
-The isolated authoring checkout initially lacked a compiler. The parent task
-then recovered the exact compiler/driver artifact from run43785829334,
-verified its archive digest and executable hashes, and performed the host,
-emission and decoding observations above. The artifact is a build-host tool,
-not a phone/tablet package.
-
 Run43787844128 at source95040ff passed the host suite and generated/decoded the
-new candidate and both compiled source mutations. Its original-jsurf admission
-step exposed the inherited ANTLR error-reporting bug: a deliberate walker
-refusal has `RecognitionException.input=null`, then `TreeParser.getErrorMessage`
-throws a NullPointerException while reporting it. The oracle now requires that
-exact message and both parser/reporting stack frames when the ordinary ANTLR
-exception name is absent. It does not accept arbitrary crashes as refusals.
-The failing and corrected reporting observations remain distinct from candidate
-ART behavior and from numerical equivalence.
+candidate and both compiled source mutations. Run43789536232 at sourcef61f534
+repeated those observations, then exposed a second inherited walker failure in
+the original nested-group oracle. Its evidence artifact14192226224 had ZIP
+SHA256 `0ed6386e039640cf9c8a78257b3dbe1c565ef778faf6f4b0efab861e4960d3db`.
+The original Java grouping replay above used the archived classes and locked
+dependencies from that artifact, with per-case statuses and outputs retained
+separately. The oracle recognizes only the observed grammar/reporting chains;
+unrelated crashes remain failures.
+
+The archived compiler/driver came from run43785829334. Its ZIP and executable
+hashes were verified before local replay. The original launchers refer to the
+former runner, so compiler replay uses the archived exact Chez binary and its
+explicit boot/runtime/package paths. The Grease runtime had not been fully
+retained; the updated retention step now includes it for subsequent diagnostic
+replay. The updated grouping-source host suite now executes PASS through the
+exact retained frontend, including explicit repeated-group refusals, original
+single-group positives, direct-AST exponent provenance and lexical refusals.
+The updated combined source also emits direct DEX and its independent runner
+assembles. Actual semantic ART qualification remains pending.
 
 ## Remaining work
 
 The next semantic stage must evaluate named/numeric scalar expressions at the
-preserved binary64 boundary and expand the typed polynomial operations with the
-original numerical order, then form derivatives and the established prepared
-surface. This qualification stage does not claim those stages are implemented.
+preserved binary64 boundary, simplify the original typed polynomial operations,
+form their three symbolic derivatives, and only then expand each in the
+original numerical order. Family degree is taken before simplification. This
+qualification stage does not claim the established prepared-surface producer
+or managed/native transport is implemented; see the native handoff note.

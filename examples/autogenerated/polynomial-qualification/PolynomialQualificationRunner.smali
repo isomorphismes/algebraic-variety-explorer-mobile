@@ -48,6 +48,24 @@
     const-string v0, "x^(2)"
     const-string v1, "polynomial"
     invoke-static {v0, v1}, LPolynomialQualificationRunner;->check(Ljava/lang/String;Ljava/lang/String;)V
+    const-string v0, "sin(2)"
+    const-string v1, "scalar"
+    invoke-static {v0, v1}, LPolynomialQualificationRunner;->check(Ljava/lang/String;Ljava/lang/String;)V
+    const-string v0, "(sin(2))"
+    const-string v1, "scalar"
+    invoke-static {v0, v1}, LPolynomialQualificationRunner;->check(Ljava/lang/String;Ljava/lang/String;)V
+    const-string v0, "(x)+(y)"
+    const-string v1, "polynomial"
+    invoke-static {v0, v1}, LPolynomialQualificationRunner;->check(Ljava/lang/String;Ljava/lang/String;)V
+    const-string v0, "x^((2))"
+    const-string v1, "meaning error: inherited repeated-grouping limitation"
+    invoke-static {v0, v1}, LPolynomialQualificationRunner;->check(Ljava/lang/String;Ljava/lang/String;)V
+    const-string v0, "sin((2))"
+    const-string v1, "meaning error: inherited repeated-grouping limitation"
+    invoke-static {v0, v1}, LPolynomialQualificationRunner;->check(Ljava/lang/String;Ljava/lang/String;)V
+    const-string v0, "((sin(2)))"
+    const-string v1, "meaning error: inherited repeated-grouping limitation"
+    invoke-static {v0, v1}, LPolynomialQualificationRunner;->check(Ljava/lang/String;Ljava/lang/String;)V
     const-string v0, "x^4-x*y^3-z^4+z"
     const-string v1, "polynomial"
     invoke-static {v0, v1}, LPolynomialQualificationRunner;->check(Ljava/lang/String;Ljava/lang/String;)V

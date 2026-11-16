@@ -19,5 +19,9 @@ tar -czf "$output/compiler.tar.gz" \
   .tools/Idric/_/bootstrap-build .tools/Idric/_/build/exec \
   .tools/android-NDK/dex/idric/build/exec .tools/android-NDK/dex/idric/build/ttc \
   .tools/runtime/.build/grease/bin
+tar --exclude-vcs -czf "$output/grease-runtime.tar.gz" \
+  .tools/runtime/grease/source .tools/runtime/.build/grease/python2 \
+  .tools/runtime/.build/grease/bin
 sha256sum "$output/compiler.tar.gz" > "$output/compiler.sha256"
+sha256sum "$output/grease-runtime.tar.gz" > "$output/grease-runtime.sha256"
 printf '\033[32mPASS\033[0m exact build-host compiler/driver retained for diagnostic replay\n'

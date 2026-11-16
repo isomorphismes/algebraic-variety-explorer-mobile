@@ -30,6 +30,12 @@ main = do
   check "x/0" "polynomial"
   check "1/0" "scalar"
   check "x^(2)" "polynomial"
+  check "sin(2)" "scalar"
+  check "(sin(2))" "scalar"
+  check "(x)+(y)" "polynomial"
+  check "x^((2))" "meaning error: inherited repeated-grouping limitation"
+  check "sin((2))" "meaning error: inherited repeated-grouping limitation"
+  check "((sin(2)))" "meaning error: inherited repeated-grouping limitation"
   check "x^0" "polynomial"
   check "x^2147483647" "polynomial"
   check "x^2147483648" "polynomial; inherited exponent overflow to zero: 2147483648"
@@ -78,6 +84,30 @@ main = do
       Right (FormulaMeaning (PolynomialMeaning (PolynomialPower _
         (InheritedOverflowExponent "2147483648"))) [InheritedExponentOverflowToZero "2147483648"]) ⇒ True
       _ ⇒ False
+  require "direct decimal AST compares leading zeroes without losing provenance" $
+    case qualify_expression (Raised (NamedValue "x")
+      (DecimalValue "000000000000000000002")) of
+      Right (FormulaMeaning (PolynomialMeaning (PolynomialPower _
+        (InRangeDecimalExponent "000000000000000000002"))) []) ⇒ True
+      _ ⇒ False
+  require "direct all-zero decimal AST is in range" $
+    case qualify_expression (Raised (NamedValue "x")
+      (DecimalValue "000000000000000000000")) of
+      Right (FormulaMeaning (PolynomialMeaning (PolynomialPower _
+        (InRangeDecimalExponent "000000000000000000000"))) []) ⇒ True
+      _ ⇒ False
+  require "direct overflowing decimal AST retains leading-zero provenance" $
+    case qualify_expression (Raised (NamedValue "x")
+      (DecimalValue "0000000000002147483648")) of
+      Right (FormulaMeaning (PolynomialMeaning (PolynomialPower _
+        (InheritedOverflowExponent "0000000000002147483648")))
+        [InheritedExponentOverflowToZero "0000000000002147483648"]) ⇒ True
+      _ ⇒ False
+  traverse_ (\source ⇒ require "leading-zero source remains a syntax failure" $
+    case qualify_formula source of
+      Left (FormulaSyntaxFailure _) ⇒ True
+      _ ⇒ False)
+    ["x^000000000000000000002", "x^000000000000000000000", "x^0000000000002147483648"]
   require "syntax failure remains separate" $
     case qualify_formula "x+" of
       Left (FormulaSyntaxFailure _) ⇒ True

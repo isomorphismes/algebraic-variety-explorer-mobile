@@ -1,0 +1,93 @@
+module CoefficientValue
+
+import PolynomialQualification
+import CoefficientArithmetic
+import Data.Text
+
+-- Christian Stussak's DoubleValue/ValueCalculator contract, Apache-2.0.
+-- Explicit binary64 coefficient compatibility, never default Float16 storage.
+public export
+Coefficient : Type
+Coefficient = Double
+
+%foreign "dex:static:Ljava/lang/Double;:parseDouble:(Ljava/lang/String;)D"
+parse_binary64 : Text → Coefficient
+
+%foreign "dex:static:Ljava/lang/Math;:pow:(DD)D"
+power_coefficient : Coefficient → Coefficient → Coefficient
+
+%foreign "dex:static:Ljava/lang/Math;:sin:(D)D"
+sine_coefficient : Coefficient → Coefficient
+%foreign "dex:static:Ljava/lang/Math;:cos:(D)D"
+cosine_coefficient : Coefficient → Coefficient
+%foreign "dex:static:Ljava/lang/Math;:tan:(D)D"
+tangent_coefficient : Coefficient → Coefficient
+%foreign "dex:static:Ljava/lang/Math;:asin:(D)D"
+arc_sine_coefficient : Coefficient → Coefficient
+%foreign "dex:static:Ljava/lang/Math;:acos:(D)D"
+arc_cosine_coefficient : Coefficient → Coefficient
+%foreign "dex:static:Ljava/lang/Math;:atan:(D)D"
+arc_tangent_coefficient : Coefficient → Coefficient
+%foreign "dex:static:Ljava/lang/Math;:exp:(D)D"
+exponential_coefficient : Coefficient → Coefficient
+%foreign "dex:static:Ljava/lang/Math;:log:(D)D"
+logarithmic_coefficient : Coefficient → Coefficient
+%foreign "dex:static:Ljava/lang/Math;:sqrt:(D)D"
+square_root_coefficient : Coefficient → Coefficient
+%foreign "dex:static:Ljava/lang/Math;:ceil:(D)D"
+ceiling_coefficient : Coefficient → Coefficient
+%foreign "dex:static:Ljava/lang/Math;:floor:(D)D"
+floor_coefficient : Coefficient → Coefficient
+%foreign "dex:static:Ljava/lang/Math;:abs:(D)D"
+absolute_coefficient : Coefficient → Coefficient
+%foreign "dex:static:Ljava/lang/Math;:signum:(D)D"
+sign_coefficient : Coefficient → Coefficient
+
+apply_coefficient_function : CoefficientFunction → Coefficient → Coefficient
+apply_coefficient_function NegateCoefficient value = negate value
+apply_coefficient_function SineCoefficient value = sine_coefficient value
+apply_coefficient_function CosineCoefficient value = cosine_coefficient value
+apply_coefficient_function TangentCoefficient value = tangent_coefficient value
+apply_coefficient_function ArcSineCoefficient value = arc_sine_coefficient value
+apply_coefficient_function ArcCosineCoefficient value = arc_cosine_coefficient value
+apply_coefficient_function ArcTangentCoefficient value = arc_tangent_coefficient value
+apply_coefficient_function ExponentialCoefficient value = exponential_coefficient value
+apply_coefficient_function LogarithmicCoefficient value = logarithmic_coefficient value
+apply_coefficient_function SquareRootCoefficient value = square_root_coefficient value
+apply_coefficient_function CeilingCoefficient value = ceiling_coefficient value
+apply_coefficient_function FloorCoefficient value = floor_coefficient value
+apply_coefficient_function AbsoluteCoefficient value = absolute_coefficient value
+apply_coefficient_function SignCoefficient value = sign_coefficient value
+
+export
+evaluate_coefficient : (Text → Maybe Coefficient) → ScalarExpression → Either Text Coefficient
+evaluate_coefficient bindings (DecimalCoefficient source) = Right (parse_binary64 source)
+evaluate_coefficient bindings (FloatingCoefficient source) = Right (parse_binary64 source)
+evaluate_coefficient bindings (NamedCoefficient name) =
+  case bindings name of
+    Just value ⇒ Right value
+    Nothing ⇒ Left ("no value has been assigned to parameter '" ++ name ++ "'")
+evaluate_coefficient bindings (ScalarSum left right) = do
+  first ← evaluate_coefficient bindings left
+  second ← evaluate_coefficient bindings right
+  Right (first + second)
+evaluate_coefficient bindings (ScalarDifference left right) = do
+  first ← evaluate_coefficient bindings left
+  second ← evaluate_coefficient bindings right
+  Right (subtract_coefficients first second)
+evaluate_coefficient bindings (ScalarProduct left right) = do
+  first ← evaluate_coefficient bindings left
+  second ← evaluate_coefficient bindings right
+  Right (multiply_coefficients first second)
+evaluate_coefficient bindings (ScalarQuotient left right) = do
+  first ← evaluate_coefficient bindings left
+  second ← evaluate_coefficient bindings right
+  Right (divide_coefficients first second)
+evaluate_coefficient bindings (ScalarPower left right) = do
+  first ← evaluate_coefficient bindings left
+  second ← evaluate_coefficient bindings right
+  Right (power_coefficient first second)
+evaluate_coefficient bindings (ScalarFunction function argument) = do
+  value ← evaluate_coefficient bindings argument
+  Right (apply_coefficient_function function value)
+evaluate_coefficient bindings (ScalarGroup expression) = evaluate_coefficient bindings expression
