@@ -27,10 +27,11 @@ specialization, root, gradient, material, lighting and AA path. Candidate ARGB
 records, source/toolchain hashes, exact comparisons and zero-difference
 receipts are retained. No tolerance is silently introduced.
 
-The maintained Grease verifier compiles six real mutations: round the specular
+The maintained Grease verifier compiles seven real mutations: round the specular
 dot before its power, use back ambient intensity, normalize in binary64,
 choose the front material on a zero dot, route images through historical
-shading, and test the trimmed root degree before the original shrink step.
+shading, test the trimmed root degree before the original shrink step, and
+omit the original clipping-direction normalization.
 Each must be rejected by a designated raw-bit or image comparison. The
 32179-byte historical success control must retain SHA256
 `65f44c201676e330068804e4059a369cb6479efa1673660fd78a42681a1f55ca`.
@@ -48,3 +49,24 @@ production partition/concurrency obligation. The next numerical slice must
 preserve actual tile-local coordinates and AA, compare each actual original
 tile, and make ownership/cancellation and any selected original-legal tile
 publication order explicit.
+
+## Actual selected-ray components
+
+The original observer captures coordinates by delegating the actual task's
+ray creator, then invokes unchanged original component methods at those
+coordinates. The C consumer compares 238 labelled ray observations across the
+44 frames, including 1004 dense coefficients, 110 clipping intervals and root
+results, and 73 admitted hit/gradient/normal/shade sequences. Duplicate labels
+that select the same actual coordinate remain explicit; they are not claimed
+as distinct geometric samples. A no-root NaN is compared as no root; finite
+values and signed zero retain exact bits.
+
+This gate exposed a second operation-order difference: the earlier sphere
+clip used the general quadratic formula. The original normalizes the ray
+direction, computes its own B and discriminant, then rescales the interval.
+At a rotated sphere's center, the lower bound differs by one binary64 unit.
+The quality/session route now performs that exact original sequence; the
+historical direct-expansion control retains its old formula. All 238 selected
+component observations and the 44 composed full-canvas frames match the
+explicit Java21/source17 development outputs after the repair. Hosted JDK17,
+leaks and target execution remain required for this changed source.

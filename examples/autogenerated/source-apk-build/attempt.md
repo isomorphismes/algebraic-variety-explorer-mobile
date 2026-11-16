@@ -16,6 +16,11 @@ Central operations have these contracts:
   the direct DEX backend, checked Activity and production C sources, then
   packages only those emitted bytes through the existing strict producer.
 
+The backend compiles in a fresh local source clone for every application build.
+Forcing a Make recipe without removing Idriç's TTC cache would not suffice to
+prove a fresh backend compilation. The provided checkout's outputs are neither
+consumed nor removed.
+
 No reference Java class, raw candidate Smali, generated C, downloaded DEX or
 prebuilt application library is an input. The locked independent decoder and
 assembler inspect the emitted DEX; only the original emitted DEX is packaged.

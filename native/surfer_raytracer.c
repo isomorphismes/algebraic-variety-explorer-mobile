@@ -1385,6 +1385,30 @@ surfer_status surfer_clip_unit_sphere(surfer_ray ray, surfer_interval *interval)
     return SURFER_OK;
 }
 
+static surfer_status clip_original_unit_sphere(surfer_ray ray, surfer_interval *interval)
+{
+    if (interval == NULL || !valid_ray(ray)) return SURFER_INVALID_INPUT;
+    /* ClipToSphere normalizes the direction before computing B and D, then
+     * scales the interval back. The general quadratic formula above is
+     * algebraically equal, but changes the original clipping-boundary bits.
+     */
+    const double length = length_of_vector(ray.direction);
+    if (!(length > 0.0) || !isfinite(length)) return SURFER_INVALID_INPUT;
+    const surfer_vec3 direction = scale_vector(ray.direction, 1.0f / length);
+    const double b = -dot_product(ray.origin, direction);
+    const double c = dot_product(ray.origin, ray.origin) - 1.0;
+    const double discriminant = b * b - c;
+    if (!isfinite(discriminant)) return SURFER_INVALID_INPUT;
+    if (discriminant < 0.0) return SURFER_MISS;
+    const double root = sqrt(discriminant);
+    const double scale = 1.0 / length;
+    const double lower = (b - root) * scale;
+    const double upper = (b + root) * scale;
+    if (!isfinite(lower) || !isfinite(upper)) return SURFER_INVALID_INPUT;
+    *interval = (surfer_interval){lower, upper};
+    return SURFER_OK;
+}
+
 static bool prepare_surface_polynomial_on_ray(surfer_operation_context *context,
     const surfer_prepared_surface *surface,
     surfer_ray surface_ray,
@@ -1604,13 +1628,16 @@ static surfer_color shade_hit_with_original_material(
 
 static surfer_status visible_interval_for_ray_bundle(
     surfer_ray_bundle rays,
-    surfer_interval *visible_interval)
+    surfer_interval *visible_interval,
+    bool original_profile)
 {
     /*
      * Stussak's RayCreator keeps one parameter t across camera, clipping, and
      * surface space. ClipToSphere therefore returns an interval in that same t.
      */
-    const surfer_status status = surfer_clip_unit_sphere(rays.clipping_ray, visible_interval);
+    const surfer_status status = original_profile
+        ? clip_original_unit_sphere(rays.clipping_ray, visible_interval)
+        : surfer_clip_unit_sphere(rays.clipping_ray, visible_interval);
     if (status != SURFER_OK) {
         return status;
     }
@@ -1685,7 +1712,7 @@ static surfer_trace_result trace_prepared_ray_with_row(
 
     /* ray bundle → visible t interval → first surface root */
     surfer_interval visible_interval;
-    result.status = visible_interval_for_ray_bundle(rays, &visible_interval);
+    result.status = visible_interval_for_ray_bundle(rays, &visible_interval, row != NULL);
     if (result.status != SURFER_OK) {
         return result;
     }

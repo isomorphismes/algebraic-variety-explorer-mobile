@@ -1,6 +1,7 @@
 module PreparedFormula
 
 import PolynomialQualification
+import AlgebraicExpression
 import CoefficientValue
 import CoefficientArithmetic
 import Data.Text
@@ -311,11 +312,21 @@ prepare_qualified_formula bindings qualified = do
     (differentiate CoordinateX concrete) (differentiate CoordinateY concrete)
     (differentiate CoordinateZ concrete) qualified.notices)
 
-export
-prepare_formula : (Text → Maybe Coefficient) → Text → Either Text PreparedFormula
-prepare_formula bindings source = case qualify_formula source of
-  Left (FormulaSyntaxFailure reason) ⇒ Left ("syntax error: " ++ reason)
+prepare_formula_with_error : (ParseError → Text) → (Text → Maybe Coefficient) →
+                             Text → Either Text PreparedFormula
+prepare_formula_with_error describe bindings source = case qualify_formula source of
+  Left (FormulaSyntaxFailure reason) ⇒ Left ("syntax error: " ++ describe reason)
   Left (FormulaMeaningFailure reason) ⇒ Left ("meaning error: " ++ qualification_error reason)
   Right qualified ⇒ case prepare_qualified_formula bindings qualified of
     Left reason ⇒ Left ("preparation error: " ++ preparation_error reason)
     Right prepared ⇒ Right prepared
+
+-- Compatibility reports retain the established text. Both wrappers use the
+-- same typed qualification/preparation path; the Activity keeps the location.
+export
+prepare_formula : (Text → Maybe Coefficient) → Text → Either Text PreparedFormula
+prepare_formula = prepare_formula_with_error parse_error_message
+
+export
+prepare_formula_located : (Text → Maybe Coefficient) → Text → Either Text PreparedFormula
+prepare_formula_located = prepare_formula_with_error parse_error_report

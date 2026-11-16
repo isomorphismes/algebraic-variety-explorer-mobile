@@ -20,9 +20,9 @@ and candidate classes share one process/class loader. Production library builds
 exclude these observer declarations and allocation hooks.
 
 The runner covers the seven closed presets, the user's quartic, cancellation,
-reciprocal rounding and Kahan-sensitive collection. The actual producer binds
-no parameters; missing-parameter behavior is tested as an explicit error rather
-than claiming positive binding acceptance. Each handle is observed, released,
+reciprocal rounding and Kahan-sensitive collection. The original observation
+adapter binds no parameters; a separate checked adapter supplies radius2.0
+through the maintained semantic binding function. Each handle is observed, released,
 checked stale and checked against double release. Successful/failing source
 replacement cycles must drain all native allocations. Detailed concurrent
 borrow/retirement remains the separate native receiver qualification; the
@@ -34,8 +34,9 @@ failed through test-only hooks while executing the actual generated producer.
 Errors must be reported, existing separately held handles must remain usable,
 and temporary/snapshot/borrow/store-allocation counts must return to zero.
 
-Two source mutations alter the real producer: one writes wrong coefficient
-values and one fills the x-gradient range from the y-gradient. Both must fail
+Two transfer-source mutations alter the real producer: one writes wrong
+coefficient values and one fills the x-gradient range from the y-gradient.
+A third checked adapter mutation supplies the wrong bound radius. All must fail
 the same independent field/bit observer with designated exit80. Candidate
 instructions always come from the maintained compiler; Smali supplies only
 independent observation and original-program access.
@@ -107,3 +108,31 @@ discarded-square refusal and retains consumed overflow/exponent128 controls.
 These new transfer observations remain NOT_RUN until the amended runner and
 actual candidate execute together on ART; previous-head results do not qualify
 the added cases.
+
+## Positive bindings copied into the native snapshot
+
+`actual_prepare_bound_handle` uses the maintained producer with exactly
+`radius ↦ 2.0`, then exposes its actual positive native handle. The independent
+`original_expansion_with_radius` observer calls original renderer
+`setParameterValue` before retrieving and expanding its own four polynomials.
+The amended runner compares original and native degree/order/raw-F64/exponent
+fields for `x^2+y^2+z^2-radius^2` and `radius*x+radius*y`.
+The latter additionally checks a fixed elementary report against the original
+observer: both linear coefficients and the x/y derivatives equal2.0, with
+positive-zero z derivative. Repeated occurrences of radius use one environment;
+no duplicate-key list or new binding-admission policy is introduced.
+
+The original no-binding path still refuses `radius*x`. The bound path must
+refuse `radius*x+unknown*y` and case-sensitive `Radius*x` before entering JNI;
+an unknown coefficient function is also checked at that boundary. All four
+errors are inside the receiver-entry-count invariant and final-empty checks.
+Existing allocation/store/replacement/stale-handle observations remain intact.
+
+A third actual checked-source mutant supplies radius3.0. It must pass ordinary
+unbound cases, then fail the unchanged original/native comparison with exact
+status80 at the bound sphere, reporting the original constant−4.0 bits and
+mutated constant−9.0 bits. A different earlier failure cannot satisfy this
+sensitivity control. Existing coefficient and axis mutants remain required. Generation
+and observer assembly do not qualify these new observations: positive bound
+JNI behavior, unknown-name controls and binding-mutant rejection are NOT_RUN
+until the amended candidate/observer execute together on ART.

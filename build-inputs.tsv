@@ -1,7 +1,8 @@
 component	repository	revision	role
 frontend	isomorphisms/Idric	740bbf2b1d9e811fd00c719c3473eede17ceea3b	checked source frontend, built through qualified host ICK
-dex-backend	isomorphisms/android-NDK	89f366f7f2ee62e0a7567c558e6880e1fa7f6eec	direct checked ANF to DEX, rebuilt by build.grease
+dex-backend	isomorphisms/android-NDK	ce520edf01623cd66a7f02789018e608ecdc7068	direct checked ANF to DEX, rebuilt by build.grease
 ick-cross	dilapidated-shed/ick	c61e448251744a2f40ad743ebef1a027bdcd2f9d	three source-built C compilers
 ick-host	dilapidated-shed/ick	fbe86e23d55cfec2000c08e61deea2a407fd7175	frontend and Grease bootstrap host compiler
 grease	dilapidated-shed/grease	f19c94c6df18cddbdc1e81463e5bd689533e3c13	consumer shell implementation
 catfood	isomorphisms/catfood	609a9628d5a52860f956bf62e0914a0cd03292ae	Grease source bootstrap
+ai-ci	isomorphisms/ai-ci	32cb45b3a3a257aeb07881c75f3b846495cfb2c9	owned host compiler source build and qualification

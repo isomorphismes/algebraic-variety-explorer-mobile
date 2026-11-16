@@ -13,9 +13,8 @@ var output = ARGV[5]
 for path in (ARGV) { if (path[0] !== '/') { echo 'FAIL absolute packaging paths required' >&2; exit 2 } }
 if test -e "$output" { echo 'FAIL refusing reused unsigned APK output' >&2; exit 1 }
 proc constant(name) {
-  test $(rg -c "^readonly $name=" "$repository/build.sh") = 1
-  var pattern = 's/^readonly ' ++ name ++ r'="\([^"]*\)"$/\1/p'
-  sed -n "$pattern" "$repository/build.sh"
+  test $(awk -F '\t' -v name="$name" '$1 == name { count++ } END { print count+0 }' "$repository/build-values.tsv") = 1
+  awk -F '\t' -v name="$name" '$1 == name { print $2 }' "$repository/build-values.tsv"
 }
 var application = $(constant APPLICATION_ID)
 var compile_sdk = $(constant COMPILE_SDK)
@@ -75,23 +74,19 @@ sha256sum "$aapt2" "$align" "$signer" "$platform" "$elf" "$nm" > "$output/eviden
 cp "$repository/drawable.formula_field.xml" "$output/res/drawable/formula_field.xml"
 cp "$repository/drawable.ic_launcher.xml" "$output/res/drawable/ic_launcher.xml"
 cp "$repository/drawable.surface_frame.xml" "$output/res/drawable/surface_frame.xml"
-cp "$repository/layout.activity_main.xml" "$output/res/layout/activity_main.xml"
 cp "$repository/layout.activity_idric.xml" "$output/res/layout/activity_idric.xml"
 cp "$repository/values.colors.xml" "$output/res/values/colors.xml"
 cp "$repository/values.strings.xml" "$output/res/values/strings.xml"
 cp "$repository/values.styles.xml" "$output/res/values/styles.xml"
 cp "$repository/values.idric_examples.xml" "$output/res/values/idric_examples.xml"
-test $(rg -c -F 'android:name=".MainActivity"' "$repository/AndroidManifest.xml") = 1
-try { rg 'extractNativeLibs' "$repository/AndroidManifest.xml" }
-if (_error.code !== 1) { echo 'FAIL unexpected original native-extraction declaration or checker' >&2; exit 1 }
-sed -e 's/android:name=".MainActivity"/android:name="Idric.Generated"/' \
-  -e '/<application/a\        android:extractNativeLibs="false"' \
-  "$repository/AndroidManifest.xml" > "$output/AndroidManifest.xml"
-sha256sum "$repository/build.sh" "$repository/AndroidManifest.xml" \
+test $(rg -c -F 'android:name="Idric.Generated"' "$repository/AndroidManifest.xml") = 1
+test $(rg -c -F 'android:extractNativeLibs="false"' "$repository/AndroidManifest.xml") = 1
+cp "$repository/AndroidManifest.xml" "$output/AndroidManifest.xml"
+sha256sum "$repository/build-values.tsv" "$repository/AndroidManifest.xml" \
   "$output/AndroidManifest.xml" "$repository/layout.activity_idric.xml" \
   "$repository/values.idric_examples.xml" "$repository/values.strings.xml" \
   "$repository/values.styles.xml" "$repository/values.colors.xml" \
-  "$repository/layout.activity_main.xml" "$repository/drawable.formula_field.xml" \
+  "$repository/drawable.formula_field.xml" \
   "$repository/drawable.surface_frame.xml" "$repository/drawable.ic_launcher.xml" \
   > "$output/evidence/resources.sha256"
 cp "$repository/LICENSE" "$output/payload/assets/licenses/PROJECT-LICENSE"
@@ -160,7 +155,7 @@ cp "$output/resources.apk" "$output/unaligned.apk"
 cd "$output/payload"
 zip -X -0 "$output/unaligned.apk" classes.dex lib/arm64-v8a/libave.so lib/armeabi-v7a/libave.so lib/x86_64/libave.so \
   assets/licenses/PROJECT-LICENSE assets/licenses/NOTICE assets/licenses/THIRD_PARTY_LICENSES.md assets/licenses/vecmath-GPL-2-CE.txt
-var apk = "$output/Algebraic-Variety-Explorer-$version_name-idric-unsigned.apk"
+var apk = "$output/Algebraic-Variety-Explorer-$version_name-unsigned.apk"
 "$align" -P 16 -f -v 4 "$output/unaligned.apk" "$apk" > "$output/evidence/alignment.txt"
 "$align" -P 16 -c -v 4 "$apk" >> "$output/evidence/alignment.txt"
 unzip -t "$apk" > "$output/evidence/zip-test.txt"
@@ -189,7 +184,7 @@ for license in PROJECT-LICENSE NOTICE THIRD_PARTY_LICENSES.md vecmath-GPL-2-CE.t
 }
 "$aapt2" dump badging "$apk" > "$output/evidence/badging.txt"
 rg -F "package: name='$application' versionCode='$version_code' versionName='$version_name'" "$output/evidence/badging.txt"
-rg -x -F "sdkVersion:'23'" "$output/evidence/badging.txt"
+rg -x -F "minSdkVersion:'23'" "$output/evidence/badging.txt"
 rg -x -F "targetSdkVersion:'35'" "$output/evidence/badging.txt"
 rg -x -F "application-label:'Algebraic Variety Explorer'" "$output/evidence/badging.txt"
 rg -F "launchable-activity: name='Idric.Generated'" "$output/evidence/badging.txt"

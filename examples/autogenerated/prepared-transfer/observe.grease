@@ -32,7 +32,7 @@ var remote = '/data/local/tmp/ave-actual-prepared-transfer'
 cmp "$evidence/runner.dex" "$evidence/runner-received.dex"
 cmp "$library" "$evidence/library-received.so"
 cmp "$oracle" "$evidence/original-oracle-received.dex"
-for name in positive coefficient-mutant axis-mutant {
+for name in positive coefficient-mutant axis-mutant binding-mutant {
   "$adb" -s "$serial" push "$evidence/$name/candidate.dex" "$remote/$name.dex"
   "$adb" -s "$serial" shell chmod 444 "$remote/$name.dex"
   "$adb" -s "$serial" pull "$remote/$name.dex" "$evidence/$name-received.dex"
@@ -50,7 +50,12 @@ for name in positive coefficient-mutant axis-mutant {
   } else {
     if (status !== 80) { echo "FAIL missing designated transfer mutant rejection: $name" >&2; exit 1 }
     rg -x -F 'FAIL Explorer prepared transfer' "$evidence/art-$name.txt"
+    if (name === 'binding-mutant') {
+      rg -x -F 'x^2+y^2+z^2-radius^2' "$evidence/art-$name.txt"
+      rg -F 'family=2;surface=0,0,0:c010000000000000|' "$evidence/art-$name.txt"
+      rg -F 'family=2;surface=0,0,0:c022000000000000|' "$evidence/art-$name.txt"
+    }
   }
 }
-printf 'actual_Idric_array_producer_JNI_ART\tPASS\noriginal_four_polynomial_bits\tPASS\nsource_validation_without_JNI\tPASS\nsource_replacement_cycles\tPASS\nJNI_temporary_allocation_failures\tPASS\nnative_store_allocation_failures\tPASS\nfinal_native_live_counts_zero\tPASS\ncompiled_coefficient_mutant_rejected\tPASS\ncompiled_axis_mutant_rejected\tPASS\npositive_parameter_binding\tNOT_RUN\nActivity\tNOT_RUN\nAPK\tNOT_RUN\nphysical_C67\tNOT_RUN\nphysical_A1\tNOT_RUN\n' > "$evidence/art-result.tsv"
+printf 'actual_Idric_array_producer_JNI_ART\tPASS\noriginal_four_polynomial_bits\tPASS\nsource_validation_without_JNI\tPASS\nsource_replacement_cycles\tPASS\nJNI_temporary_allocation_failures\tPASS\nnative_store_allocation_failures\tPASS\nfinal_native_live_counts_zero\tPASS\ncompiled_coefficient_mutant_rejected\tPASS\ncompiled_axis_mutant_rejected\tPASS\ncompiled_binding_mutant_rejected\tPASS\npositive_parameter_binding\tPASS\nunknown_parameter_refused_before_JNI\tPASS\nActivity\tNOT_RUN\nAPK\tNOT_RUN\nphysical_C67\tNOT_RUN\nphysical_A1\tNOT_RUN\n' > "$evidence/art-result.tsv"
 printf '\033[32mPASS\033[0m actual Idriç prepared transfer, native snapshots and compiled source mutations on ART\n'

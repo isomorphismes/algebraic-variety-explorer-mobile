@@ -80,3 +80,22 @@ That experiment executes unchanged original methods, but does not establish
 the stricter hosted Java17 reference stage. All maintained Grease helpers parse
 with the exact retained runtime. Hosted full-JDK17 reference and leak-enabled
 execution remain pending; no full FINAL, Android or physical parity follows.
+
+## Dependency acquisition
+
+The AA reference now reuses
+`polynomial-qualification/prepare-dependencies.grease`: every cached jar is
+digest-checked, cold acquisition can use the two Maven Central endpoints, and
+the same four original-reference lock entries supply both JVM and AA checks.
+Only the unchanged ANTLR and vecmath jars are copied into the AA classpath.
+Native-host CI restores and saves that same dependency-lock-keyed cache before
+later reference execution; this is separate from mathematical acceptance.
+
+The actual AA preparation entry passed with a fresh empty cache and with a
+verified warm cache. Both produced the exact original ANTLR
+`5b7cf53b7b30b034023f58030c8147c433f2bee0fe7dec8fae6bebf3708c5a63`
+and vecmath
+`3558e81ca74c60dc01baca7ef05f48594bbaed43af45d4f1b9196e479734e675`
+bytes. A deliberately corrupted cached ANTLR jar was rejected by its checksum
+with exit 1 before an AA classpath jar was published. No dependency version or
+accepted digest changed.

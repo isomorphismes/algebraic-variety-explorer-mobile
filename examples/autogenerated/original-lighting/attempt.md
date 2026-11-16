@@ -86,3 +86,41 @@ Worker comparison deliberately reports observations without an equality
 claim. A decision about deterministic full-canvas semantics versus preserving
 host-dependent overlapping production partitions remains an explicit separate
 acceptance boundary.
+
+## Selected actual ray calls
+
+The `rays` extension records coordinates received from the actual unchanged
+`RenderingTask` through a delegating creator wrapper. This avoids recreating
+the task's start/increment/AA coordinate sequence. The 238 labelled component
+observations repeated exactly in the Java 21 development diagnostic, with
+SHA-256 `6de0b7c2dda5b400b763911b25d8344d2f9bd7f1e5011e8e2e3b8374c7082143`.
+The final wrapper source was recompiled and repeated those exact bytes after
+all inherited camera transformations were explicitly delegated.
+
+The actual Whitney OG center call is index 49 at `u = v = +0` for 11 × 9.
+Its original dense polynomial has two coefficients `[+0, +0]`; the original
+root finder returns `−0` on the clipped interval `[-1, 1]`, rather than a
+missing root. The zero normal selects back ambient and the original trace is
+`ff4c3e21`. These observations preserve the distinction between checking the
+stored polynomial degree before shrinking versus replacing it with a
+constant-zero polynomial first. They are expected-value evidence, independent
+of whether the current candidate C implements that distinction.
+
+## Ordered original tile publication
+
+The `ordered-workers` extension was executed twice by the same explicitly
+labelled Java 21 development diagnostic. On that host's observed nine
+processors, the original partition yielded 1812 private tile results across
+the 44 canonical frames. Their submission-order composition repeated exactly
+and matched the actual unchanged `draw` executed with a test-only serial
+submission-order executor for all 44 frames. The ordered observation hash was
+`5153a115d6cd48e1951fae0d2f052d0735b388b3c1bbdfb535e6b05047b0a4eb`.
+
+The ordered result differed from the full canvas on nine frames. Examples
+were 34 boundary-sphere pixels, six repeated-sphere pixels, and six Cayley
+FINAL pixels. This establishes why a full-canvas match alone does not settle
+the chosen original tile policy. The adapter records actual per-tile bytes
+and a deterministic publication ordering; it does not recreate the task's
+root, sampling or shading arithmetic. Candidate C must independently match
+the original tiles and ordered result. The original racing worker results
+remain recorded separately, with their differing values and nondeterminism.

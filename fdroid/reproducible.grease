@@ -1,0 +1,42 @@
+#!/usr/bin/env grease
+set -eu -o pipefail
+if (len(ARGV) !== 7) {
+  echo 'usage: grease reproducible.grease REPOSITORY FRONTEND BACKEND SDK SOURCE_BUILT_TOOLS FRESH_OUTPUT SOURCE_REVISION' >&2
+  exit 2
+}
+var repository = ARGV[0]
+var frontend = ARGV[1]
+var backend = ARGV[2]
+var sdk = ARGV[3]
+var tools = ARGV[4]
+var output = ARGV[5]
+var revision = ARGV[6]
+for path in (ARGV[:6]) { printf '%s\n' "$path" | rg -x '/[A-Za-z0-9_./+-]+' }
+printf '%s\n' "$revision" | rg -x '[0-9a-f]{40}'
+test $(git -C "$repository" rev-parse HEAD) = "$revision"
+if test -e "$output" { echo 'FAIL refusing reused reproducibility evidence' >&2; exit 1 }
+var grease = $(command -v grease)
+mkdir -p "$output"
+var version = $(awk -F '\t' '$1 == "VERSION_NAME" { print $2 }' "$repository/build-values.tsv")
+var name = "Algebraic-Variety-Explorer-$version-unsigned.apk"
+for run in 1 2 {
+  var source = "$output/source-$run"
+  git clone --shared --no-checkout "$repository" "$source"
+  git -C "$source" checkout --detach "$revision"
+  test -z $(git -C "$source" status --porcelain)
+  "$grease" "$source/build.grease" release "$source" "$frontend" "$backend" \
+    "$tools/cross/arm64-v8a" "$tools/cross/armeabi-v7a" "$tools/cross/x86_64" \
+    "$sdk" "$sdk/ndk/29.0.14206865" "$tools/oracles/baksmali.jar" "$tools/oracles/smali.jar" "$output/build-$run"
+  "$grease" "$source/ci/verify-apk.grease" "$source" "$sdk" unsigned "$output/build-$run/package/$name"
+  cp "$output/build-$run/package/$name" "$output/run-$run.apk"
+}
+sha256sum "$output/run-1.apk" "$output/run-2.apk" > "$output/artifacts.sha256"
+if ! cmp "$output/run-1.apk" "$output/run-2.apk" {
+  unzip -lv "$output/run-1.apk" > "$output/run-1.entries.txt"
+  unzip -lv "$output/run-2.apk" > "$output/run-2.entries.txt"
+  echo 'FAIL two disjoint complete application source builds differ' >&2
+  exit 1
+}
+cp "$output/run-1.apk" "$output/$name"
+printf 'source_revision\t%s\nindependent_application_source_builds\t2\nbyte_identical_unsigned_APKs\tPASS\ncompiler_prerequisites\tshared exact source-built toolchain\nF_Droid_scanner\tNOT_RUN\nphysical_device\tNOT_RUN\n' "$revision" > "$output/result.tsv"
+printf '\033[32mPASS\033[0m two disjoint source-built application APKs are byte identical\n'

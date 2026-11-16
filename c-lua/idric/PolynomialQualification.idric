@@ -76,7 +76,7 @@ data QualificationError
 
 public export
 data FormulaFailure
-  = FormulaSyntaxFailure Text
+  = FormulaSyntaxFailure ParseError
   | FormulaMeaningFailure QualificationError
 
 coefficient_function : Text → Either QualificationError CoefficientFunction
@@ -240,7 +240,7 @@ qualify_expression (Grouped expression) = do
 
 export
 qualify_formula : Text → Either FormulaFailure QualifiedFormula
-qualify_formula source = case parse_formula source of
+qualify_formula source = case parse_formula_detailed source of
   Left reason ⇒ Left (FormulaSyntaxFailure reason)
   Right expression ⇒ case qualify_expression expression of
     Left reason ⇒ Left (FormulaMeaningFailure reason)
@@ -262,7 +262,7 @@ notice_report (InheritedExponentOverflowToZero source :: remaining) =
 export
 formula_qualification : Text → Text
 formula_qualification source = case qualify_formula source of
-  Left (FormulaSyntaxFailure reason) ⇒ "syntax error: " ++ reason
+  Left (FormulaSyntaxFailure reason) ⇒ "syntax error: " ++ parse_error_message reason
   Left (FormulaMeaningFailure reason) ⇒ "meaning error: " ++ qualification_error reason
   Right qualified ⇒
     let category = case qualified.meaning of

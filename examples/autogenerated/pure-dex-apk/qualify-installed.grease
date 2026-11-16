@@ -30,10 +30,10 @@ printf '%s  %s\n' 32fa0e88a6c397b3922201adf5f3e534fbaed5a663c71d0c558c3ddce0af84
 printf '%s  %s\n' 37ae4a41a8886e15c20b8362fa4250f96bbdb55e1a608199ad8b5dff068b588f "$baksmali" | sha256sum -c -
 rg -x 'unsigned_pure_DEX_APK[[:space:]]PASS' "$packaged/result.tsv"
 var apk_name = $(cat "$packaged/apk-name.txt")
-printf '%s\n' "$apk_name" | rg -x 'Algebraic-Variety-Explorer-[0-9A-Za-z._-]+-idric-unsigned[.]apk'
+printf '%s\n' "$apk_name" | rg -x 'Algebraic-Variety-Explorer-[0-9A-Za-z._-]+-unsigned[.]apk'
 var candidate = "$packaged/$apk_name"
 test -s "$candidate"
-var expected = $(sed -n 's/^\([0-9a-f]\{64\}\)  .*idric-unsigned[.]apk$/\1/p' "$packaged/artifacts.sha256")
+var expected = $(sed -n 's/^\([0-9a-f]\{64\}\)  .*unsigned[.]apk$/\1/p' "$packaged/artifacts.sha256")
 test "$expected" = $(sha256sum "$candidate" | cut -d ' ' -f 1)
 mkdir -p "$output/diagnostics" "$output/observer"
 var state = $("$timeout" 20 "$adb" -s "$serial" get-state | tr -d '\r')

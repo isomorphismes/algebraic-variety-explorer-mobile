@@ -56,6 +56,27 @@ The separately labelled `additional-pixels` mode keeps the later Madore E6
 example in OG/FINAL at the rotated state (2 frames, 286 pixels), without
 changing the canonical audit count.
 
+The `rays` mode captures the actual coordinates passed by the unchanged task
+to `createCameraSpaceRay`. A delegating observation wrapper records arguments;
+every camera operation and value is forwarded to the original creator. The
+task itself computes its start, increments and adaptive sampling positions.
+After the actual render, the adapter chooses observed calls nearest the view
+center/corners, and the actual center-pixel call index for OG sampling. The
+238 labelled records may intentionally select the same call twice; they are
+not 238 distinct-ray claims.
+
+For each selected observed coordinate, the adapter records actual camera,
+clipping and surface rays; the original eye point; the original dense
+univariate coefficients; the intervals from `clipRay`; the original root
+finder's first root; original gradient evaluation and normal transform; and
+actual `shade` and private `tracePolynomial` results. Only the task's simple
+eye-interval admission is sequenced in the adapter. No root solver, polynomial
+evaluation, clipping algorithm, normalization or lighting formula is recreated.
+`selected_trace` is the direct original method result, separate from the
+component observations. `selected_admitted` records the original
+`clipPoint(point, true)` result; it preserves `ClipToSphere`'s deliberate
+omission of additional point clipping after interval clipping.
+
 Each expected frame uses one unchanged full-canvas `RenderingTask`.
 `input`/`term` records expose all four original expanded XYZ polynomial arrays
 before candidate transport. Coefficients are raw F64 values and exponents are
@@ -72,6 +93,26 @@ Overlapping endpoints and original scheduling are preserved. The reference
 records these observations without requiring workers to equal the full
 canvas or one another. `worker_summary` fields are frame ID, trial index,
 full-canvas difference count and first-production-draw difference count.
+
+`ordered-workers` separately observes a deterministic publication policy. It
+uses the original production tile bounds and submission order, runs each
+unchanged `RenderingTask` into a fresh private pixel buffer, records every
+covered rectangle pixel, and composes the result in submission order. The
+global canvas dimensions and shared original draw-call data remain the same;
+only the output buffer changes between tasks. Endpoints overlap exactly as in
+the original. The later tile's pixel wins in the explicit ordered composition.
+
+The adapter then runs the unchanged production `draw` using a test-only
+single-thread submission-order executor and requires exact equality to that
+independent private-tile composition. This checks the chosen legal serial
+ordering; it does not rewrite the racing production result as deterministic.
+`ordered_profile` records ID, observed processors, original pool size and
+original horizontal/vertical tile steps. `tile` records ID, ordinal and
+inclusive global bounds. `tile_pixel` records ID, ordinal, global x/y and
+ARGB. `ordered_pixel` records the composite. `ordered_difference` compares it
+with the full canvas; `ordered_summary` reports ID, tile count and differing
+pixel count. `serial_ordered_match` is emitted only after the actual serial
+production method matches exactly. The whole mode must repeat byte for byte.
 
 These observations are the expected values, not evidence that candidate C
 matches them. The C consumer must independently verify raw fields/pixels and

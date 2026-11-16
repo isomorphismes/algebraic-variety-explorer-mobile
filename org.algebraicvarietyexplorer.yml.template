@@ -1,11 +1,11 @@
 Categories:
   - Science & Education
 License: Apache-2.0
-SourceCode: https://github.com/isomorphisms/algebraic-variety-explorer-mobile
-IssueTracker: https://github.com/isomorphisms/algebraic-variety-explorer-mobile/issues
+SourceCode: https://github.com/isomorphismes/algebraic-variety-explorer-mobile
+IssueTracker: https://github.com/isomorphismes/algebraic-variety-explorer-mobile/issues
 
 RepoType: git
-Repo: https://github.com/isomorphisms/algebraic-variety-explorer-mobile.git
+Repo: https://github.com/isomorphismes/algebraic-variety-explorer-mobile.git
 
 Builds:
   - versionName: 0.1.1
@@ -13,10 +13,33 @@ Builds:
     commit: v0.1.1
     sudo:
       - apt-get update
-      - apt-get install -y openjdk-21-jdk-headless curl zip unzip
+      - apt-get install -y openjdk-21-jdk-headless build-essential flex bison texinfo libgmp-dev libmpfr-dev libmpc-dev libisl-dev libzstd-dev libgcc-13-dev zlib1g-dev libncurses-dev curl zip unzip ripgrep binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi binutils-x86-64-linux-gnu
+    timeout: 14400
     output: .build/Algebraic-Variety-Explorer-0.1.1-unsigned.apk
-    prebuild: sdkmanager "platforms;android-35" "build-tools;35.0.1"
-    build: ANDROID_SDK_ROOT=$$SDK$$ bash ./build.sh release
+    srclibs:
+      - AVEIdric@740bbf2b1d9e811fd00c719c3473eede17ceea3b
+      - AVEDEX@ce520edf01623cd66a7f02789018e608ecdc7068
+      - AVEICKHost@fbe86e23d55cfec2000c08e61deea2a407fd7175
+      - AVEICKCross@c61e448251744a2f40ad743ebef1a027bdcd2f9d
+      - AVEGrease@f19c94c6df18cddbdc1e81463e5bd689533e3c13
+      - AVECatFood@609a9628d5a52860f956bf62e0914a0cd03292ae
+      - AVEAiCi@32cb45b3a3a257aeb07881c75f3b846495cfb2c9
+    prebuild:
+      - sdkmanager "platforms;android-35" "build-tools;35.0.1" "ndk;29.0.14206865"
+      - mkdir -p .build/fdroid-inputs
+      - curl --fail --location --retry 3 https://github.com/cisco/ChezScheme/releases/download/v10.4.1/csv10.4.1.tar.gz -o .build/fdroid-inputs/chez.tar.gz
+      - echo '2e74952db7bc177f0c3602e2217a341ba677d733eec4cd7726418c3a4e1ef308  .build/fdroid-inputs/chez.tar.gz' | sha256sum -c -
+      - curl --fail --location --retry 3 https://github.com/baksmali/smali/releases/download/3.0.10/baksmali-3.0.10-fat-release.jar -o .build/fdroid-inputs/baksmali.jar
+      - echo '37ae4a41a8886e15c20b8362fa4250f96bbdb55e1a608199ad8b5dff068b588f  .build/fdroid-inputs/baksmali.jar' | sha256sum -c -
+      - curl --fail --location --retry 3 https://github.com/baksmali/smali/releases/download/3.0.10/smali-3.0.10-fat-release.jar -o .build/fdroid-inputs/smali.jar
+      - echo '32fa0e88a6c397b3922201adf5f3e534fbaed5a663c71d0c558c3ddce0af844a  .build/fdroid-inputs/smali.jar' | sha256sum -c -
+    scanignore:
+      - .build/fdroid-inputs/baksmali.jar
+      - .build/fdroid-inputs/smali.jar
+    build:
+      - make -f fdroid/Makefile FRONTEND="$$AVEIdric$$" BACKEND="$$AVEDEX$$" HOST_ICK="$$AVEICKHost$$" CROSS_ICK="$$AVEICKCross$$" GREASE_SOURCE="$$AVEGrease$$" CATFOOD="$$AVECatFood$$" AI_CI="$$AVEAiCi$$" SDK="$$SDK$$" CHEZ_ARCHIVE="$PWD/.build/fdroid-inputs/chez.tar.gz" BAKSMALI="$PWD/.build/fdroid-inputs/baksmali.jar" SMALI="$PWD/.build/fdroid-inputs/smali.jar"
+      - PATH="$PWD/.build/fdroid-tools/runtime/.build/grease/bin:$PATH" .build/fdroid-tools/runtime/.build/grease/bin/grease fdroid/reproducible.grease "$PWD" "$$AVEIdric$$" "$$AVEDEX$$" "$$SDK$$" "$PWD/.build/fdroid-tools" "$PWD/.build/reproducible-source" "$(git rev-parse HEAD)"
+      - cp .build/reproducible-source/Algebraic-Variety-Explorer-0.1.1-unsigned.apk .build/Algebraic-Variety-Explorer-0.1.1-unsigned.apk
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags ^v[0-9]+\.[0-9]+\.[0-9]+$

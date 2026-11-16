@@ -65,3 +65,53 @@ and store allocation failures, stale handles and final zero live counts passed.
 Both compiled transfer-source mutations failed with designated exit80.
 See `qualification.md` for exact evidence and remaining boundaries. Normal
 Activity state/lifecycle/cleanup and the shipping Java replacement remain open.
+
+## Positive bindings through the complete copied-array path
+
+The maintained producer already accepts one immutable environment
+`Text → Maybe Coefficient`; this qualification supplies `radius ↦ 2.0`, with
+every other name absent. The new checked adapter has the same
+`Text → IO Int64` observation type as the existing unbound adapter and calls
+the same `prepare_native_surface` function. A paired Text error observation
+keeps invalid/unknown parameter outcomes visible without inventing a handle.
+Production preparation, derivative, expansion, array and native APIs remain
+unchanged. No binding map is passed over JNI.
+
+The independent original observer already binds radius through the original
+renderer's `setParameterValue` and expands its own surface/three derivatives.
+Compare those exact family degree, ordered exponents and coefficient bits with
+the copied native snapshot for `x^2+y^2+z^2-radius^2` and
+`radius*x+radius*y`. The latter also has one fixed expected four-polynomial
+report, so a shared wrong radius cannot qualify by agreement. Repeated radius
+occurrences resolve through the same function. There is no binding-list or
+duplicate-key admission API: this test must not invent duplicate-key semantics.
+
+Keep the original no-binding adapter and unbound-radius error. A formula that
+mixes the known radius with an unknown name must still refuse before any JNI
+entry/allocation. A third compiled source mutant binds radius to3.0; the
+unchanged original/native snapshot observer must reject it with designated
+exit80, while the existing coefficient/axis mutants remain required.
+
+Status before implementation: positive bound preparation/managed expansion
+already qualified separately; complete bound source→JNI behavior NOT_RUN.
+Current checked Idriç and typed primitive-array transport are sufficient; no
+language/runtime fallback or new semantic implementation is needed.
+
+The amended complete `verify.grease` now passes locally through frontend
+`740bbf2b1d9e811fd00c719c3473eede17ceea3b` and the exact source checkout
+`89f366f7f2ee62e0a7567c558e6880e1fa7f6eec`. The reused compiler executable was
+verified before and after as SHA256
+`a2641ca7eb34f596b6d3ad9a9ba821b7014d5116ec1454572e6ab80f9f45b773`.
+The actual325176-byte candidate is SHA256
+`41d821cd60270535cfb39643c52838dfd1609a2ecd40bbf3a43aacdfcb49d07f`.
+A repeated emission is identical; all three actual compiled source mutants
+emit different independently decoded DEX. The wrong-radius mutant is
+`8401143842169a840efde7bcf5b2f6bc7e26b93747501931fdce9a03a673defb`.
+The separately assembled/decoded observer is
+`469bbf36126b4b141445157d878a06d62b4456e03f748e19321b825426b464b7`.
+Both maintained Grease helpers also parse through the retained exact runtime.
+
+These are source/generation/determinism/structural observations. Positive bound
+native snapshots, pre-JNI errors, original-program agreement and all three
+compiled mutant rejections remain ART NOT_RUN until the maintained observers
+execute. This adapter does not add parameter controls to the Activity.

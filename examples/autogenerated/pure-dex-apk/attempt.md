@@ -8,7 +8,7 @@ cross-build. Packaging combines those immutable inputs with the original AVE
 resources and manifest identity. It does not compile, rewrite, disassemble or
 roundtrip the candidate. The application identifier remains
 `org.algebraicvarietyexplorer`, with entry Activity `Idric.Generated`, original
-name/icon/theme and min23/target35. Version constants come from `build.sh`.
+name/icon/theme and min23/target35. Version constants come from `build-values.tsv`.
 
 `package_unsigned : CheckedDex × ProductionLibraries × OriginalResources →
 IO (Either PackagingFailure UnsignedApk)` is the logical boundary. SDK35.0.1
@@ -106,3 +106,16 @@ packaging, provider execution, encoding, descriptor close and pixel comparison
 are NOT_RUN until the hosted installed qualification succeeds. No physical
 device, system picker UI, explicit-close versus finalization distinction,
 injected provider error or production update acceptance is implied.
+
+## First hosted APK, 2026-11-16
+
+At source b779e912328fa52a5f5c6595b41b22608a590f68, all three production ABI
+builds and the complete Activity/formula source job passed. Package job133180974400
+in run43829052041 assembled the actual unsigned APK, checked exact DEX/native
+bytes, ten JNI exports, license assets and stored16KiB alignment. It stopped
+at a badging assertion before installed qualification: pinned aapt2 emits
+`minSdkVersion:'23'`, while the helper expected legacy aapt's `sdkVersion:'23'`.
+The retained badging confirms min23, target35 and Idric.Generated. The producer
+now requires the exact aapt2 field. The separate APK policy intentionally uses
+legacy aapt and retains that tool's field. Full packaging and installed behavior
+still require a fresh successful run; the partial APK is not a qualified update.

@@ -3,6 +3,9 @@ native-lighting-numerical	x86_64-pc-linux-gnu	ick	fbe86e23d55cfec2000c08e61deea2
 native-lighting-frames	x86_64-pc-linux-gnu	ick	fbe86e23d55cfec2000c08e61deea2a407fd7175	qualified	receipt:ai-ci-ick-host-32cb45b3
 native-lighting-frame-mutant	x86_64-pc-linux-gnu	ick	fbe86e23d55cfec2000c08e61deea2a407fd7175	qualified	receipt:ai-ci-ick-host-32cb45b3
 native-lighting-degree-mutant	x86_64-pc-linux-gnu	ick	fbe86e23d55cfec2000c08e61deea2a407fd7175	qualified	receipt:ai-ci-ick-host-32cb45b3
+native-lighting-rays	x86_64-pc-linux-gnu	ick	fbe86e23d55cfec2000c08e61deea2a407fd7175	qualified	receipt:ai-ci-ick-host-32cb45b3
+native-lighting-clip-mutant	x86_64-pc-linux-gnu	ick	fbe86e23d55cfec2000c08e61deea2a407fd7175	qualified	receipt:ai-ci-ick-host-32cb45b3
+native-lighting-ray-sanitizers	x86_64-pc-linux-gnu	ick	fbe86e23d55cfec2000c08e61deea2a407fd7175	qualified	receipt:ai-ci-ick-host-32cb45b3
 native-lighting-power-mutant	x86_64-pc-linux-gnu	ick	fbe86e23d55cfec2000c08e61deea2a407fd7175	qualified	receipt:ai-ci-ick-host-32cb45b3
 native-lighting-ambient-mutant	x86_64-pc-linux-gnu	ick	fbe86e23d55cfec2000c08e61deea2a407fd7175	qualified	receipt:ai-ci-ick-host-32cb45b3
 native-lighting-normal-mutant	x86_64-pc-linux-gnu	ick	fbe86e23d55cfec2000c08e61deea2a407fd7175	qualified	receipt:ai-ci-ick-host-32cb45b3

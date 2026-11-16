@@ -1,0 +1,90 @@
+#!/usr/bin/env grease
+set -eu -o pipefail
+if (len(ARGV) !== 4) { echo 'usage: grease verify-apk.grease REPOSITORY SDK unsigned|signed APK' >&2; exit 2 }
+var repository = ARGV[0]
+var sdk = ARGV[1]
+var mode = ARGV[2]
+var apk = ARGV[3]
+if (mode !== 'unsigned' and mode !== 'signed') { echo 'FAIL unsigned or signed APK mode required' >&2; exit 2 }
+for path in "$repository" "$sdk" "$apk" { if (len(path) === 0 or path[0] !== '/') { echo 'FAIL absolute APK inspection paths required' >&2; exit 2 } }
+proc value(name) {
+  test $(awk -F '\t' -v name="$name" '$1 == name { count++ } END { print count+0 }' "$repository/build-values.tsv") = 1
+  awk -F '\t' -v name="$name" '$1 == name { print $2 }' "$repository/build-values.tsv"
+}
+var tools = "$sdk/build-tools/$(value BUILD_TOOLS_VERSION)"
+var aapt = "$tools/aapt"
+var align = "$tools/zipalign"
+var signer = "$tools/apksigner"
+var platform = "$sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64"
+var elf = "$platform/bin/llvm-readelf"
+var nm = "$platform/bin/llvm-nm"
+for program in "$aapt" "$align" "$signer" "$elf" "$nm" { test -x "$program" }
+test -s "$apk"
+var scratch = $(mktemp -d /tmp/ave-apk.XXXXXXXX)
+proc inspect() {
+  unzip -t "$apk" > "$scratch/zip-test.txt"
+  unzip -Z1 "$apk" > "$scratch/entries.txt"
+  for entry in AndroidManifest.xml classes.dex resources.arsc \
+    lib/arm64-v8a/libave.so lib/armeabi-v7a/libave.so lib/x86_64/libave.so {
+    test $(rg -c -x -F "$entry" "$scratch/entries.txt") = 1
+  }
+  sort "$scratch/entries.txt" | uniq -d > "$scratch/duplicates.txt"
+  test ! -s "$scratch/duplicates.txt"
+  try { rg '^lib/' "$scratch/entries.txt" | rg -v '^lib/(arm64-v8a|armeabi-v7a|x86_64)/libave[.]so$' }
+  if (_error.code !== 1) { echo 'FAIL undeclared native ABI payload or checker failure' >&2; exit 1 }
+  test $(rg -c '^lib/' "$scratch/entries.txt") = 3
+  test $(rg -c '^classes[0-9]*[.]dex$' "$scratch/entries.txt") = 1
+  "$align" -P 16 -c -v 4 "$apk" > "$scratch/alignment.txt"
+  if (mode === 'unsigned') {
+    try { rg '^META-INF/.*[.](RSA|DSA|EC|SF)$' "$scratch/entries.txt" }
+    if (_error.code !== 1) { echo 'FAIL unsigned APK contains JAR signing entries or checker failed' >&2; exit 1 }
+    try { "$signer" verify "$apk" > "$scratch/signing.txt" 2>&1 }
+    if (_error.code === 0) { echo 'FAIL expected an unsigned APK' >&2; exit 1 }
+  } else { "$signer" verify --verbose --print-certs "$apk" > "$scratch/signing.txt" }
+  "$aapt" dump badging "$apk" > "$scratch/badging.txt"
+  rg -F "package: name='$(value APPLICATION_ID)' versionCode='$(value VERSION_CODE)' versionName='$(value VERSION_NAME)'" "$scratch/badging.txt"
+  rg -F "sdkVersion:'$(value MIN_SDK)'" "$scratch/badging.txt"
+  rg -F "targetSdkVersion:'$(value TARGET_SDK)'" "$scratch/badging.txt"
+  rg -F "launchable-activity: name='Idric.Generated'" "$scratch/badging.txt"
+  try { rg '^uses-permission' "$scratch/badging.txt" }
+  if (_error.code !== 1) { echo 'FAIL unexpected APK permission or checker failed' >&2; exit 1 }
+  "$aapt" dump xmltree "$apk" AndroidManifest.xml > "$scratch/manifest.txt"
+  try { rg 'android:(debuggable|testOnly|usesCleartextTraffic)' "$scratch/manifest.txt" }
+  if (_error.code !== 1) { echo 'FAIL unexpected release debug/test/network attribute or checker failed' >&2; exit 1 }
+  rg 'android:extractNativeLibs.*0x0' "$scratch/manifest.txt"
+  for abi in arm64-v8a armeabi-v7a x86_64 {
+    unzip -p "$apk" "lib/$abi/libave.so" > "$scratch/$abi.so"
+    "$elf" -h -lW -d "$scratch/$abi.so" > "$scratch/$abi.elf"
+    var machine = 'Advanced Micro Devices X86-64'
+    if (abi === 'arm64-v8a') { setvar machine = 'AArch64' }
+    if (abi === 'armeabi-v7a') { setvar machine = 'ARM' }
+    rg -F "Machine:                           $machine" "$scratch/$abi.elf"
+    rg -F 'Library soname: [libave.so]' "$scratch/$abi.elf"
+    rg '^[[:space:]]*LOAD[[:space:]]' "$scratch/$abi.elf" > "$scratch/$abi.loads"
+    try { rg -v '[[:space:]]0x4000[[:space:]]*$' "$scratch/$abi.loads" }
+    if (_error.code !== 1) { echo 'FAIL native load alignment differs from16KiB or checker failed' >&2; exit 1 }
+    "$nm" -D --defined-only "$scratch/$abi.so" > "$scratch/$abi.exports"
+    "$nm" -D --undefined-only "$scratch/$abi.so" > "$scratch/$abi.imports"
+    for method in copyPreparedSurface replacePreparedSurface releasePreparedSurface renderPreparedSurface \
+      createRenderSession beginRenderEpoch isRenderEpochCurrent cancelRenderSession releaseRenderSession renderSessionSurface {
+      rg -e " Java_Idric_Generated_$method\$" "$scratch/$abi.exports"
+    }
+    try { rg -v ' Java_Idric_Generated_(copyPreparedSurface|replacePreparedSurface|releasePreparedSurface|renderPreparedSurface|createRenderSession|beginRenderEpoch|isRenderEpochCurrent|cancelRenderSession|releaseRenderSession|renderSessionSurface)$' "$scratch/$abi.exports" }
+    if (_error.code !== 1) { echo 'FAIL undeclared production dynamic export or checker failed' >&2; exit 1 }
+    try { rg '__atomic_|__sync_|__stack_chk|libatomic' "$scratch/$abi.imports" "$scratch/$abi.elf" }
+    if (_error.code !== 1) { echo 'FAIL undeclared native runtime import or checker failed' >&2; exit 1 }
+  }
+  for license in PROJECT-LICENSE NOTICE THIRD_PARTY_LICENSES.md vecmath-GPL-2-CE.txt {
+    var source = "$repository/$license"
+    if (license === 'PROJECT-LICENSE') { setvar source = "$repository/LICENSE" }
+    if (license === 'vecmath-GPL-2-CE.txt') { setvar source = "$repository/native/licenses/$license" }
+    unzip -p "$apk" "assets/licenses/$license" > "$scratch/$license"
+    cmp "$source" "$scratch/$license"
+  }
+  sha256sum "$apk"
+  printf '\033[32mPASS\033[0m APK identity declared ABI payloads native exports licenses and signing state\n'
+}
+try { inspect }
+var result = _error.code
+rm -rf "$scratch"
+exit "$result"

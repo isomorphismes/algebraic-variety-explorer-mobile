@@ -26,7 +26,7 @@ show_failure state reason = do
   primIO (set_text state.controls.status message)
 
 prepare_request : RenderRequest → IO (Either Text (NativeSurface, Int32))
-prepare_request request = case prepare_formula (\name ⇒ Nothing) request.formula of
+prepare_request request = case prepare_formula_located (\name ⇒ Nothing) request.formula of
   Left reason ⇒ pure (Left reason)
   Right prepared ⇒ case expand_prepared_formula request.preparation_limits prepared of
     Left reason ⇒ pure (Left ("expansion error: " ++ expansion_error reason))

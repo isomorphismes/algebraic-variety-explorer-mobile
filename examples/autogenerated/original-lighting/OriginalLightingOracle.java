@@ -6,13 +6,17 @@
 package de.mfo.jsurf.rendering.cpu;
 
 import de.mfo.jsurf.algebra.Expand;
+import de.mfo.jsurf.algebra.ColumnSubstitutor;
+import de.mfo.jsurf.algebra.ColumnSubstitutorForGradient;
 import de.mfo.jsurf.algebra.PolynomialOperation;
+import de.mfo.jsurf.algebra.UnivariatePolynomial;
 import de.mfo.jsurf.algebra.XYZPolynomial;
 import de.mfo.jsurf.rendering.Camera;
 import de.mfo.jsurf.rendering.LightProducts;
 import de.mfo.jsurf.rendering.LightSource;
 import de.mfo.jsurf.rendering.Material;
 import java.util.Locale;
+import java.util.ArrayList;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import javax.vecmath.Color3f;
@@ -20,10 +24,13 @@ import javax.vecmath.Matrix4d;
 import javax.vecmath.Point3d;
 import javax.vecmath.Tuple3d;
 import javax.vecmath.Vector3d;
+import javax.vecmath.Vector2d;
 
 public final class OriginalLightingOracle {
     private OriginalLightingOracle() {}
     private static boolean observeWorkers;
+    private static boolean observeRays;
+    private static boolean observeOrderedTiles;
     private static final String[] SCENES = {
         "default", "colored", "specular", "ambient-only", "clamped", "one-light"
     };
@@ -179,6 +186,191 @@ public final class OriginalLightingOracle {
         }
     }
 
+    /** Records arguments computed by the unchanged task, delegating every value. */
+    private static final class CapturedRayCreator extends RayCreator {
+        final RayCreator original;
+        final ArrayList<double[]> calls = new ArrayList<>();
+        CapturedRayCreator(RayCreator original, CPUAlgebraicSurfaceRenderer renderer) {
+            super(renderer.getTransform(), renderer.getSurfaceTransform(), renderer.getCamera());
+            this.original = original;
+        }
+        @Override public Ray createCameraSpaceRay(double u, double v) {
+            calls.add(new double[] {u, v});
+            return original.createCameraSpaceRay(u, v);
+        }
+        @Override public Ray createSurfaceSpaceRay(double u, double v) { return original.createSurfaceSpaceRay(u, v); }
+        @Override public Ray createClippingSpaceRay(double u, double v) { return original.createClippingSpaceRay(u, v); }
+        @Override public double getEyeLocationOnRay() { return original.getEyeLocationOnRay(); }
+        @Override public PolynomialOperation getXForSomeA() { return original.getXForSomeA(); }
+        @Override public PolynomialOperation getYForSomeA() { return original.getYForSomeA(); }
+        @Override public PolynomialOperation getZForSomeA() { return original.getZForSomeA(); }
+        @Override public Vector2d getUInterval() { return original.getUInterval(); }
+        @Override public Vector2d getVInterval() { return original.getVInterval(); }
+        @Override public double transformU(double u) { return original.transformU(u); }
+        @Override public double transformV(double v) { return original.transformV(v); }
+        @Override public Vector3d cameraSpaceToSurfaceSpace(Vector3d value) { return original.cameraSpaceToSurfaceSpace(value); }
+        @Override public Point3d cameraSpaceToSurfaceSpace(Point3d value) { return original.cameraSpaceToSurfaceSpace(value); }
+        @Override public Vector3d cameraSpaceToClippingSpace(Vector3d value) { return original.cameraSpaceToClippingSpace(value); }
+        @Override public Point3d cameraSpaceToClippingSpace(Point3d value) { return original.cameraSpaceToClippingSpace(value); }
+        @Override public Vector3d surfaceSpaceNormalToCameraSpaceNormal(Vector3d normal) {
+            return original.surfaceSpaceNormalToCameraSpaceNormal(normal);
+        }
+    }
+
+    private static void ray(String space, Ray value) {
+        System.out.println("selected_bundle\t" + space + "\t" + triple(value.o) + "\t" + triple(value.d));
+    }
+
+    private static void selectedRay(String frame, String label, int call,
+            CapturedRayCreator capture, DrawcallStaticData data, RenderingTask task) throws Exception {
+        double[] coordinates = capture.calls.get(call);
+        double u = coordinates[0];
+        double v = coordinates[1];
+        System.out.println("selected_ray\t" + frame + "\t" + label + "\t" + call + "\t" + bits(u) + "\t" + bits(v));
+        RayCreator creator = capture.original;
+        Ray camera = creator.createCameraSpaceRay(u, v);
+        Ray clipping = creator.createClippingSpaceRay(u, v);
+        Ray surface = creator.createSurfaceSpaceRay(u, v);
+        ray("camera", camera);
+        ray("clipping", clipping);
+        ray("surface", surface);
+        double eyeParameter = creator.getEyeLocationOnRay();
+        Point3d eye = camera.at(eyeParameter);
+        System.out.println("selected_eye\t" + bits(eyeParameter) + "\t" + triple(eye));
+        ColumnSubstitutor row = data.surfaceRowSubstitutor.setV(v);
+        ColumnSubstitutorForGradient gradientRow = data.gradientRowSubstitutor.setV(v);
+        UnivariatePolynomial polynomial = row.setU(u);
+        double[] coefficients = polynomial.getCoeffs();
+        System.out.println("selected_polynomial\t" + coefficients.length);
+        for (int index = 0; index < coefficients.length; index++)
+            System.out.println("selected_coefficient\t" + index + "\t" + bits(coefficients[index]));
+        int intervalIndex = 0;
+        for (Vector2d interval : data.rayClipper.clipRay(clipping)) {
+            System.out.println("selected_clip\t" + intervalIndex + "\t" + bits(interval.x) + "\t" + bits(interval.y));
+            // This is the original task's eye-interval admission, not a root
+            // solver or a replacement clipping implementation.
+            double lower = interval.x;
+            if (lower < eyeParameter && eyeParameter < interval.y) lower = Math.max(lower, eyeParameter);
+            double root = data.realRootFinder.findFirstRootIn(polynomial, lower, interval.y);
+            System.out.println("selected_root\t" + intervalIndex + "\t" + bits(lower) + "\t" + bits(interval.y) + "\t" + bits(root));
+            if (!Double.isNaN(root)) {
+                Point3d surfacePoint = surface.at(root);
+                Point3d cameraPoint = camera.at(root);
+                boolean admitted = data.rayClipper.clipPoint(surfacePoint, true);
+                Vector3d gradient = gradientRow.setU(u).setT(root);
+                Vector3d normal = creator.surfaceSpaceNormalToCameraSpaceNormal(gradient);
+                System.out.println("selected_surface_point\t" + triple(surfacePoint));
+                System.out.println("selected_camera_point\t" + triple(cameraPoint));
+                System.out.println("selected_admitted\t" + (admitted ? 1 : 0));
+                System.out.println("selected_gradient\t" + triple(gradient));
+                System.out.println("selected_camera_normal\t" + triple(normal));
+                Color3f shaded = task.shade(cameraPoint, normal, eye);
+                System.out.println("selected_shade\t" + color(shaded) + "\t" + triple(normal));
+            }
+            intervalIndex++;
+        }
+        Method trace = RenderingTask.class.getDeclaredMethod("tracePolynomial",
+                ColumnSubstitutor.class, ColumnSubstitutorForGradient.class, double.class, double.class);
+        trace.setAccessible(true);
+        // Use the original creator for the final observation so the recording
+        // wrapper itself cannot add a recursive capture or alter ray results.
+        data.rayCreator = creator;
+        Color3f traced;
+        try { traced = (Color3f) trace.invoke(task, row, gradientRow, u, v); }
+        finally { data.rayCreator = capture; }
+        System.out.println("selected_trace\t" + color(traced) + "\t"
+                + String.format(Locale.ROOT, "%08x", ColorInt.toArgb(traced)));
+        System.out.println("selected_end\t" + frame + "\t" + label);
+    }
+
+    private static void selectedRays(String frame, int width, int height,
+            CapturedRayCreator capture, DrawcallStaticData data, RenderingTask task) throws Exception {
+        System.out.println("captured_calls\t" + frame + "\t" + capture.calls.size());
+        Vector2d uInterval = capture.getUInterval();
+        Vector2d vInterval = capture.getVInterval();
+        double[][] targets = {{0, 0}, {uInterval.x, vInterval.x}, {uInterval.y, vInterval.x},
+                {uInterval.x, vInterval.y}, {uInterval.y, vInterval.y}};
+        String[] labels = {"nearest-view-center", "nearest-lower-left", "nearest-lower-right",
+                "nearest-upper-left", "nearest-upper-right"};
+        for (int target = 0; target < targets.length; target++) {
+            int nearest = 0;
+            double distance = Double.POSITIVE_INFINITY;
+            for (int index = 0; index < capture.calls.size(); index++) {
+                double[] point = capture.calls.get(index);
+                double candidate = Math.abs(point[0] - targets[target][0]) + Math.abs(point[1] - targets[target][1]);
+                if (candidate < distance) { distance = candidate; nearest = index; }
+            }
+            selectedRay(frame, labels[target], nearest, capture, data, task);
+        }
+        if (data.antiAliasingPattern == AntiAliasingPattern.OG_1x1)
+            selectedRay(frame, "actual-center-pixel", (height / 2) * width + width / 2, capture, data, task);
+    }
+
+    private static void orderedTiles(String frame, int width, int height,
+            CPUAlgebraicSurfaceRenderer renderer, DrawcallStaticData data, int[] fullCanvas) throws Exception {
+        int processors = Runtime.getRuntime().availableProcessors();
+        int poolSize = ((java.util.concurrent.ThreadPoolExecutor) renderer.threadPoolExecutor).getCorePoolSize();
+        int xStep = width / Math.min(width, Math.max(2, processors));
+        int yStep = height / Math.min(height, 3);
+        System.out.println("ordered_profile\t" + frame + "\t" + processors + "\t" + poolSize
+                + "\t" + xStep + "\t" + yStep);
+        int[] composed = new int[fullCanvas.length];
+        boolean[] covered = new boolean[fullCanvas.length];
+        int[] savedBuffer = data.colorBuffer;
+        int tile = 0;
+        try {
+            // Bounds and iteration order are the original draw submission
+            // inputs. Each numerical result comes from an unchanged task in
+            // an independent buffer, with its original global canvas size.
+            for (int xStart = 0; xStart < width; xStart += xStep)
+                for (int yStart = 0; yStart < height; yStart += yStep) {
+                    int xEnd = Math.min(xStart + xStep, width - 1);
+                    int yEnd = Math.min(yStart + yStep, height - 1);
+                    int[] privatePixels = new int[fullCanvas.length];
+                    data.colorBuffer = privatePixels;
+                    new RenderingTask(data, xStart, yStart, xEnd, yEnd).render();
+                    System.out.println("tile\t" + frame + "\t" + tile + "\t" + xStart + "\t"
+                            + yStart + "\t" + xEnd + "\t" + yEnd);
+                    for (int y = yStart; y <= yEnd; y++) for (int x = xStart; x <= xEnd; x++) {
+                        int index = y * width + x;
+                        int argb = privatePixels[index];
+                        System.out.println("tile_pixel\t" + frame + "\t" + tile + "\t" + x + "\t"
+                                + y + "\t" + String.format(Locale.ROOT, "%08x", argb));
+                        // Submission-order publication is explicit. It is a
+                        // deterministic legal ordering of original writes,
+                        // not a claim about the racing production scheduler.
+                        composed[index] = argb;
+                        covered[index] = true;
+                    }
+                    tile++;
+                }
+        } finally { data.colorBuffer = savedBuffer; }
+        int differences = 0;
+        for (int y = 0; y < height; y++) for (int x = 0; x < width; x++) {
+            int index = y * width + x;
+            if (!covered[index]) throw new AssertionError("original tile coverage " + frame + " " + x + " " + y);
+            System.out.println("ordered_pixel\t" + frame + "\t" + x + "\t" + y + "\t"
+                    + String.format(Locale.ROOT, "%08x", composed[index]));
+            if (composed[index] != fullCanvas[index]) {
+                differences++;
+                System.out.println("ordered_difference\t" + frame + "\t" + x + "\t" + y + "\t"
+                        + String.format(Locale.ROOT, "%08x", fullCanvas[index]) + "\t"
+                        + String.format(Locale.ROOT, "%08x", composed[index]));
+            }
+        }
+        System.out.println("ordered_summary\t" + frame + "\t" + tile + "\t" + differences);
+        // Independently run the unchanged production draw with a serial
+        // submission-order executor. This test-only scheduling choice must
+        // reproduce the independent private-tile composition exactly.
+        renderer.threadPoolExecutor.shutdownNow();
+        renderer.threadPoolExecutor = java.util.concurrent.Executors.newSingleThreadExecutor();
+        int[] serial = new int[fullCanvas.length];
+        renderer.draw(serial, width, height);
+        if (!java.util.Arrays.equals(serial, composed))
+            throw new AssertionError("original serial draw differs from ordered private tiles: " + frame);
+        System.out.println("serial_ordered_match\t" + frame + "\t1");
+    }
+
     private static void frame(String name, String formula, int width, int height,
             double yaw, double pitch, double zoom, AntiAliasingPattern pattern) throws Exception {
         CPUAlgebraicSurfaceRenderer renderer = renderer("default", formula, yaw, pitch, zoom);
@@ -217,10 +409,15 @@ public final class OriginalLightingOracle {
                             + "\t" + exponents[2].getByte(term));
                 }
             }
-            new RenderingTask(data, 0, 0, width - 1, height - 1).render();
+            CapturedRayCreator captured = observeRays ? new CapturedRayCreator(data.rayCreator, renderer) : null;
+            if (captured != null) data.rayCreator = captured;
+            RenderingTask task = new RenderingTask(data, 0, 0, width - 1, height - 1);
+            task.render();
+            if (observeRays) { selectedRays(name, width, height, captured, data, task); return; }
             for (int y = 0; y < height; y++) for (int x = 0; x < width; x++)
                 System.out.println("pixel\t" + name + "\t" + x + "\t" + y + "\t"
                         + String.format(Locale.ROOT, "%08x", pixels[y * width + x]));
+            if (observeOrderedTiles) orderedTiles(name, width, height, renderer, data, pixels);
             if (observeWorkers) {
                 int processors = Runtime.getRuntime().availableProcessors();
                 int poolSize = ((java.util.concurrent.ThreadPoolExecutor)
@@ -305,11 +502,13 @@ public final class OriginalLightingOracle {
     }
 
     public static void main(String[] arguments) throws Exception {
-        if (arguments.length != 1) throw new IllegalArgumentException("lighting|pixels|additional-pixels|workers required");
+        if (arguments.length != 1) throw new IllegalArgumentException("lighting|pixels|additional-pixels|workers|rays|ordered-workers required");
         if (arguments[0].equals("lighting")) lighting();
         else if (arguments[0].equals("pixels")) frames();
         else if (arguments[0].equals("additional-pixels")) additionalFrames();
         else if (arguments[0].equals("workers")) { observeWorkers = true; frames(); }
+        else if (arguments[0].equals("rays")) { observeRays = true; frames(); }
+        else if (arguments[0].equals("ordered-workers")) { observeOrderedTiles = true; frames(); }
         else throw new IllegalArgumentException("unknown original lighting mode");
     }
 }

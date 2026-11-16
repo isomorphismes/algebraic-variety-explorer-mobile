@@ -3,12 +3,66 @@ module AlgebraicExpression
 import Data.Text
 
 -- Derived from Christian Stussak's AlgebraicExpression.g (2008), Apache-2.0.
--- Continues the token-only parser retained on C+Lua; see the attempt record.
+-- One located lexer/parser serves both compatibility and detailed admission.
 
 public export
 data Token
   = Plus | Minus | Multiply | Divide | Power | Open | Close
   | Decimal Text | Floating Text | Identifier Text
+
+-- Offsets count unpacked Text characters, not UTF-8 bytes or UTF-16 units.
+-- Every range is zero-based and half-open; EOF has equal start and end.
+public export
+record SourceSpan where
+  constructor Characters
+  start_character : Number
+  end_character : Number
+
+public export
+record SpannedToken where
+  constructor LocatedToken
+  token : Token
+  source_span : SourceSpan
+
+public export
+data ParseErrorCategory
+  = UnexpectedCharacter Char
+  | ScientificExponentDigitsRequired
+  | DecimalPointDigitsRequired
+  | DecimalLeadingZero
+  | TokenBudgetExhausted
+  | NestingBudgetExhausted
+  | PrimaryExpected
+  | FunctionCloseExpected
+  | GroupCloseExpected
+  | TrailingToken
+
+public export
+record ParseError where
+  constructor LocatedError
+  category : ParseErrorCategory
+  error_span : SourceSpan
+
+export
+parse_error_message : ParseError → Text
+parse_error_message (LocatedError (UnexpectedCharacter character) _) =
+  "unexpected character: " ++ singleton character
+parse_error_message (LocatedError ScientificExponentDigitsRequired _) =
+  "expected digits in scientific exponent"
+parse_error_message (LocatedError DecimalPointDigitsRequired _) =
+  "expected digits after decimal point"
+parse_error_message (LocatedError DecimalLeadingZero _) = "leading zero in decimal literal"
+parse_error_message (LocatedError TokenBudgetExhausted _) = "formula token budget exhausted"
+parse_error_message (LocatedError NestingBudgetExhausted _) = "formula nesting budget exhausted"
+parse_error_message (LocatedError PrimaryExpected _) = "expected number, name or '('"
+parse_error_message (LocatedError FunctionCloseExpected _) = "expected ')' after function argument"
+parse_error_message (LocatedError GroupCloseExpected _) = "expected ')'"
+parse_error_message (LocatedError TrailingToken _) = "unexpected token after expression"
+
+export
+parse_error_report : ParseError → Text
+parse_error_report failure = parse_error_message failure ++ " at characters " ++
+  show failure.error_span.start_character ++ ".." ++ show failure.error_span.end_character
 
 public export
 data Expression
@@ -43,67 +97,81 @@ take_characters predicate (character :: remaining) =
          (character :: taken, tail)
     else ([], character :: remaining)
 
-exponent_digits : List Char → Either Text (List Char, List Char)
-exponent_digits characters =
+character_span : Number → List Char → SourceSpan
+character_span offset [] = Characters offset offset
+character_span offset (_ :: _) = Characters offset (S offset)
+
+exponent_digits : Number → List Char → Either ParseError (List Char, List Char)
+exponent_digits offset characters =
   let (digits, remaining) = take_characters digit characters in
   case digits of
-    [] ⇒ Left "expected digits in scientific exponent"
+    [] ⇒ Left (LocatedError ScientificExponentDigitsRequired (character_span offset characters))
     _ ⇒ Right (digits, remaining)
 
-exponent : List Char → Either Text (List Char, List Char)
-exponent ('+' :: remaining) = do
-  (digits, tail) ← exponent_digits remaining
+exponent : Number → List Char → Either ParseError (List Char, List Char)
+exponent offset ('+' :: remaining) = do
+  (digits, tail) ← exponent_digits (S offset) remaining
   Right ('+' :: digits, tail)
-exponent ('-' :: remaining) = do
-  (digits, tail) ← exponent_digits remaining
+exponent offset ('-' :: remaining) = do
+  (digits, tail) ← exponent_digits (S offset) remaining
   Right ('-' :: digits, tail)
-exponent characters = exponent_digits characters
+exponent offset characters = exponent_digits offset characters
 
-finish_number : List Char → Bool → List Char →
-                Either Text (Token, List Char)
-finish_number digits floating ('e' :: remaining) = do
-  (power, tail) ← exponent remaining
+finish_number : Number → List Char → Bool → List Char →
+                Either ParseError (Token, List Char)
+finish_number offset digits floating ('e' :: remaining) = do
+  (power, tail) ← exponent (S (offset + length digits)) remaining
   Right (Floating (pack (digits ++ ('e' :: power))), tail)
-finish_number digits floating ('E' :: remaining) = do
-  (power, tail) ← exponent remaining
+finish_number offset digits floating ('E' :: remaining) = do
+  (power, tail) ← exponent (S (offset + length digits)) remaining
   Right (Floating (pack (digits ++ ('E' :: power))), tail)
-finish_number digits True remaining = Right (Floating (pack digits), remaining)
-finish_number digits False remaining =
+finish_number offset digits True remaining = Right (Floating (pack digits), remaining)
+finish_number offset digits False remaining =
   -- The original decimal rule permits only a single leading zero. A sequence
   -- such as 01 must not acquire a new meaning during migration.
   case digits of
-    '0' :: _ :: _ ⇒ Left "leading zero in decimal literal"
+    '0' :: _ :: _ ⇒ Left (LocatedError DecimalLeadingZero
+      (Characters offset (offset + length digits)))
     _ ⇒ Right (Decimal (pack digits), remaining)
 
-number : List Char → Either Text (Token, List Char)
-number ('.' :: remaining) =
+number : Number → List Char → Either ParseError (Token, List Char)
+number offset ('.' :: remaining) =
   let (fraction, tail) = take_characters digit remaining in
   case fraction of
-    [] ⇒ Left "expected digits after decimal point"
-    _ ⇒ finish_number ('.' :: fraction) True tail
-number characters =
+    [] ⇒ Left (LocatedError DecimalPointDigitsRequired (character_span (S offset) remaining))
+    _ ⇒ finish_number offset ('.' :: fraction) True tail
+number offset characters =
   let (whole, remaining) = take_characters digit characters in
   case remaining of
     '.' :: tail ⇒
       let (fraction, rest) = take_characters digit tail in
-      finish_number (whole ++ ('.' :: fraction)) True rest
-    _ ⇒ finish_number whole False remaining
+      finish_number offset (whole ++ ('.' :: fraction)) True rest
+    _ ⇒ finish_number offset whole False remaining
+
+token_length : Token → Number
+token_length (Decimal text) = length (unpack text)
+token_length (Floating text) = length (unpack text)
+token_length (Identifier text) = length (unpack text)
+token_length _ = 1
 
 -- The budget decreases at every token. Scanning a token only consumes source
 -- characters, but that relationship is not available to the totality checker.
-lex_characters : Number → List Char → Either Text (List Token)
-lex_characters budget [] = Right []
-lex_characters Z (_ :: _) = Left "formula token budget exhausted"
-lex_characters (S budget) (character :: remaining) =
-  if whitespace character then lex_characters budget remaining else
+lex_characters : Number → Number → List Char → Either ParseError (List SpannedToken)
+lex_characters budget offset [] = Right []
+lex_characters Z offset characters =
+  Left (LocatedError TokenBudgetExhausted (character_span offset characters))
+lex_characters (S budget) offset (character :: remaining) =
+  if whitespace character then lex_characters budget (S offset) remaining else
   if digit character || character ≟ '.' then do
-    (token, tail) ← number (character :: remaining)
-    tokens ← lex_characters budget tail
-    Right (token :: tokens)
+    (token, tail) ← number offset (character :: remaining)
+    let ending = offset + token_length token
+    tokens ← lex_characters budget ending tail
+    Right (LocatedToken token (Characters offset ending) :: tokens)
   else if letter character then do
     let (name, tail) = take_characters (\next ⇒ letter next || digit next) remaining
-    tokens ← lex_characters budget tail
-    Right (Identifier (pack (character :: name)) :: tokens)
+    let ending = S (offset + length name)
+    tokens ← lex_characters budget ending tail
+    Right (LocatedToken (Identifier (pack (character :: name))) (Characters offset ending) :: tokens)
   else do
     token ← case character of
       '+' ⇒ Right Plus
@@ -113,102 +181,121 @@ lex_characters (S budget) (character :: remaining) =
       '^' ⇒ Right Power
       '(' ⇒ Right Open
       ')' ⇒ Right Close
-      _ ⇒ Left ("unexpected character: " ++ singleton character)
-    tokens ← lex_characters budget remaining
-    Right (token :: tokens)
+      _ ⇒ Left (LocatedError (UnexpectedCharacter character) (Characters offset (S offset)))
+    tokens ← lex_characters budget (S offset) remaining
+    Right (LocatedToken token (Characters offset (S offset)) :: tokens)
+
+export
+lex_formula_spanned : Text → Either ParseError (List SpannedToken)
+lex_formula_spanned source = let characters = unpack source in
+  lex_characters (length characters) 0 characters
 
 export
 lex_formula : Text → Either Text (List Token)
-lex_formula source = let characters = unpack source in
-  lex_characters (length characters) characters
+lex_formula source = case lex_formula_spanned source of
+  Left failure ⇒ Left (parse_error_message failure)
+  Right tokens ⇒ Right (map (\located ⇒ located.token) tokens)
 
 public export
 record Parsed where
   constructor ParsedExpression
   expression : Expression
-  remaining : List Token
+  remaining : List SpannedToken
+
+next_span : Number → List SpannedToken → SourceSpan
+next_span source_end [] = Characters source_end source_end
+next_span source_end (located :: _) = located.source_span
+
+syntax_error : ParseErrorCategory → Number → List SpannedToken → ParseError
+syntax_error category source_end tokens = LocatedError category (next_span source_end tokens)
 
 -- Each mutually recursive parser step consumes budget. Eight steps per token
 -- cover all precedence layers, a function call and the closing-parenthesis
 -- check; multiplication and addition tails also consume a step per token.
 mutual
-  primary : Number → List Token → Either Text Parsed
-  primary Z _ = Left "formula nesting budget exhausted"
-  primary (S budget) (Decimal text :: remaining) =
+  primary : Number → Number → List SpannedToken → Either ParseError Parsed
+  primary Z source_end tokens = Left (syntax_error NestingBudgetExhausted source_end tokens)
+  primary (S budget) source_end (LocatedToken (Decimal text) _ :: remaining) =
     Right (ParsedExpression (DecimalValue text) remaining)
-  primary (S budget) (Floating text :: remaining) =
+  primary (S budget) source_end (LocatedToken (Floating text) _ :: remaining) =
     Right (ParsedExpression (FloatingValue text) remaining)
-  primary (S budget) (Identifier name :: Open :: remaining) = do
-    parsed ← addition budget remaining
+  primary (S budget) source_end (LocatedToken (Identifier name) _ :: LocatedToken Open _ :: remaining) = do
+    parsed ← addition budget source_end remaining
     case parsed.remaining of
-      Close :: tail ⇒ Right (ParsedExpression (Called name parsed.expression) tail)
-      _ ⇒ Left "expected ')' after function argument"
-  primary (S budget) (Identifier name :: remaining) =
+      LocatedToken Close _ :: tail ⇒ Right (ParsedExpression (Called name parsed.expression) tail)
+      _ ⇒ Left (syntax_error FunctionCloseExpected source_end parsed.remaining)
+  primary (S budget) source_end (LocatedToken (Identifier name) _ :: remaining) =
     Right (ParsedExpression (NamedValue name) remaining)
-  primary (S budget) (Open :: remaining) = do
-    parsed ← addition budget remaining
+  primary (S budget) source_end (LocatedToken Open _ :: remaining) = do
+    parsed ← addition budget source_end remaining
     case parsed.remaining of
-      Close :: tail ⇒ Right (ParsedExpression (Grouped parsed.expression) tail)
-      _ ⇒ Left "expected ')'"
-  primary (S budget) _ = Left "expected number, name or '('"
+      LocatedToken Close _ :: tail ⇒ Right (ParsedExpression (Grouped parsed.expression) tail)
+      _ ⇒ Left (syntax_error GroupCloseExpected source_end parsed.remaining)
+  primary (S budget) source_end tokens = Left (syntax_error PrimaryExpected source_end tokens)
 
-  power : Number → List Token → Either Text Parsed
-  power Z _ = Left "formula nesting budget exhausted"
-  power (S budget) tokens = do
-    parsed ← primary budget tokens
+  power : Number → Number → List SpannedToken → Either ParseError Parsed
+  power Z source_end tokens = Left (syntax_error NestingBudgetExhausted source_end tokens)
+  power (S budget) source_end tokens = do
+    parsed ← primary budget source_end tokens
     case parsed.remaining of
-      Power :: remaining ⇒ do
-        raised ← power budget remaining
+      LocatedToken Power _ :: remaining ⇒ do
+        raised ← power budget source_end remaining
         Right (ParsedExpression (Raised parsed.expression raised.expression) raised.remaining)
       _ ⇒ Right parsed
 
-  negative : Number → List Token → Either Text Parsed
-  negative Z _ = Left "formula nesting budget exhausted"
-  negative (S budget) (Minus :: remaining) = do
-    parsed ← power budget remaining
+  negative : Number → Number → List SpannedToken → Either ParseError Parsed
+  negative Z source_end tokens = Left (syntax_error NestingBudgetExhausted source_end tokens)
+  negative (S budget) source_end (LocatedToken Minus _ :: remaining) = do
+    parsed ← power budget source_end remaining
     Right (ParsedExpression (Negative parsed.expression) parsed.remaining)
-  negative (S budget) tokens = power budget tokens
+  negative (S budget) source_end tokens = power budget source_end tokens
 
-  multiplication_tail : Number → Expression → List Token → Either Text Parsed
-  multiplication_tail Z _ _ = Left "formula nesting budget exhausted"
-  multiplication_tail (S budget) left (Multiply :: remaining) = do
-    right ← negative budget remaining
-    multiplication_tail budget (Product left right.expression) right.remaining
-  multiplication_tail (S budget) left (Divide :: remaining) = do
-    right ← negative budget remaining
-    multiplication_tail budget (Quotient left right.expression) right.remaining
-  multiplication_tail (S budget) left remaining = Right (ParsedExpression left remaining)
+  multiplication_tail : Number → Number → Expression → List SpannedToken → Either ParseError Parsed
+  multiplication_tail Z source_end _ tokens = Left (syntax_error NestingBudgetExhausted source_end tokens)
+  multiplication_tail (S budget) source_end left (LocatedToken Multiply _ :: remaining) = do
+    right ← negative budget source_end remaining
+    multiplication_tail budget source_end (Product left right.expression) right.remaining
+  multiplication_tail (S budget) source_end left (LocatedToken Divide _ :: remaining) = do
+    right ← negative budget source_end remaining
+    multiplication_tail budget source_end (Quotient left right.expression) right.remaining
+  multiplication_tail (S budget) source_end left remaining = Right (ParsedExpression left remaining)
 
-  multiplication : Number → List Token → Either Text Parsed
-  multiplication Z _ = Left "formula nesting budget exhausted"
-  multiplication (S budget) tokens = do
-    parsed ← negative budget tokens
-    multiplication_tail budget parsed.expression parsed.remaining
+  multiplication : Number → Number → List SpannedToken → Either ParseError Parsed
+  multiplication Z source_end tokens = Left (syntax_error NestingBudgetExhausted source_end tokens)
+  multiplication (S budget) source_end tokens = do
+    parsed ← negative budget source_end tokens
+    multiplication_tail budget source_end parsed.expression parsed.remaining
 
-  addition_tail : Number → Expression → List Token → Either Text Parsed
-  addition_tail Z _ _ = Left "formula nesting budget exhausted"
-  addition_tail (S budget) left (Plus :: remaining) = do
-    right ← multiplication budget remaining
-    addition_tail budget (Sum left right.expression) right.remaining
-  addition_tail (S budget) left (Minus :: remaining) = do
-    right ← multiplication budget remaining
-    addition_tail budget (Difference left right.expression) right.remaining
-  addition_tail (S budget) left remaining = Right (ParsedExpression left remaining)
+  addition_tail : Number → Number → Expression → List SpannedToken → Either ParseError Parsed
+  addition_tail Z source_end _ tokens = Left (syntax_error NestingBudgetExhausted source_end tokens)
+  addition_tail (S budget) source_end left (LocatedToken Plus _ :: remaining) = do
+    right ← multiplication budget source_end remaining
+    addition_tail budget source_end (Sum left right.expression) right.remaining
+  addition_tail (S budget) source_end left (LocatedToken Minus _ :: remaining) = do
+    right ← multiplication budget source_end remaining
+    addition_tail budget source_end (Difference left right.expression) right.remaining
+  addition_tail (S budget) source_end left remaining = Right (ParsedExpression left remaining)
 
-  addition : Number → List Token → Either Text Parsed
-  addition Z _ = Left "formula nesting budget exhausted"
-  addition (S budget) tokens = do
-    parsed ← multiplication budget tokens
-    addition_tail budget parsed.expression parsed.remaining
+  addition : Number → Number → List SpannedToken → Either ParseError Parsed
+  addition Z source_end tokens = Left (syntax_error NestingBudgetExhausted source_end tokens)
+  addition (S budget) source_end tokens = do
+    parsed ← multiplication budget source_end tokens
+    addition_tail budget source_end parsed.expression parsed.remaining
+
+export
+parse_formula_detailed : Text → Either ParseError Expression
+parse_formula_detailed source = do
+  tokens ← lex_formula_spanned source
+  parsed ← addition (8 × (S (length tokens))) (length (unpack source)) tokens
+  case parsed.remaining of
+    [] ⇒ Right parsed.expression
+    remaining ⇒ Left (syntax_error TrailingToken (length (unpack source)) remaining)
 
 export
 parse_formula : Text → Either Text Expression
-parse_formula source = do
-  tokens ← lex_formula source
-  parsed ← addition (8 × (S (length tokens))) tokens
-  case parsed.remaining of
-    [] ⇒ Right parsed.expression
-    _ ⇒ Left "unexpected token after expression"
+parse_formula source = case parse_formula_detailed source of
+  Left failure ⇒ Left (parse_error_message failure)
+  Right expression ⇒ Right expression
 
 export
 expression_shape : Expression → Text

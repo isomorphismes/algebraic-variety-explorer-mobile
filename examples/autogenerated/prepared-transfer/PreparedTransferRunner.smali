@@ -252,6 +252,36 @@
     return-void
 .end method
 
+# Original renderer binding and actual checked preparation remain separate.
+.method private static bound(Ljava/lang/String;)V
+    .registers 12
+    invoke-static {p0}, Lde/mfo/jsurf/algebra/OriginalExpansionOracle;->original_expansion_with_radius(Ljava/lang/String;)Ljava/lang/String;
+    move-result-object v2
+    invoke-static {p0}, LIdric/Generated;->actual_prepare_bound_handle(Ljava/lang/String;)J
+    move-result-wide v0
+    invoke-static {v0, v1}, LPreparedTransferRunner;->positive(J)V
+    invoke-static {v0, v1}, LPreparedTransferRunner;->status(J)J
+    move-result-wide v4
+    const-wide/16 v6, 0
+    invoke-static {v4, v5, v6, v7}, LPreparedTransferRunner;->equalLong(JJ)V
+    invoke-static {v0, v1}, LPreparedTransferRunner;->report(J)Ljava/lang/String;
+    move-result-object v3
+    invoke-static {v0, v1}, LPreparedTransferRunner;->releaseChecked(J)V
+    invoke-static {}, LPreparedTransferRunner;->empty()V
+    invoke-static {p0, v2, v3}, LPreparedTransferRunner;->equalText(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+    sget-object v0, Ljava/lang/System;->out:Ljava/io/PrintStream;
+    invoke-virtual {v0, p0}, Ljava/io/PrintStream;->println(Ljava/lang/String;)V
+    return-void
+.end method
+
+.method private static boundError(Ljava/lang/String;Ljava/lang/String;)V
+    .registers 4
+    invoke-static {p0}, LIdric/Generated;->actual_prepare_bound_error(Ljava/lang/String;)Ljava/lang/String;
+    move-result-object v0
+    invoke-static {p0, p1, v0}, LPreparedTransferRunner;->equalText(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+    return-void
+.end method
+
 .method private static sourceValidation()V
     .registers 6
     invoke-static {}, LCopiedSurfaceObserver;->copyCalls()J
@@ -262,6 +292,15 @@
     const-string v0, "radius*x"
     const-string v1, "expansion error: no value has been assigned to parameter 'radius'"
     invoke-static {v0, v1}, LPreparedTransferRunner;->error(Ljava/lang/String;Ljava/lang/String;)V
+    const-string v0, "foo(2)*x"
+    const-string v1, "meaning error: unknown coefficient function: foo"
+    invoke-static {v0, v1}, LPreparedTransferRunner;->error(Ljava/lang/String;Ljava/lang/String;)V
+    const-string v0, "radius*x+unknown*y"
+    const-string v1, "expansion error: no value has been assigned to parameter 'unknown'"
+    invoke-static {v0, v1}, LPreparedTransferRunner;->boundError(Ljava/lang/String;Ljava/lang/String;)V
+    const-string v0, "Radius*x"
+    const-string v1, "expansion error: no value has been assigned to parameter 'Radius'"
+    invoke-static {v0, v1}, LPreparedTransferRunner;->boundError(Ljava/lang/String;Ljava/lang/String;)V
     invoke-static {}, LCopiedSurfaceObserver;->copyCalls()J
     move-result-wide v4
     invoke-static {v2, v3, v4, v5}, LPreparedTransferRunner;->equalLong(JJ)V
@@ -383,6 +422,14 @@
     invoke-static {v0}, LPreparedTransferRunner;->check(Ljava/lang/String;)V
     const-string v0, "(1e100*x)^3"
     invoke-static {v0}, LPreparedTransferRunner;->check(Ljava/lang/String;)V
+    const-string v0, "x^2+y^2+z^2-radius^2"
+    invoke-static {v0}, LPreparedTransferRunner;->bound(Ljava/lang/String;)V
+    const-string v0, "radius*x+radius*y"
+    const-string v1, "family=1;surface=0,1,0:4000000000000000|1,0,0:4000000000000000;dx=0,0,0:4000000000000000;dy=0,0,0:4000000000000000;dz=0,0,0:0"
+    invoke-static {v0}, Lde/mfo/jsurf/algebra/OriginalExpansionOracle;->original_expansion_with_radius(Ljava/lang/String;)Ljava/lang/String;
+    move-result-object v2
+    invoke-static {v0, v1, v2}, LPreparedTransferRunner;->equalText(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+    invoke-static {v0}, LPreparedTransferRunner;->bound(Ljava/lang/String;)V
     invoke-static {}, LPreparedTransferRunner;->sourceValidation()V
     const-string v0, "x"
     const-string v1, "accepted and released"
