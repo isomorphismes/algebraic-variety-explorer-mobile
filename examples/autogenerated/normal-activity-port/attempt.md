@@ -175,3 +175,16 @@ API23 claim. Production uses the checked null intrinsic. `FormattedStatus`
 retains the actual SDK `Resources.getString(I,Object[])` requirement; production
 uses boxed Integer/Long and a real ArrayList.toArray result, not text replacement.
 The main producer required no app-specific raw plan or native UI mechanism.
+
+## Allocation after UI handoff
+
+The decoded composite initially constructed a new Nothing object after posting
+the completed frame to the UI, before clearing the worker's provisional owner.
+If that allocation failed after delivery, worker cleanup could release an
+already transferred surface. The worker now reads and retains its existing
+empty marker before native acquisition and reuses it for both clear operations.
+The final full-Activity qualifier passed emission, independent decode and
+reassembly. Its retained plan shows the post call followed by ArrayList.set
+and return, without a new constructor allocation in that handoff interval.
+This is the bounded handoff correction, not a claim that every possible JVM
+allocation failure has been exercised.

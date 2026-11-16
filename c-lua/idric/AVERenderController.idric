@@ -111,6 +111,9 @@ mutual
   run_request activity request = do
     -- Worker-local bookkeeping only; this worker never touches the UI IORef.
     owned ← newIORef Nothing
+    -- Reuse the existing empty marker: constructing Nothing after posting
+    -- could fail after the UI already acquired the provisional surface.
+    vacant ← readIORef owned
     -- Handoff-only cleanup guard: from here on it is accessed only by the UI.
     committed ← newIORef False
     result ← newIORef (FailedRequest "render request cancelled")
@@ -138,11 +141,11 @@ mutual
           retained ← readIORef owned
           case retained of
             Nothing ⇒ pure ()
-            Just surface ⇒ do _ ← release_native_surface surface; writeIORef owned Nothing
+            Just surface ⇒ do _ ← release_native_surface surface; writeIORef owned vacant
         _ ⇒ pure ()
       delivery ← primIO (capture_runnable (deliver_result activity request outcome))
       primIO (post_ui activity delivery)
-      writeIORef owned Nothing)
+      writeIORef owned vacant)
       (do retained ← readIORef owned
           case retained of
             Nothing ⇒ pure ()

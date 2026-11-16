@@ -31,6 +31,10 @@ grep -Fq '      - apt-get install -y openjdk-21-jdk-headless build-essential' "$
     fail "F-Droid sudo dependencies must match the pinned buildserver distribution"
 grep -Fxq '      - sdkmanager "platforms;android-35" "build-tools;35.0.1" "ndk;29.0.14206865"' "$METADATA" ||
     fail "F-Droid prebuild must install the pinned SDK and build tools"
+grep -Fxq '      - make -f fdroid/Makefile prepare-chez-source' "$METADATA" ||
+    fail "F-Droid prebuild must expose verified Chez sources before scanning"
+grep -Fxq '        AI_CI="$$AVEAiCi$$" SDK="$$SDK$$" CHEZ_SOURCE="$PWD/.build/fdroid-inputs/chez-source"' "$METADATA" ||
+    fail "F-Droid compiler build must consume the verified unpacked Chez source"
 grep -Fq '      - make -f fdroid/Makefile FRONTEND="$$AVEIdric$$"' "$METADATA" ||
     fail "F-Droid build must source-build the pinned compiler prerequisites"
 # The pinned F-Droid writer folds this one invocation onto three canonical

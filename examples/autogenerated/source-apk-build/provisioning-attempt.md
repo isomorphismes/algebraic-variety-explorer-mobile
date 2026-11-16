@@ -26,7 +26,8 @@ It does not build a compiler or another binary before source scanning. The
 actual build phase compiles host ICK, Grease, all three cross ICK stages, Chez,
 Idriç, the DEX backend, the Activity and the C payloads. Local compiler/application
 source clones share only the fetched object databases. Chez uses the verified
-source archive, and the application build has no network acquisition step.
+unpacked source profile, and the application build has no network acquisition
+step.
 
 The host compiler’s pinned ai-ci Makefile requires GCC 13 support-runtime files
 and package metadata. The Trixie recipe explicitly requests `libgcc-13-dev`,

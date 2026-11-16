@@ -34,6 +34,7 @@ Builds:
         -o .build/fdroid-inputs/chez.tar.gz
       - echo '2e74952db7bc177f0c3602e2217a341ba677d733eec4cd7726418c3a4e1ef308  .build/fdroid-inputs/chez.tar.gz'
         | sha256sum -c -
+      - make -f fdroid/Makefile prepare-chez-source
       - curl --fail --location --retry 3 
         https://github.com/baksmali/smali/releases/download/3.0.10/baksmali-3.0.10-fat-release.jar
         -o .build/fdroid-inputs/baksmali.jar
@@ -50,7 +51,7 @@ Builds:
     build:
       - make -f fdroid/Makefile FRONTEND="$$AVEIdric$$" BACKEND="$$AVEDEX$$" HOST_ICK="$$AVEICKHost$$"
         CROSS_ICK="$$AVEICKCross$$" GREASE_SOURCE="$$AVEGrease$$" CATFOOD="$$AVECatFood$$"
-        AI_CI="$$AVEAiCi$$" SDK="$$SDK$$" CHEZ_ARCHIVE="$PWD/.build/fdroid-inputs/chez.tar.gz"
+        AI_CI="$$AVEAiCi$$" SDK="$$SDK$$" CHEZ_SOURCE="$PWD/.build/fdroid-inputs/chez-source"
         BAKSMALI="$PWD/.build/fdroid-inputs/baksmali.jar" SMALI="$PWD/.build/fdroid-inputs/smali.jar"
       - PATH="$PWD/.build/fdroid-tools/runtime/.build/grease/bin:$PATH" .build/fdroid-tools/runtime/.build/grease/bin/grease
         fdroid/reproducible.grease "$PWD" "$$AVEIdric$$" "$$AVEDEX$$" "$$SDK$$" "$PWD/.build/fdroid-tools"

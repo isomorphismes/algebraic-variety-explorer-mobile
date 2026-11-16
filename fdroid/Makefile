@@ -4,9 +4,33 @@
 REPOSITORY := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/..)
 OUTPUT ?= $(REPOSITORY)/.build/fdroid-tools
 BUILD_JOBS ?= 2
+CHEZ_ARCHIVE ?= $(REPOSITORY)/.build/fdroid-inputs/chez.tar.gz
+CHEZ_SOURCE ?= $(REPOSITORY)/.build/fdroid-inputs/chez-source
 
-.PHONY: all preflight host-ick grease source-tools
+.PHONY: all prepare-chez-source verify-chez-source preflight host-ick grease source-tools
 all: source-tools
+
+# Pre-scanner preparation only: verify and unpack the unchanged upstream source
+# distribution, record its content profile, and remove the consumed archive.
+# No executable is built before F-Droid's source scan.
+prepare-chez-source:
+	printf '%s  %s\n' 2e74952db7bc177f0c3602e2217a341ba677d733eec4cd7726418c3a4e1ef308 "$(CHEZ_ARCHIVE)" | sha256sum -c -
+	test ! -e "$(CHEZ_SOURCE)"
+	mkdir -p "$(CHEZ_SOURCE)"
+	tar --no-same-owner --strip-components=1 -xzf "$(CHEZ_ARCHIVE)" -C "$(CHEZ_SOURCE)"
+	$(MAKE) -f "$(REPOSITORY)/fdroid/Makefile" verify-chez-source CHEZ_SOURCE="$(CHEZ_SOURCE)"
+	printf 'version\t10.4.1\narchive_SHA256\t2e74952db7bc177f0c3602e2217a341ba677d733eec4cd7726418c3a4e1ef308\nsource_file_count\t1167\nsource_manifest_SHA256\tedb1c9560113d60a4e2ace1e74defd67e71005414379b2b7c27eb8d976cf55c6\nsource_entries_SHA256\tc81fed0074a5a2a1837df5ec3b4a35e78cb92178e0a27081b984762357455364\n' > "$(CHEZ_SOURCE).provenance.tsv"
+	rm -- "$(CHEZ_ARCHIVE)"
+
+verify-chez-source:
+	test -x "$(CHEZ_SOURCE)/configure"
+	test -s "$(CHEZ_SOURCE)/BUILDING"
+	test -z "$$(find "$(CHEZ_SOURCE)" ! -type d ! -type f -print -quit)"
+	cd "$(CHEZ_SOURCE)" && LC_ALL=C find . -printf '%y %p\n' | LC_ALL=C sort > "$(CHEZ_SOURCE).entries.txt"
+	printf '%s  %s\n' c81fed0074a5a2a1837df5ec3b4a35e78cb92178e0a27081b984762357455364 "$(CHEZ_SOURCE).entries.txt" | sha256sum -c -
+	cd "$(CHEZ_SOURCE)" && LC_ALL=C find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum > "$(CHEZ_SOURCE).files.sha256"
+	printf '%s  %s\n' edb1c9560113d60a4e2ace1e74defd67e71005414379b2b7c27eb8d976cf55c6 "$(CHEZ_SOURCE).files.sha256" | sha256sum -c -
+	test "$$(wc -l < "$(CHEZ_SOURCE).files.sha256")" = 1167
 
 preflight:
 	test "$$(uname -s)" = Linux
@@ -28,4 +52,4 @@ grease: host-ick
 	CATFOOD_ROOT="$(OUTPUT)/runtime" CATFOOD_JOBS="$(BUILD_JOBS)" CC="$(OUTPUT)/host-stage/bin/gcc -fno-link-libatomic -std=gnu11" sh "$(CATFOOD)/build-tools.sh"
 
 source-tools: grease
-	"$(OUTPUT)/runtime/.build/grease/bin/grease" "$(REPOSITORY)/fdroid/source-tools.grease" "$(REPOSITORY)" "$(FRONTEND)" "$(BACKEND)" "$(CROSS_ICK)" "$(OUTPUT)/host-stage/bin/gcc" "$(SDK)" "$(OUTPUT)" "$(CHEZ_ARCHIVE)" "$(BAKSMALI)" "$(SMALI)"
+	"$(OUTPUT)/runtime/.build/grease/bin/grease" "$(REPOSITORY)/fdroid/source-tools.grease" "$(REPOSITORY)" "$(FRONTEND)" "$(BACKEND)" "$(CROSS_ICK)" "$(OUTPUT)/host-stage/bin/gcc" "$(SDK)" "$(OUTPUT)" "$(CHEZ_SOURCE)" "$(BAKSMALI)" "$(SMALI)"
