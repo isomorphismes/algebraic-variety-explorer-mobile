@@ -1,0 +1,65 @@
+#!/usr/bin/env grease
+# Acquire the unchanged Java reference's locked bytes before executing it.
+set -eu -o pipefail
+if (len(ARGV) !== 2) { echo 'usage: grease prepare-dependencies.grease EXPLORER FRESH_EVIDENCE' >&2; exit 2 }
+var repository = ARGV[0]
+var output = ARGV[1]
+if (repository[0] !== '/' or output[0] !== '/') { echo 'FAIL absolute dependency paths required' >&2; exit 2 }
+if test -e "$output" { echo 'FAIL refusing reused dependency evidence' >&2; exit 1 }
+command -v curl > /dev/null
+command -v sha256sum > /dev/null
+command -v rg > /dev/null
+mkdir -p "$output" "$repository/.dependencies"
+sha256sum "$repository/dependencies.lock" > "$output/lock.sha256"
+proc acquire(name, coordinate, digest) {
+  var primary = "https://repo.maven.apache.org/maven2/$coordinate"
+  var alternate = "https://repo1.maven.org/maven2/$coordinate"
+  var cached = "$repository/.dependencies/$name"
+  rg -x -F "$primary" "$repository/dependencies.lock" > /dev/null
+  rg -x -F "sha256 $digest" "$repository/dependencies.lock" > /dev/null
+  var acquired_from = 'verified-cache'
+  if test -e "$cached" {
+    printf '%s  %s\n' "$digest" "$cached" | sha256sum -c -
+    cp "$cached" "$output/$name"
+  } else {
+    printf '\033[36mACTION\033[0m acquire locked original-reference dependency %s\n' "$name"
+    try {
+      curl --fail --location --connect-timeout 15 --max-time 30 --retry 3 \
+        --retry-delay 5 --retry-max-time 80 "$primary" -o "$output/$name.partial" \
+        > "$output/$name-primary.txt" 2>&1
+    }
+    var primary_status = _error.code
+    printf 'primary\t%s\t%s\n' "$primary_status" "$primary" > "$output/$name-download.tsv"
+    setvar acquired_from = primary
+    if (primary_status !== 0) {
+      cat "$output/$name-primary.txt"
+      # Both are Maven Central endpoints; the lock's digest remains mandatory.
+      try {
+        curl --fail --location --connect-timeout 15 --max-time 30 --retry 3 \
+          --retry-delay 5 --retry-max-time 80 "$alternate" -o "$output/$name.partial" \
+          > "$output/$name-alternate.txt" 2>&1
+      }
+      var alternate_status = _error.code
+      printf 'alternate\t%s\t%s\n' "$alternate_status" "$alternate" >> "$output/$name-download.tsv"
+      if (alternate_status !== 0) {
+        cat "$output/$name-alternate.txt"
+        echo 'FAIL locked original-reference dependency acquisition; reference not executed' >&2
+        exit 1
+      }
+      setvar acquired_from = alternate
+    }
+    printf '%s  %s\n' "$digest" "$output/$name.partial" | sha256sum -c -
+    mv "$output/$name.partial" "$output/$name"
+    cp "$output/$name" "$cached"
+  }
+  printf '%s\t%s\t%s\n' "$name" "$digest" "$acquired_from" >> "$output/verified.tsv"
+}
+acquire antlr-runtime-3.4.jar org/antlr/antlr-runtime/3.4/antlr-runtime-3.4.jar \
+  5b7cf53b7b30b034023f58030c8147c433f2bee0fe7dec8fae6bebf3708c5a63
+acquire vecmath-1.5.2.jar javax/vecmath/vecmath/1.5.2/vecmath-1.5.2.jar \
+  3558e81ca74c60dc01baca7ef05f48594bbaed43af45d4f1b9196e479734e675
+acquire junit-4.13.2.jar junit/junit/4.13.2/junit-4.13.2.jar \
+  8e495b634469d64fb8acfa3495a065cbacc8a0fff55ce1e31007be4c16dc57d3
+acquire hamcrest-core-1.3.jar org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar \
+  66fdef91e9739348df7a096aa384a5685f4e875584cce89386a7a47251c4d8e9
+printf '\033[32mPASS\033[0m four exact locked original-reference dependencies; semantic execution separate\n'
