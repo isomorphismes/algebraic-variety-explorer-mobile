@@ -1,0 +1,14 @@
+module PolynomialQualificationExports
+
+import PolynomialQualification
+import Data.Text
+
+-- The checked compiler requires an entry module even for pure exports.
+-- Production semantics remain in the main-free library above.
+%export "dex:formula_qualification"
+export
+qualified_formula_report : Text → Text
+qualified_formula_report = formula_qualification
+
+main : IO ()
+main = pure ()

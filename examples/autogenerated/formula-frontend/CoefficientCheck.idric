@@ -8,6 +8,7 @@ import System
 coefficient : Double
 coefficient = 0.4
 
+%export "dex:coefficient_check"
 main : IO ()
 main = do
   arguments ← getArgs

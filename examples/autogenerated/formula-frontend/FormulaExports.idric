@@ -1,6 +1,7 @@
 module FormulaExports
 
 import AlgebraicExpression
+import PolynomialQualification
 import Data.Text
 
 -- The current checked compiler requires a source entry even when the DEX
@@ -8,6 +9,10 @@ import Data.Text
 %export "dex:formula_shape"
 formula_shape : Text → Text
 formula_shape = AlgebraicExpression.formula_shape
+
+%export "dex:formula_qualification"
+formula_qualification : Text → Text
+formula_qualification = PolynomialQualification.formula_qualification
 
 main : IO ()
 main = pure ()

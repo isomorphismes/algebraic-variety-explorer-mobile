@@ -13,17 +13,24 @@ var remote = '/data/local/tmp/ave-formula-frontend'
 "$adb" -s "$serial" push "$runner" "$remote/runner.dex"
 "$adb" -s "$serial" push "$evidence/positive/candidate.dex" "$remote/positive.dex"
 "$adb" -s "$serial" push "$evidence/mutant/candidate.dex" "$remote/mutant.dex"
-"$adb" -s "$serial" shell chmod 444 "$remote/runner.dex" "$remote/positive.dex" "$remote/mutant.dex"
+"$adb" -s "$serial" push "$evidence/semantic-mutant/candidate.dex" "$remote/semantic-mutant.dex"
+"$adb" -s "$serial" shell chmod 444 "$remote/runner.dex" "$remote/positive.dex" "$remote/mutant.dex" "$remote/semantic-mutant.dex"
 "$adb" -s "$serial" pull "$remote/runner.dex" "$evidence/runner-received.dex"
 "$adb" -s "$serial" pull "$remote/positive.dex" "$evidence/positive-received.dex"
 "$adb" -s "$serial" pull "$remote/mutant.dex" "$evidence/mutant-received.dex"
+"$adb" -s "$serial" pull "$remote/semantic-mutant.dex" "$evidence/semantic-mutant-received.dex"
 cmp "$runner" "$evidence/runner-received.dex"
 cmp "$evidence/positive/candidate.dex" "$evidence/positive-received.dex"
 cmp "$evidence/mutant/candidate.dex" "$evidence/mutant-received.dex"
+cmp "$evidence/semantic-mutant/candidate.dex" "$evidence/semantic-mutant-received.dex"
 "$adb" -s "$serial" shell "CLASSPATH=$remote/positive.dex:$remote/runner.dex app_process /system/bin FormulaRunner" \
   > "$evidence/art-positive.txt" 2>&1
 cat "$evidence/art-positive.txt"
 rg -x -F 'PASS Explorer source parser on ART' "$evidence/art-positive.txt"
+"$adb" -s "$serial" shell "CLASSPATH=$remote/positive.dex:$remote/runner.dex app_process /system/bin PolynomialQualificationRunner" \
+  > "$evidence/art-qualification.txt" 2>&1
+cat "$evidence/art-qualification.txt"
+rg -x -F 'PASS Explorer polynomial qualification on ART' "$evidence/art-qualification.txt"
 try {
   "$adb" -s "$serial" shell "CLASSPATH=$remote/mutant.dex:$remote/runner.dex app_process /system/bin FormulaRunner" \
     > "$evidence/art-mutant.txt" 2>&1
@@ -32,7 +39,15 @@ var status = _error.code
 cat "$evidence/art-mutant.txt"
 if (status !== 73) { echo 'FAIL missing designated parser mutant rejection' >&2; exit 1 }
 rg -x -F 'FAIL Explorer formula shape' "$evidence/art-mutant.txt"
+try {
+  "$adb" -s "$serial" shell "CLASSPATH=$remote/semantic-mutant.dex:$remote/runner.dex app_process /system/bin PolynomialQualificationRunner" \
+    > "$evidence/art-qualification-mutant.txt" 2>&1
+}
+var semantic_status = _error.code
+cat "$evidence/art-qualification-mutant.txt"
+if (semantic_status !== 75) { echo 'FAIL missing designated divisor mutant rejection' >&2; exit 1 }
+rg -x -F 'FAIL Explorer polynomial qualification' "$evidence/art-qualification-mutant.txt"
 "$adb" -s "$serial" shell getprop ro.build.version.sdk > "$evidence/art-sdk.txt"
 "$adb" -s "$serial" shell getprop ro.product.cpu.abi > "$evidence/art-abi.txt"
-printf 'parser_ART\tPASS\ncompiled_mutant_rejected\tPASS\nAPK\tNOT_RUN\nphysical_C67\tNOT_RUN\nphysical_A1\tNOT_RUN\n' > "$evidence/art-result.tsv"
+printf 'parser_ART\tPASS\npolynomial_qualification_ART\tPASS\ncompiled_parser_mutant_rejected\tPASS\ncompiled_divisor_mutant_rejected\tPASS\nAPK\tNOT_RUN\nphysical_C67\tNOT_RUN\nphysical_A1\tNOT_RUN\n' > "$evidence/art-result.tsv"
 printf '\033[32mPASS\033[0m actual Explorer source parser and compiled mutant on ART\n'

@@ -70,6 +70,30 @@ The grammar is a library, so its pure export now has a separate
 canonical managed-export fixtures. Both original and mutated parser graphs are
 compiled through that adapter; no substitute grammar is introduced.
 
+At `ae30e678f178045949fa7721d978b8fac5a98237`,
+[run 43786388990](https://github.com/isomorphismes/algebraic-variety-explorer-mobile/actions/runs/43786388990)
+generated and independently decoded the parser DEX, reproduced identical bytes,
+executed the unchanged observation runner on API34 ART, and rejected the actual
+compiled parser mutation with its designated status73. The whole run still
+failed: the coefficient driver had no `%export` entry selected and therefore
+never tested numerical lowering. The entry is now declared explicitly.
+
+The next source stage is `PolynomialQualification.idric`. Its working source
+passed the host checks with the exact retained frontend740bbf2b1 and emitted
+a 159424-byte DEX containing both public Text exports through backend153e7fc.
+Pinned baksmali decoded it independently; the combined observation runner also
+assembled. These are local host/generation/decode observations, not ART or APK
+acceptance of the new stage. The candidate SHA256 was
+`d271d41db8bcd0a81db1d691258c657ef13665a8c05199698b7d062a9b57428f`.
+The required hosted continuation executes both semantic layers and rejects a
+second compiled mutation that bypasses the polynomial-divisor restriction.
+
+The corrected coefficient driver, executed against the retained current backend,
+now reports the first checked runtime refusal: `Managed DEX unsupported text
+cast from Double` in `Prelude.Show`. That is the output-formatting path of this
+probe; it is not evidence that the application's numerical C owner must move.
+Arithmetic and original-jsurf literal parsing must be qualified separately.
+
 ## First language boundary
 
 The next qualification must compile the real parser rather than a backend-owned

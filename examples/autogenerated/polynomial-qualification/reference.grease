@@ -1,0 +1,57 @@
+#!/usr/bin/env grease
+# Execute the retained original jsurf through its existing preview entry.
+# This is the reference oracle, never the candidate compiler/application path.
+if (len(ARGV) !== 2) { echo 'usage: grease reference.grease REPOSITORY FRESH_OUTPUT' >&2; exit 2 }
+var repository = ARGV[0]
+var output = ARGV[1]
+if (repository[0] !== '/' or output[0] !== '/') { echo 'FAIL absolute paths required' >&2; exit 2 }
+if test -e "$output" { echo 'FAIL refusing reused reference output' >&2; exit 1 }
+command -v javac
+command -v rg
+mkdir -p "$output"
+git -C "$repository" rev-parse HEAD > "$output/source-commit.txt"
+sha256sum "$repository/AlgebraicExpression.g" "$repository/AlgebraicExpressionWalker.g" \
+  "$repository/AlgebraicExpressionLexer.java" "$repository/AlgebraicExpressionParser.java" \
+  "$repository/AlgebraicExpressionWalker.java" > "$output/sources.sha256"
+var preview_status = 0
+proc preview(name, formula) {
+  try {
+    timeout 30 bash "$repository/build.sh" preview "$output/$name.ppm" "$formula" \
+      > "$output/$name.txt" 2>&1
+  }
+  setglobal preview_status = _error.code
+  printf '%s\t%s\n' "$name" "$preview_status" >> "$output/processes.tsv"
+}
+proc accept(name, formula) {
+  preview "$name" "$formula"
+  if (preview_status !== 0) { cat "$output/$name.txt"; echo "FAIL original jsurf rejected $name" >&2; exit 1 }
+  test -s "$output/$name.ppm"
+}
+proc refuse(name, formula) {
+  preview "$name" "$formula"
+  if (preview_status !== 1) { cat "$output/$name.txt"; echo "FAIL original jsurf refusal status for $name" >&2; exit 1 }
+  rg 'RecognitionException|MismatchedTokenException|MismatchedSetException|NoViableAltException' "$output/$name.txt"
+}
+accept sphere 'x^2+y^2+z^2-0.64'
+accept grouped-decimal 'x^(2)+y^2+z^2-0.64'
+accept constant-function 'sqrt(.25)*x+y^2+z^2-0.64'
+accept exponent-overflow 'x^2147483648+y^2+z^2-0.64'
+refuse polynomial-divisor 'x/y'
+refuse floating-exponent 'x^2.0'
+refuse computed-exponent 'x^(1+1)'
+refuse chained-exponent 'x^2^3'
+refuse polynomial-function 'sin(x)'
+refuse unknown-function 'foo(2)'
+
+# Preserve the unresolved generated-walker behavior as an observation. Do not
+# declare nested-parenthesis parity from the cleaner grammar alone.
+preview nested-group 'x^((2))+y^2+z^2-0.64'
+if (preview_status === 0) {
+  printf 'nested_group\taccepted\n' > "$output/nested-group.tsv"
+} else {
+  if (preview_status !== 1) { cat "$output/nested-group.txt"; echo 'FAIL nested-group oracle execution' >&2; exit 1 }
+  rg 'RecognitionException|MismatchedTokenException|MismatchedSetException|NoViableAltException' "$output/nested-group.txt"
+  printf 'nested_group\trejected\n' > "$output/nested-group.tsv"
+}
+cat "$output/nested-group.tsv"
+printf '\033[32mPASS\033[0m original jsurf semantic admission corpus; numerical parity separate\n'

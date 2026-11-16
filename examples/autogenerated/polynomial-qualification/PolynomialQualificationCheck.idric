@@ -1,0 +1,88 @@
+module PolynomialQualificationCheck
+
+import AlgebraicExpression
+import PolynomialQualification
+import Data.Text
+import System
+
+require : Text → Bool → IO ()
+require name True = putStrLn ("PASS " ++ name)
+require name False = do
+  putStrLn ("FAIL " ++ name)
+  exitFailure
+
+check : Text → Text → IO ()
+check source expected = require source (formula_qualification source ≟ expected)
+
+main : IO ()
+main = do
+  check "2+3*4" "scalar"
+  check "2^2^3" "scalar"
+  check "2^(-.5)" "scalar"
+  check "X" "scalar"
+  check "x1" "scalar"
+  check "x" "polynomial"
+  check "y" "polynomial"
+  check "z" "polynomial"
+  check "x+2" "polynomial"
+  check "2*x" "polynomial"
+  check "x/(2+2)" "polynomial"
+  check "x/0" "polynomial"
+  check "1/0" "scalar"
+  check "x^(2)" "polynomial"
+  check "x^0" "polynomial"
+  check "x^2147483647" "polynomial"
+  check "x^2147483648" "polynomial; inherited exponent overflow to zero: 2147483648"
+  check "x^99999999999999999999999999999999999999"
+    "polynomial; inherited exponent overflow to zero: 99999999999999999999999999999999999999"
+  check "2^2147483648" "scalar"
+  check "x/y" "meaning error: polynomial divisor"
+  check "2/x" "meaning error: polynomial divisor"
+  check "x/(x-x)" "meaning error: polynomial divisor"
+  check "x/(0*x+1)" "meaning error: polynomial divisor"
+  check "x/(y^0)" "meaning error: polynomial divisor"
+  check "x^2.0" "meaning error: polynomial exponent must be a decimal literal"
+  check "x^2e0" "meaning error: polynomial exponent must be a decimal literal"
+  check "x^(2+0)" "meaning error: polynomial exponent must be a decimal literal"
+  check "x^2^3" "meaning error: polynomial exponent must be a decimal literal"
+  check "x^(-2)" "meaning error: polynomial exponent must be a decimal literal"
+  check "x^y" "meaning error: polynomial exponent must be a decimal literal"
+  check "2^x" "meaning error: polynomial exponent must be a decimal literal"
+  check "sin(x)" "meaning error: function requires scalar argument: sin"
+  check "sin(x-x)" "meaning error: function requires scalar argument: sin"
+  check "sin(x^0)" "meaning error: function requires scalar argument: sin"
+  check "foo(2)" "meaning error: unknown coefficient function: foo"
+  check "Sin(2)" "meaning error: unknown coefficient function: Sin"
+  traverse_ (\name ⇒ check (name ++ "(0.2)") "scalar")
+    ["neg", "sin", "cos", "tan", "asin", "acos", "atan", "exp", "log",
+     "sqrt", "ceil", "floor", "abs", "sign"]
+  require "named coefficient remains symbolic" $
+    case qualify_formula "radius" of
+      Right (FormulaMeaning (ScalarMeaning (NamedCoefficient "radius") Nothing) []) ⇒ True
+      _ ⇒ False
+  require "scalar arithmetic stays scalar" $
+    case qualify_formula "2+3" of
+      Right (FormulaMeaning (ScalarMeaning (ScalarSum _ _) Nothing) []) ⇒ True
+      _ ⇒ False
+  require "mixed arithmetic retains polynomial ownership" $
+    case qualify_formula "x+2" of
+      Right (FormulaMeaning (PolynomialMeaning (PolynomialSum
+        (CoordinatePolynomial CoordinateX) (ScalarPolynomial (DecimalCoefficient "2")))) []) ⇒ True
+      _ ⇒ False
+  require "group retains decimal-literal provenance" $
+    case qualify_formula "x^(2)" of
+      Right (FormulaMeaning (PolynomialMeaning (PolynomialPower _ (InRangeDecimalExponent "2"))) []) ⇒ True
+      _ ⇒ False
+  require "overflow stays explicit in the typed power" $
+    case qualify_formula "x^2147483648" of
+      Right (FormulaMeaning (PolynomialMeaning (PolynomialPower _
+        (InheritedOverflowExponent "2147483648"))) [InheritedExponentOverflowToZero "2147483648"]) ⇒ True
+      _ ⇒ False
+  require "syntax failure remains separate" $
+    case qualify_formula "x+" of
+      Left (FormulaSyntaxFailure _) ⇒ True
+      _ ⇒ False
+  check "x^4-x*y^3-z^4+z" "polynomial"
+  check "x^2+x*z^2+y^3" "polynomial"
+  check "(x^2+y^2+z^2+0.4)^2-1.1*(x^2+y^2)" "polynomial"
+  putStrLn "PASS Explorer polynomial qualification"
