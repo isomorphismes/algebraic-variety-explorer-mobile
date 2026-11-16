@@ -33,6 +33,7 @@ sha256sum "$compiler" "$cc1" > "$output/compiler-artifacts.sha256"
 cp "$manifest" "$output/build-toolchain.tsv"
 cp "$reference/result.tsv" "$reference/profile.tsv" "$output/reference/"
 sha256sum "$repository/native/surfer_raytracer.c" "$repository/native/surfer_raytracer.h" \
+  "$repository/native/surfer_original_specialization.inc" "$repository/native/surfer_original_camera.inc" "$repository/native/surfer_vecmath.h" "$repository/native/surfer_vecmath.c" \
   "$repository/native/surfer_antialias_test.c" "$reference/patterns.tsv" "$reference/blends.tsv" \
   "$reference/pixels.tsv" > "$output/inputs.sha256"
 var baseline = 'cfd543e1886bc6b7eb9e1ede6641569b673aac8d'
@@ -41,13 +42,13 @@ printf 'source\t%s\nbaseline\t%s\ntoolchain\tick\nfallback\tnone\n' \
 
 printf '\033[36mACTION\033[0m compare original F32 blends and complete bounded frames\n'
 "$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O2 \
-  -fno-fast-math -ffp-contract=off "$repository/native/surfer_antialias_test.c" -lm -o "$output/aa-test"
+  -fno-fast-math -ffp-contract=off "$repository/native/surfer_antialias_test.c" "$repository/native/surfer_vecmath.c" -lm -o "$output/aa-test"
 "$output/aa-test" "$reference/blends.tsv" "$reference/pixels.tsv" > "$output/numerical.txt" 2>&1
 cat "$output/numerical.txt"
 rg -x -F 'SURFER original adaptive AA colors, pixels and allocation faults: PASS' "$output/numerical.txt"
 "$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O1 -g \
   -fno-fast-math -ffp-contract=off -fsanitize=address,undefined -fno-omit-frame-pointer \
-  "$repository/native/surfer_antialias_test.c" -lm -o "$output/aa-sanitized"
+  "$repository/native/surfer_antialias_test.c" "$repository/native/surfer_vecmath.c" -lm -o "$output/aa-sanitized"
 env ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 \
   "$output/aa-sanitized" "$reference/blends.tsv" "$reference/pixels.tsv" > "$output/sanitizers.txt" 2>&1
 cat "$output/sanitizers.txt"
@@ -56,13 +57,14 @@ rg -x -F 'SURFER original adaptive AA colors, pixels and allocation faults: PASS
 proc reject_mutant(name, expression, diagnostic) {
   var destination = "$output/mutants/$name"
   mkdir -p "$destination"
-  cp "$repository/native/surfer_raytracer.h" "$repository/native/surfer_antialias_test.c" "$destination/"
+  cp "$repository/native/surfer_raytracer.h" "$repository/native/surfer_original_specialization.inc" "$repository/native/surfer_original_camera.inc" "$repository/native/surfer_vecmath.h" "$repository/native/surfer_vecmath.c" \
+    "$repository/native/surfer_antialias_test.c" "$destination/"
   sed "$expression" "$repository/native/surfer_raytracer.c" > "$destination/surfer_raytracer.c"
   try { cmp -s "$repository/native/surfer_raytracer.c" "$destination/surfer_raytracer.c" }
   var changed = _error.code
   if (changed !== 1) { echo 'FAIL mutant source missing or comparison failed' >&2; exit 1 }
   "$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O2 \
-    -fno-fast-math -ffp-contract=off "$destination/surfer_antialias_test.c" -lm -o "$destination/test"
+    -fno-fast-math -ffp-contract=off "$destination/surfer_antialias_test.c" "$repository/native/surfer_vecmath.c" -lm -o "$destination/test"
   try { "$destination/test" "$reference/blends.tsv" "$reference/pixels.tsv" > "$destination/result.txt" 2>&1 }
   var status = _error.code
   cat "$destination/result.txt"
@@ -93,7 +95,7 @@ for file in surfer_raytracer.c surfer_raytracer.h android/presets.c android/pres
 "$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O2 -DSURFER_STATUS_API \
   -fno-fast-math -ffp-contract=off -I "$repository/native" -I "$repository/native/android" \
   "$repository/native/surfer_raytracer.c" "$repository/native/android/presets.c" \
-  "$repository/native/surfer_success_oracle.c" -lm -o "$output/current-success"
+  "$repository/native/surfer_success_oracle.c" "$repository/native/surfer_vecmath.c" -lm -o "$output/current-success"
 "$output/reference-success" > "$output/reference-success.bin"
 "$output/current-success" > "$output/current-success.bin"
 cmp "$output/reference-success.bin" "$output/current-success.bin"

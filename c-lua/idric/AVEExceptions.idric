@@ -1,0 +1,73 @@
+module AVEExceptions
+
+import AVEPlatform
+
+%default covering
+
+public export data ThrowableReference : Type where [external]
+data ClassReference : Type where [external]
+
+-- Checked unit-action contracts owned by the generic exception compiler slice.
+%foreign "dex:catch-io-unit"
+catch_unit : IO () → (ThrowableReference → IO ()) → PrimIO ()
+%foreign "dex:finally-io-unit"
+finally_unit : IO () → IO () → PrimIO ()
+%foreign "dex:throw-throwable"
+throw_unit : ThrowableReference → PrimIO ()
+
+export
+protect : IO () → (ThrowableReference → IO ()) → IO ()
+protect action handler = primIO (catch_unit action handler)
+export
+always : IO () → IO () → IO ()
+always action cleanup = primIO (finally_unit action cleanup)
+export
+raise : ThrowableReference → IO ()
+raise error = primIO (throw_unit error)
+
+%foreign "dex:cast:Ljava/lang/Throwable;:Ljava/lang/Object;"
+throwable_object : ThrowableReference → ObjectReference
+%foreign "dex:virtual:Ljava/lang/Throwable;:getCause:()Ljava/lang/Throwable;"
+exception_cause : ThrowableReference → PrimIO ThrowableReference
+%foreign "dex:virtual:Ljava/lang/Throwable;:getMessage:()Ljava/lang/String;"
+exception_message : ThrowableReference → PrimIO Text
+%foreign "dex:virtual:Ljava/lang/Throwable;:getClass:()Ljava/lang/Class;"
+exception_class : ThrowableReference → PrimIO ClassReference
+%foreign "dex:virtual:Ljava/lang/Class;:getSimpleName:()Ljava/lang/String;"
+simple_class_name : ClassReference → PrimIO Text
+%foreign "dex:static:Landroid/text/TextUtils;:isEmpty:(Ljava/lang/CharSequence;)Z"
+empty_text : Text → Int32
+
+root_cause : ThrowableReference → IO ThrowableReference
+root_cause error = do
+  next ← primIO (exception_cause error)
+  if reference_is_null (throwable_object next) ≟ 1 then pure error else root_cause next
+
+export
+useful_message : ThrowableReference → IO Text
+useful_message error = do
+  root ← root_cause error
+  message ← primIO (exception_message root)
+  let absent = empty_text message ≟ 1
+  let blank = if absent then True else empty_text (trim_formula message) ≟ 1
+  case blank of
+    True ⇒ do
+      kind ← primIO (exception_class root)
+      primIO (simple_class_name kind)
+    False ⇒ pure message
+
+export
+%foreign "dex:static:Landroid/util/Log;:getStackTraceString:(Ljava/lang/Throwable;)Ljava/lang/String;"
+stack_trace : ThrowableReference → PrimIO Text
+export
+%foreign "dex:virtual:Ljava/lang/Throwable;:addSuppressed:(Ljava/lang/Throwable;)V"
+add_suppressed : ThrowableReference → ThrowableReference → PrimIO ()
+
+export
+uninitialized_activity_field : ThrowableReference → IO Bool
+uninitialized_activity_field error = do
+  kind ← primIO (exception_class error)
+  name ← primIO (simple_class_name kind)
+  message ← primIO (exception_message error)
+  pure (name ≟ "NullPointerException" && empty_text message ≟ 0 &&
+    message ≟ "Idriç Activity field 'state' is uninitialized")

@@ -1,0 +1,367 @@
+module AVEPlatform
+
+import AVEInteraction
+import RenderedBitmap
+
+-- Each domain has one platform descriptor. Explicit checked casts express
+-- Android inheritance/interface use rather than changing the domain's owner.
+public export data ActivityReference : Type where [external]
+public export data ContextReference : Type where [external]
+public export data ResourcesReference : Type where [external]
+public export data ViewReference : Type where [external]
+public export data EditTextReference : Type where [external]
+public export data TextViewReference : Type where [external]
+public export data ImageViewReference : Type where [external]
+public export data EditableReference : Type where [external]
+public export data ObjectReference : Type where [external]
+public export data KeyEventReference : Type where [external]
+public export data MotionEventReference : Type where [external]
+public export data ScaleDetectorReference : Type where [external]
+public export data InsetsReference : Type where [external]
+public export data ClickListenerReference : Type where [external]
+public export data EditorListenerReference : Type where [external]
+public export data TouchListenerReference : Type where [external]
+public export data InsetsListenerReference : Type where [external]
+public export data LayoutListenerReference : Type where [external]
+public export data ScaleListenerReference : Type where [external]
+public export data DialogListenerReference : Type where [external]
+public export data DialogReference : Type where [external]
+public export data DialogBuilderReference : Type where [external]
+public export data AlertDialogReference : Type where [external]
+public export data KeyboardReference : Type where [external]
+public export data WindowTokenReference : Type where [external]
+public export data IntentReference : Type where [external]
+public export data UriReference : Type where [external]
+public export data BundleReference : Type where [external]
+public export data RunnableReference : Type where [external]
+public export data ExecutorReference : Type where [external]
+public export data PlatformListReference : Type where [external]
+public export data FutureReference : Type where [external]
+data ScrollReference : Type where [external]
+data FrameParameters : Type where [external]
+data ViewParameters : Type where [external]
+data MetricsReference : Type where [external]
+
+export
+%foreign "dex:cast:Landroid/app/Activity;:Landroid/content/Context;"
+activity_context : ActivityReference → ContextReference
+export
+%foreign "dex:cast:Landroid/view/View;:Landroid/widget/EditText;"
+as_edit_text : ViewReference → EditTextReference
+export
+%foreign "dex:cast:Landroid/view/View;:Landroid/widget/TextView;"
+as_text_view : ViewReference → TextViewReference
+export
+%foreign "dex:cast:Landroid/view/View;:Landroid/widget/ImageView;"
+as_image_view : ViewReference → ImageViewReference
+export
+%foreign "dex:cast:Landroid/widget/EditText;:Landroid/widget/TextView;"
+edit_text_view : EditTextReference → TextViewReference
+export
+%foreign "dex:cast:Landroid/widget/EditText;:Landroid/view/View;"
+edit_view : EditTextReference → ViewReference
+export
+%foreign "dex:cast:Landroid/widget/ImageView;:Landroid/view/View;"
+image_view : ImageViewReference → ViewReference
+export
+%foreign "dex:cast:Landroid/text/Editable;:Ljava/lang/Object;"
+editable_object : EditableReference → ObjectReference
+export
+%foreign "dex:cast:Landroid/view/KeyEvent;:Ljava/lang/Object;"
+key_event_object : KeyEventReference → ObjectReference
+export
+%foreign "dex:cast:Landroid/content/Intent;:Ljava/lang/Object;"
+intent_object : IntentReference → ObjectReference
+export
+%foreign "dex:cast:Landroid/net/Uri;:Ljava/lang/Object;"
+uri_object : UriReference → ObjectReference
+export
+%foreign "dex:cast:Landroid/os/Bundle;:Ljava/lang/Object;"
+bundle_object : BundleReference → ObjectReference
+export
+%foreign "dex:cast:Landroid/content/DialogInterface;:Ljava/lang/Object;"
+dialog_object : DialogReference → ObjectReference
+
+-- API23-safe checked reference intrinsic; platform nulls never become a
+-- source ADT or an apparently initialized state cell.
+export
+%foreign "dex:reference-is-null"
+reference_is_null : ObjectReference → Int32
+
+export
+%foreign "dex:virtual:Landroid/app/Activity;:getResources:()Landroid/content/res/Resources;"
+activity_resources : ActivityReference → PrimIO ResourcesReference
+export
+%foreign "dex:virtual:Landroid/app/Activity;:getPackageName:()Ljava/lang/String;"
+activity_package : ActivityReference → PrimIO Text
+export
+%foreign "dex:virtual:Landroid/content/res/Resources;:getIdentifier:(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I"
+resource_identifier : ResourcesReference → Text → Text → Text → PrimIO Int32
+export
+%foreign "dex:virtual:Landroid/content/res/Resources;:getString:(I)Ljava/lang/String;"
+resource_text : ResourcesReference → Int32 → PrimIO Text
+export
+%foreign "dex:virtual:Landroid/app/Activity;:setContentView:(I)V"
+set_content_layout : ActivityReference → Int32 → PrimIO ()
+export
+%foreign "dex:virtual:Landroid/app/Activity;:findViewById:(I)Landroid/view/View;"
+find_view : ActivityReference → Int32 → PrimIO ViewReference
+export
+%foreign "dex:virtual:Ljava/lang/Object;:toString:()Ljava/lang/String;"
+object_text : ObjectReference → PrimIO Text
+export
+%foreign "dex:virtual:Ljava/lang/String;:trim:()Ljava/lang/String;"
+trim_formula : Text → Text
+
+export
+%foreign "dex:virtual:Landroid/widget/EditText;:getText:()Landroid/text/Editable;"
+editor_contents : EditTextReference → PrimIO EditableReference
+export
+%foreign "dex:virtual:Landroid/widget/TextView;:setText:(Ljava/lang/CharSequence;)V"
+set_text : TextViewReference → Text → PrimIO ()
+export
+%foreign "dex:virtual:Landroid/widget/ImageView;:setImageBitmap:(Landroid/graphics/Bitmap;)V"
+set_bitmap : ImageViewReference → RenderedBitmap → PrimIO ()
+export
+%foreign "dex:virtual:Landroid/view/View;:getWidth:()I"
+view_width : ViewReference → PrimIO Int32
+export
+%foreign "dex:virtual:Landroid/view/View;:getHeight:()I"
+view_height : ViewReference → PrimIO Int32
+export
+%foreign "dex:virtual:Landroid/view/View;:getId:()I"
+view_identity : ViewReference → PrimIO Int32
+export
+%foreign "dex:virtual:Landroid/view/View;:getPaddingLeft:()I"
+padding_left : ViewReference → PrimIO Int32
+export
+%foreign "dex:virtual:Landroid/view/View;:getPaddingTop:()I"
+padding_top : ViewReference → PrimIO Int32
+export
+%foreign "dex:virtual:Landroid/view/View;:getPaddingRight:()I"
+padding_right : ViewReference → PrimIO Int32
+export
+%foreign "dex:virtual:Landroid/view/View;:getPaddingBottom:()I"
+padding_bottom : ViewReference → PrimIO Int32
+export
+%foreign "dex:virtual:Landroid/view/View;:setPadding:(IIII)V"
+set_padding : ViewReference → Int32 → Int32 → Int32 → Int32 → PrimIO ()
+export
+%foreign "dex:virtual:Landroid/view/View;:requestApplyInsets:()V"
+request_insets : ViewReference → PrimIO ()
+export
+%foreign "dex:virtual:Landroid/view/View;:clearFocus:()V"
+clear_focus : ViewReference → PrimIO ()
+export
+%foreign "dex:virtual:Landroid/view/View;:performClick:()Z"
+perform_click : ViewReference → PrimIO Int32
+export
+%foreign "dex:virtual:Landroid/view/View;:setClickable:(Z)V"
+set_clickable : ViewReference → Int32 → PrimIO ()
+
+export
+%foreign "dex:cast:Landroid/app/Activity;:Landroid/view/View$OnClickListener;"
+click_listener : ActivityReference → ClickListenerReference
+export
+%foreign "dex:cast:Landroid/app/Activity;:Landroid/widget/TextView$OnEditorActionListener;"
+editor_listener : ActivityReference → EditorListenerReference
+export
+%foreign "dex:cast:Landroid/app/Activity;:Landroid/view/View$OnTouchListener;"
+touch_listener : ActivityReference → TouchListenerReference
+export
+%foreign "dex:cast:Landroid/app/Activity;:Landroid/view/View$OnApplyWindowInsetsListener;"
+insets_listener : ActivityReference → InsetsListenerReference
+export
+%foreign "dex:cast:Landroid/app/Activity;:Landroid/view/View$OnLayoutChangeListener;"
+layout_listener : ActivityReference → LayoutListenerReference
+export
+%foreign "dex:cast:Landroid/app/Activity;:Landroid/view/ScaleGestureDetector$OnScaleGestureListener;"
+scale_listener : ActivityReference → ScaleListenerReference
+export
+%foreign "dex:cast:Landroid/app/Activity;:Landroid/content/DialogInterface$OnClickListener;"
+dialog_listener : ActivityReference → DialogListenerReference
+export
+%foreign "dex:virtual:Landroid/view/View;:setOnClickListener:(Landroid/view/View$OnClickListener;)V"
+set_click_listener : ViewReference → ClickListenerReference → PrimIO ()
+export
+%foreign "dex:virtual:Landroid/widget/TextView;:setOnEditorActionListener:(Landroid/widget/TextView$OnEditorActionListener;)V"
+set_editor_listener : TextViewReference → EditorListenerReference → PrimIO ()
+export
+%foreign "dex:virtual:Landroid/view/View;:setOnTouchListener:(Landroid/view/View$OnTouchListener;)V"
+set_touch_listener : ViewReference → TouchListenerReference → PrimIO ()
+export
+%foreign "dex:virtual:Landroid/view/View;:setOnApplyWindowInsetsListener:(Landroid/view/View$OnApplyWindowInsetsListener;)V"
+set_insets_listener : ViewReference → InsetsListenerReference → PrimIO ()
+export
+%foreign "dex:virtual:Landroid/view/View;:addOnLayoutChangeListener:(Landroid/view/View$OnLayoutChangeListener;)V"
+add_layout_listener : ViewReference → LayoutListenerReference → PrimIO ()
+
+export
+%foreign "dex:virtual:Landroid/view/WindowInsets;:getStableInsetLeft:()I"
+inset_left : InsetsReference → PrimIO Int32
+export
+%foreign "dex:virtual:Landroid/view/WindowInsets;:getStableInsetTop:()I"
+inset_top : InsetsReference → PrimIO Int32
+export
+%foreign "dex:virtual:Landroid/view/WindowInsets;:getStableInsetRight:()I"
+inset_right : InsetsReference → PrimIO Int32
+export
+%foreign "dex:virtual:Landroid/view/WindowInsets;:getStableInsetBottom:()I"
+inset_bottom : InsetsReference → PrimIO Int32
+export
+%foreign "dex:virtual:Landroid/view/KeyEvent;:getKeyCode:()I"
+key_code : KeyEventReference → PrimIO Int32
+export
+%foreign "dex:virtual:Landroid/view/KeyEvent;:getAction:()I"
+key_action : KeyEventReference → PrimIO Int32
+export
+%foreign "dex:virtual:Landroid/view/MotionEvent;:getActionMasked:()I"
+motion_action : MotionEventReference → PrimIO Int32
+export
+%foreign "dex:virtual:Landroid/view/MotionEvent;:getPointerCount:()I"
+pointer_count : MotionEventReference → PrimIO Int32
+export
+%foreign "dex:virtual:Landroid/view/MotionEvent;:getX:()F"
+motion_x : MotionEventReference → PrimIO CoordinateFloat
+export
+%foreign "dex:virtual:Landroid/view/MotionEvent;:getY:()F"
+motion_y : MotionEventReference → PrimIO CoordinateFloat
+export
+%foreign "dex:construct:Landroid/view/ScaleGestureDetector;:<init>:(Landroid/content/Context;Landroid/view/ScaleGestureDetector$OnScaleGestureListener;)V"
+create_scale_detector : ContextReference → ScaleListenerReference → PrimIO ScaleDetectorReference
+export
+%foreign "dex:virtual:Landroid/view/ScaleGestureDetector;:onTouchEvent:(Landroid/view/MotionEvent;)Z"
+scale_touch_event : ScaleDetectorReference → MotionEventReference → PrimIO Int32
+export
+%foreign "dex:virtual:Landroid/view/ScaleGestureDetector;:isInProgress:()Z"
+scale_in_progress : ScaleDetectorReference → PrimIO Int32
+export
+%foreign "dex:virtual:Landroid/view/ScaleGestureDetector;:getScaleFactor:()F"
+scale_factor : ScaleDetectorReference → PrimIO CoordinateFloat
+
+export
+%foreign "dex:virtual:Landroid/app/Activity;:getSystemService:(Ljava/lang/String;)Ljava/lang/Object;"
+system_service : ActivityReference → Text → PrimIO ObjectReference
+export
+%foreign "dex:cast:Ljava/lang/Object;:Landroid/view/inputmethod/InputMethodManager;"
+as_keyboard : ObjectReference → KeyboardReference
+export
+%foreign "dex:virtual:Landroid/view/View;:getWindowToken:()Landroid/os/IBinder;"
+window_token : ViewReference → PrimIO WindowTokenReference
+export
+%foreign "dex:virtual:Landroid/view/inputmethod/InputMethodManager;:hideSoftInputFromWindow:(Landroid/os/IBinder;I)Z"
+hide_keyboard : KeyboardReference → WindowTokenReference → Int32 → PrimIO Int32
+
+export
+%foreign "dex:capture-runnable"
+capture_runnable : IO () → PrimIO RunnableReference
+export
+%foreign "dex:virtual:Landroid/view/View;:post:(Ljava/lang/Runnable;)Z"
+post_view : ViewReference → RunnableReference → PrimIO Int32
+export
+%foreign "dex:virtual:Landroid/app/Activity;:runOnUiThread:(Ljava/lang/Runnable;)V"
+post_ui : ActivityReference → RunnableReference → PrimIO ()
+export
+%foreign "dex:static:Ljava/util/concurrent/Executors;:newSingleThreadExecutor:()Ljava/util/concurrent/ExecutorService;"
+single_worker : PrimIO ExecutorReference
+export
+%foreign "dex:interface:Ljava/util/concurrent/ExecutorService;:execute:(Ljava/lang/Runnable;)V"
+execute_worker : ExecutorReference → RunnableReference → PrimIO ()
+export
+%foreign "dex:interface:Ljava/util/concurrent/ExecutorService;:submit:(Ljava/lang/Runnable;)Ljava/util/concurrent/Future;"
+submit_worker : ExecutorReference → RunnableReference → PrimIO FutureReference
+export
+%foreign "dex:interface:Ljava/util/concurrent/Future;:isDone:()Z"
+worker_done : FutureReference → PrimIO Int32
+export
+%foreign "dex:interface:Ljava/util/concurrent/ExecutorService;:shutdownNow:()Ljava/util/List;"
+close_worker : ExecutorReference → PrimIO PlatformListReference
+export
+%foreign "dex:static:Landroid/os/SystemClock;:uptimeMillis:()J"
+uptime : PrimIO Int64
+export
+%foreign "dex:static:Landroid/os/SystemClock;:elapsedRealtime:()J"
+elapsed_time : PrimIO Int64
+
+export
+%foreign "dex:construct:Landroid/app/AlertDialog$Builder;:<init>:(Landroid/content/Context;)V"
+create_dialog : ContextReference → PrimIO DialogBuilderReference
+export
+%foreign "dex:virtual:Landroid/app/AlertDialog$Builder;:setTitle:(I)Landroid/app/AlertDialog$Builder;"
+dialog_title : DialogBuilderReference → Int32 → PrimIO DialogBuilderReference
+export
+%foreign "dex:virtual:Landroid/app/AlertDialog$Builder;:setMessage:(I)Landroid/app/AlertDialog$Builder;"
+dialog_message : DialogBuilderReference → Int32 → PrimIO DialogBuilderReference
+export
+%foreign "dex:virtual:Landroid/app/AlertDialog$Builder;:setItems:(ILandroid/content/DialogInterface$OnClickListener;)Landroid/app/AlertDialog$Builder;"
+dialog_items : DialogBuilderReference → Int32 → DialogListenerReference → PrimIO DialogBuilderReference
+export
+%foreign "dex:virtual:Landroid/app/AlertDialog$Builder;:setPositiveButton:(ILandroid/content/DialogInterface$OnClickListener;)Landroid/app/AlertDialog$Builder;"
+dialog_positive : DialogBuilderReference → Int32 → DialogListenerReference → PrimIO DialogBuilderReference
+export
+%foreign "dex:virtual:Landroid/app/AlertDialog$Builder;:show:()Landroid/app/AlertDialog;"
+show_dialog : DialogBuilderReference → PrimIO AlertDialogReference
+
+export
+%foreign "dex:virtual:Landroid/os/Bundle;:getString:(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;"
+bundle_text : BundleReference → Text → Text → PrimIO Text
+export
+%foreign "dex:virtual:Landroid/os/Bundle;:getDouble:(Ljava/lang/String;D)D"
+bundle_double : BundleReference → Text → Double → PrimIO Double
+export
+%foreign "dex:virtual:Landroid/os/Bundle;:putString:(Ljava/lang/String;Ljava/lang/String;)V"
+put_bundle_text : BundleReference → Text → Text → PrimIO ()
+export
+%foreign "dex:virtual:Landroid/os/Bundle;:putDouble:(Ljava/lang/String;D)V"
+put_bundle_double : BundleReference → Text → Double → PrimIO ()
+
+%foreign "dex:construct:Landroid/widget/ScrollView;:<init>:(Landroid/content/Context;)V"
+new_scroll : ContextReference → PrimIO ScrollReference
+%foreign "dex:construct:Landroid/widget/TextView;:<init>:(Landroid/content/Context;)V"
+new_text_view : ContextReference → PrimIO TextViewReference
+%foreign "dex:cast:Landroid/widget/ScrollView;:Landroid/view/View;"
+scroll_view : ScrollReference → ViewReference
+%foreign "dex:cast:Landroid/widget/TextView;:Landroid/view/View;"
+text_view : TextViewReference → ViewReference
+%foreign "dex:virtual:Landroid/widget/TextView;:setTextColor:(I)V"
+text_color : TextViewReference → Int32 → PrimIO ()
+%foreign "dex:virtual:Landroid/widget/TextView;:setTextIsSelectable:(Z)V"
+selectable_text : TextViewReference → Int32 → PrimIO ()
+%foreign "dex:virtual:Landroid/view/View;:setBackgroundColor:(I)V"
+background_color : ViewReference → Int32 → PrimIO ()
+%foreign "dex:construct:Landroid/widget/FrameLayout$LayoutParams;:<init>:(II)V"
+frame_parameters : Int32 → Int32 → PrimIO FrameParameters
+%foreign "dex:cast:Landroid/widget/FrameLayout$LayoutParams;:Landroid/view/ViewGroup$LayoutParams;"
+view_parameters : FrameParameters → ViewParameters
+%foreign "dex:virtual:Landroid/widget/ScrollView;:addView:(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V"
+add_report : ScrollReference → ViewReference → ViewParameters → PrimIO ()
+%foreign "dex:virtual:Landroid/app/Activity;:setContentView:(Landroid/view/View;)V"
+set_content_view : ActivityReference → ViewReference → PrimIO ()
+%foreign "dex:virtual:Landroid/content/res/Resources;:getDisplayMetrics:()Landroid/util/DisplayMetrics;"
+display_metrics : ResourcesReference → PrimIO MetricsReference
+%foreign "dex:static:Ljava/lang/Float;:intBitsToFloat:(I)F"
+float_value : Int32 → CoordinateFloat
+%foreign "dex:static:Landroid/util/TypedValue;:applyDimension:(IFLandroid/util/DisplayMetrics;)F"
+dimension_pixels : Int32 → CoordinateFloat → MetricsReference → CoordinateFloat
+%foreign "dex:static:Ljava/lang/Math;:round:(F)I"
+round_pixels : CoordinateFloat → Int32
+
+export
+startup_text : ActivityReference → Text → IO ViewReference
+startup_text activity diagnostic = do
+  scroller ← primIO (new_scroll (activity_context activity))
+  report ← primIO (new_text_view (activity_context activity))
+  resources ← primIO (activity_resources activity)
+  metrics ← primIO (display_metrics resources)
+  let padding = round_pixels (dimension_pixels 1 (float_value 0x41800000) metrics)
+  primIO (set_padding (text_view report) padding padding padding padding)
+  primIO (text_color report 0xfff3f1ed)
+  primIO (background_color (text_view report) 0xff13161b)
+  primIO (selectable_text report 1)
+  primIO (set_text report ("Algebraic Variety Explorer could not start.\n\n" ++
+    "This diagnostic replaces Android’s unhelpful crash message. " ++
+    "Please send a screenshot of the text below.\n\n" ++ diagnostic))
+  layout_parameters ← primIO (frame_parameters (-1) (-2))
+  primIO (add_report scroller (text_view report) (view_parameters layout_parameters))
+  primIO (set_content_view activity (scroll_view scroller))
+  pure (scroll_view scroller)

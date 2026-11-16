@@ -64,7 +64,14 @@ printf '\033[36mACTION\033[0m compile actual native render and ownership sources
 printf 'application\t%s\nick\t%s\nabi\t%s\nminimum_API\t23\nNDK\t29.0.14206865\n' \
   $(git -C "$repository" rev-parse HEAD) $(git -C "$ick_source" rev-parse HEAD) "$abi" > "$output/inputs.tsv"
 sha256sum "$compiler" "$cc1" "$linker" > "$output/toolchain.sha256"
-var sources = ['native/surfer_raytracer.c', 'native/surfer_surface_store.c',
+sha256sum "$repository/native/surfer_raytracer.h" \
+  "$repository/native/surfer_original_specialization.inc" \
+  "$repository/native/surfer_original_camera.inc" "$repository/native/surfer_vecmath.h" \
+  "$repository/native/surfer_surface_store.h" "$repository/native/surfer_frame_output.h" \
+  "$repository/native/surfer_render_session.h" "$repository/native/android/prepared_surface_jni.h" \
+  "$repository/native/android/render_surface_jni.h" "$repository/native/android/render_session_jni.h" \
+  > "$output/native-headers.sha256"
+var sources = ['native/surfer_raytracer.c', 'native/surfer_vecmath.c', 'native/surfer_surface_store.c',
   'native/surfer_frame_output.c', 'native/surfer_render_session.c',
   'native/android/prepared_surface_jni.c', 'native/android/render_surface_jni.c',
   'native/android/render_session_jni.c']
@@ -75,7 +82,7 @@ for source in (sources) {
   "$compiler" @flags --sysroot="$sysroot" -isystem "$sysroot/usr/include" \
     -isystem "$sysroot/usr/include/$include" -I "$repository/native" \
     -D__ANDROID__ -D__ANDROID_API__=23 -DBIONIC_IOCTL_NO_SIGNEDNESS_OVERLOAD \
-    -std=c17 -Wall -Wextra -Werror -pedantic -O2 -fPIC -fno-stack-protector \
+    -std=c17 -Wall -Wextra -Werror -pedantic -O2 -fPIC -fvisibility=hidden -fno-stack-protector \
     -fno-fast-math -ffp-contract=off -c "$repository/$source" -o "$object"
   call objects->append(object)
 }
@@ -84,11 +91,11 @@ try { rg '__atomic_|__sync_|__stack_chk' "$output/object-imports.txt" }
 if (_error.code !== 1) { echo 'FAIL undeclared atomic/stack runtime import or checker failure' >&2; exit 1 }
 # Platform linking receives only the objects just compiled by ICK.
 "$linker" -shared -Wl,-z,defs -Wl,-z,relro -Wl,-z,now -Wl,-z,max-page-size=16384 \
-  -Wl,-soname,libave_prepared_surface.so @objects -lm -o "$output/libave_prepared_surface.so"
-"$readelf" -h -lW -d "$output/libave_prepared_surface.so" > "$output/elf.txt"
+  -Wl,-soname,libave.so @objects -lm -o "$output/libave.so"
+"$readelf" -h -lW -d "$output/libave.so" > "$output/elf.txt"
 rg -F "Machine:                           $machine" "$output/elf.txt"
-"$nm" -D --defined-only "$output/libave_prepared_surface.so" > "$output/exports.txt"
-"$nm" -D --undefined-only "$output/libave_prepared_surface.so" > "$output/imports.txt"
+"$nm" -D --defined-only "$output/libave.so" > "$output/exports.txt"
+"$nm" -D --undefined-only "$output/libave.so" > "$output/imports.txt"
 for method in copyPreparedSurface replacePreparedSurface releasePreparedSurface renderPreparedSurface \
   createRenderSession beginRenderEpoch isRenderEpochCurrent cancelRenderSession releaseRenderSession renderSessionSurface {
   rg -e " Java_Idric_Generated_$method\$" "$output/exports.txt"
@@ -97,6 +104,6 @@ try { rg '__atomic_|__sync_|__stack_chk|libatomic' "$output/imports.txt" "$outpu
 if (_error.code !== 1) { echo 'FAIL undeclared linked runtime import or checker failure' >&2; exit 1 }
 try { rg 'surfer_(surface|frame|render|session)_.*test|Java_(CopiedSurface|RenderPixel|RenderSession)Observer' "$output/exports.txt" }
 if (_error.code !== 1) { echo 'FAIL production cross-build contains test symbols or checker failed' >&2; exit 1 }
-sha256sum @objects "$output/libave_prepared_surface.so" > "$output/artifacts.sha256"
-printf 'production_ICK_cross_compile\tPASS\nAPI23_link\tPASS\nABI\t%s\natomic_imports\tNONE\nproduction_test_symbols\tNONE\nART\tNOT_RUN\nAPK\tNOT_RUN\nphysical_device\tNOT_RUN\n' "$abi" > "$output/result.tsv"
+sha256sum @objects "$output/libave.so" > "$output/artifacts.sha256"
+printf 'production_ICK_cross_compile\tPASS\nAPI23_link\tPASS\nABI\t%s\natomic_imports\tNONE\nobserver_and_registry_test_symbols\tNONE\nART\tNOT_RUN\nAPK\tNOT_RUN\nphysical_device\tNOT_RUN\n' "$abi" > "$output/result.tsv"
 printf '\033[32mPASS\033[0m actual production native render sources for %s; target execution separate\n' "$abi"

@@ -18,6 +18,7 @@ var cc1 = $("$compiler" -print-prog-name=cc1)
 test -x "$cc1"
 sha256sum "$compiler" "$cc1" > "$output/compiler.sha256"
 sha256sum "$repository/native/surfer_frame_output.c" "$repository/native/surfer_frame_output.h" \
+  "$repository/native/surfer_original_specialization.inc" "$repository/native/surfer_original_camera.inc" "$repository/native/surfer_vecmath.h" "$repository/native/surfer_vecmath.c" \
   "$repository/native/surfer_frame_output_test.c" "$repository/native/surfer_surface_store.c" \
   "$repository/native/surfer_surface_store.h" "$repository/native/surfer_raytracer.c" \
   "$repository/native/surfer_raytracer.h" > "$output/sources.sha256"
@@ -26,7 +27,7 @@ proc compile_frame(source, destination) {
     -fno-fast-math -ffp-contract=off -DSURFER_FRAME_OUTPUT_TESTING -DSURFER_SURFACE_STORE_TESTING \
     -I "$repository/native" "$source" "$repository/native/surfer_frame_output_test.c" \
     "$repository/native/surfer_surface_store.c" "$repository/native/surfer_raytracer.c" \
-    -lm -pthread -o "$destination"
+    "$repository/native/surfer_vecmath.c" -lm -pthread -o "$destination"
 }
 compile_frame "$repository/native/surfer_frame_output.c" "$output/frame-test"
 "$output/frame-test" > "$output/test.txt" 2>&1
@@ -56,7 +57,7 @@ rg -x -F 'FAIL copied render pixels: exact Android row reversal' "$output/qualit
   -fsanitize=address,undefined -fno-omit-frame-pointer \
   "$repository/native/surfer_frame_output.c" "$repository/native/surfer_frame_output_test.c" \
   "$repository/native/surfer_surface_store.c" "$repository/native/surfer_raytracer.c" \
-  -lm -pthread -o "$output/frame-sanitized-test"
+  "$repository/native/surfer_vecmath.c" -lm -pthread -o "$output/frame-sanitized-test"
 env ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 \
   "$output/frame-sanitized-test" > "$output/sanitized-test.txt" 2>&1
 cat "$output/sanitized-test.txt"

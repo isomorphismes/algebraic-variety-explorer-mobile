@@ -1,0 +1,120 @@
+module AVEActivityState
+
+import Data.IORef
+import AVEPlatform
+import AVEInteraction
+import RenderSession
+import RenderedBitmap
+import PreparedSurfaceTransfer
+import OrderedExpansion
+import AVEExceptions
+
+%default covering
+
+public export
+record ControlIdentifiers where
+  constructor ControlIds
+  render : Int32
+  examples : Int32
+  save : Int32
+  about : Int32
+  rendering_status : Int32
+  complete_status : Int32
+  invalid_formula : Int32
+  examples_title : Int32
+  example_names : Int32
+  about_title : Int32
+  about_body : Int32
+  positive_ok : Int32
+  save_success : Int32
+  save_failed : Int32
+  nothing_to_save : Int32
+
+public export
+record Controls where
+  constructor BoundControls
+  root : ViewReference
+  image : ImageViewReference
+  editor : EditTextReference
+  status : TextViewReference
+  resources : ResourcesReference
+  identifiers : ControlIdentifiers
+  scale_detector : ScaleDetectorReference
+  base_left : Int32
+  base_top : Int32
+  base_right : Int32
+  base_bottom : Int32
+
+public export
+record RenderRequest where
+  constructor ImmutableRequest
+  epoch : RenderEpoch
+  formula : Text
+  settings : RenderSettings
+  preparation_limits : ExpansionLimits
+
+public export
+record AcceptedFrame where
+  constructor DisplayedFrame
+  formula : Text
+  surface : NativeSurface
+  bitmap : RenderedBitmap
+  degree : Int32
+  elapsed_milliseconds : Int64
+
+public export
+record ActivityState where
+  constructor LiveActivity
+  controls : Controls
+  interaction : InteractionState
+  session : RenderSession
+  render_worker : ExecutorReference
+  file_worker : ExecutorReference
+  preparation_limits : ExpansionLimits
+  accepted : Maybe AcceptedFrame
+  pending_bitmap_to_save : Maybe RenderedBitmap
+  active_request : Maybe RenderRequest
+  active_future : Maybe FutureReference
+  pending_request : Maybe RenderRequest
+  closed : Bool
+
+public export
+data ActivityPhase = Starting | Ready (IORef ActivityState)
+  | Diagnostic Int32 Int32 Int32 Int32 | Closed
+
+-- Initialized before widgets, native session or executors are acquired. The
+-- Ready cell exists only after successful acquisition; no fake references fill
+-- a partially initialized ActivityState.
+export
+%extern
+read_activity_phase : ActivityReference → PrimIO (IORef ActivityPhase)
+
+export
+%extern
+write_activity_phase : ActivityReference → IORef ActivityPhase → PrimIO ()
+
+export
+activity_phase : ActivityReference → IO (Maybe (IORef ActivityPhase))
+activity_phase activity = do
+  observed ← newIORef Nothing
+  protect (do cell ← primIO (read_activity_phase activity); writeIORef observed (Just cell))
+    (\error ⇒ do
+      missing ← uninitialized_activity_field error
+      if missing then pure () else raise error)
+  readIORef observed
+
+export
+activity_state : ActivityReference → IO (Maybe (IORef ActivityState))
+activity_state activity = do
+  phase ← activity_phase activity
+  case phase of
+    Nothing ⇒ pure Nothing
+    Just cell ⇒ do
+      current ← readIORef cell
+      pure (case current of Ready state ⇒ Just state; _ ⇒ Nothing)
+
+export
+mark_activity_closed : ActivityReference → IO ()
+mark_activity_closed activity = do
+  phase ← activity_phase activity
+  case phase of Nothing ⇒ pure (); Just cell ⇒ writeIORef cell Closed

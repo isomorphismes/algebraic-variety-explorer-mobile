@@ -1,0 +1,139 @@
+module AVEInteraction
+
+import public RenderQuality
+
+-- Opaque binary32 values shared with the Activity's typed Android bindings.
+-- Arithmetic and widening are private operations on this exact source domain.
+export
+data CoordinateFloat : Type where [external]
+
+%foreign "dex:static:Ljava/lang/Float;:intBitsToFloat:(I)F"
+float_from_bits : Int32 → CoordinateFloat
+
+%foreign "dex:float32:subtract"
+subtract_coordinates : CoordinateFloat → CoordinateFloat → CoordinateFloat
+
+%foreign "dex:virtual:Ljava/lang/Float;:doubleValue:()D"
+widen_coordinate : CoordinateFloat → Double
+
+%foreign "dex:static:Ljava/lang/Math;:min:(DD)D"
+minimum_double : Double → Double → Double
+
+%foreign "dex:static:Ljava/lang/Math;:max:(DD)D"
+maximum_double : Double → Double → Double
+
+%foreign "dex:static:Ljava/lang/Math;:round:(D)J"
+round_dimension : Double → Int64
+
+public export
+record Orientation where
+  constructor CameraOrientation
+  yaw : Double
+  pitch : Double
+  zoom : Double
+
+public export
+record InteractionState where
+  constructor ViewInteraction
+  camera : Orientation
+  previous_coordinates : Maybe (CoordinateFloat, CoordinateFloat)
+  last_interactive_render_at : Int64
+
+public export
+record RenderSize where
+  constructor SizedRender
+  pixel_width : Int32
+  pixel_height : Int32
+
+public export
+record ViewChange where
+  constructor ChangedView
+  changed_camera : Orientation
+  quality : RenderQuality
+  gesture_finished : Bool
+
+export
+initial_orientation : Orientation
+initial_orientation = CameraOrientation 0.55 (-0.35) 1.0
+
+export
+initial_interaction : InteractionState
+initial_interaction = ViewInteraction initial_orientation Nothing 0
+
+-- resetView preserves both previous coordinates and notification time.
+-- Its caller delivers the same unconditional final notification as touch end.
+export
+reset_view : InteractionState → InteractionState
+reset_view state = { camera := initial_orientation } state
+
+export
+touch_down : CoordinateFloat → CoordinateFloat → InteractionState → InteractionState
+touch_down x y state = { previous_coordinates := Just (x, y) } state
+
+clamp : Double → Double → Double → Double
+clamp value minimum maximum = maximum_double minimum (minimum_double maximum value)
+
+rotate_from_drag : Int32 → Int32 → CoordinateFloat → CoordinateFloat →
+                   InteractionState → InteractionState
+rotate_from_drag width height x y state =
+  let (previous_x, previous_y) = case state.previous_coordinates of
+        Just previous ⇒ previous
+        Nothing ⇒ (float_from_bits 0, float_from_bits 0)
+      delta_x = widen_coordinate (subtract_coordinates x previous_x)
+      delta_y = widen_coordinate (subtract_coordinates y previous_y)
+      safe_width = maximum_double 1.0 (cast width)
+      safe_height = maximum_double 1.0 (cast height)
+      next_yaw = state.camera.yaw + delta_x * 3.141592653589793 * 1.5 / safe_width
+      next_pitch = state.camera.pitch + delta_y * 3.141592653589793 * 1.5 / safe_height
+      camera = CameraOrientation next_yaw (clamp next_pitch (-1.45) 1.45) state.camera.zoom
+  in { camera := camera } state
+
+-- The Bool says whether rotateFromDrag attempted an interactive notification.
+-- Every MOVE saves the sample, including moves blocked by scale/multitouch.
+export
+touch_move : Int32 → Bool → Int32 → Int32 → CoordinateFloat → CoordinateFloat →
+             InteractionState → (InteractionState, Bool)
+touch_move pointer_count scale_in_progress width height x y state =
+  let rotating = pointer_count ≟ 1 && not scale_in_progress
+      moved = if rotating then rotate_from_drag width height x y state else state
+  in (touch_down x y moved, rotating)
+
+export
+scale_view : CoordinateFloat → InteractionState → InteractionState
+scale_view factor state =
+  let camera : Orientation = { zoom := clamp (state.camera.zoom * widen_coordinate factor) 0.45 4.0 } state.camera
+  in { camera := camera } state
+
+export
+quality_for_gesture : Bool → RenderQuality
+quality_for_gesture False = Interactive
+quality_for_gesture True = Final
+
+export
+maximum_dimension : RenderQuality → Int32
+maximum_dimension Interactive = 144
+maximum_dimension Final = 384
+
+export
+notify_view_changed : Bool → Bool → Int64 → InteractionState →
+                      (InteractionState, Maybe ViewChange)
+notify_view_changed listener_present gesture_finished now state =
+  if not listener_present then (state, Nothing) else
+  if not gesture_finished && now - state.last_interactive_render_at < 70
+    then (state, Nothing)
+    else ({ last_interactive_render_at := now } state,
+      Just (ChangedView state.camera (quality_for_gesture gesture_finished) gesture_finished))
+
+-- SurfaceRenderController rejects nonpositive view dimensions before sizing.
+-- The rounded results are in [0,384], so Int64 -> Int32 is exact here.
+export
+render_size : RenderQuality → Int32 → Int32 → Maybe RenderSize
+render_size quality width height =
+  if width <= 0 || height <= 0 then Nothing else
+  let longest = if width > height then width else height
+      scale = minimum_double 1.0 (cast (maximum_dimension quality) / cast longest)
+      rounded_width : Int32 = cast (round_dimension (cast width * scale))
+      rounded_height : Int32 = cast (round_dimension (cast height * scale))
+      output_width = if rounded_width < 32 then 32 else rounded_width
+      output_height = if rounded_height < 32 then 32 else rounded_height
+  in Just (SizedRender output_width output_height)

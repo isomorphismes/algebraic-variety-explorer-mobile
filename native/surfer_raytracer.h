@@ -171,9 +171,12 @@ typedef struct {
 } surfer_render_quality;
 
 /* One full-canvas original RenderingTask sampling order. This additive entry
- * leaves the legacy single-sample entry above unchanged. F64 coordinates feed
- * the existing ray core; threshold, weights and accumulated colors are F32.
- * Tile scheduling, cancellation and broader numerical parity are separate.
+ * leaves the legacy single-sample entry above unchanged. Four prepared XYZ
+ * polynomials are transformed once, specialized by row and column, and their
+ * gradient univariates are evaluated at the hit. Threshold, weights and colors
+ * remain F32. The restricted AVE orthographic camera preserves the original
+ * matrix/inverse/normalization/offset sequence. Full image and tile parity
+ * require separate observations.
  */
 surfer_status surfer_render_orthographic_quality(
     const surfer_scene *scene, size_t width, size_t height,

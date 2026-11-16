@@ -278,6 +278,8 @@ typedef struct {
     size_t capacity;
 } descartes_candidate_stack;
 
+typedef struct original_camera_view original_camera_view;
+
 typedef struct {
     double half_u;
     double half_v;
@@ -286,6 +288,7 @@ typedef struct {
     surfer_vec3 surface_u;
     surfer_vec3 surface_v;
     surfer_vec3 surface_direction;
+    const original_camera_view *original_camera;
 } orthographic_view;
 
 static surfer_vec3 add_vectors(surfer_vec3 left, surfer_vec3 right)
@@ -1627,10 +1630,14 @@ static surfer_material material_for_visible_side(
     return scene->back_material;
 }
 
-static surfer_trace_result trace_prepared_ray_validated(
+#include "surfer_original_specialization.inc"
+
+static surfer_trace_result trace_prepared_ray_with_row(
     surfer_operation_context *context,
     const surfer_scene *scene,
-    surfer_ray_bundle rays)
+    surfer_ray_bundle rays,
+    const original_xy_polynomial *row,
+    double horizontal)
 {
     surfer_trace_result result = {
         SURFER_MISS,
@@ -1650,12 +1657,23 @@ static surfer_trace_result trace_prepared_ray_validated(
     }
 
     double hit_parameter = NAN;
-    result.status = first_surface_root_validated(context,
+    if (row == NULL) result.status = first_surface_root_validated(context,
             scene->surface,
             rays.surface_ray,
             visible_interval.lower,
             visible_interval.upper,
             &hit_parameter);
+    else {
+        univariate_polynomial polynomial = original_evaluate_y(context, &row[0], horizontal);
+        const double candidate = context->status == SURFER_OK ?
+            first_root_for_surface_family(context, scene->surface, &polynomial,
+                visible_interval.lower, visible_interval.upper) : NAN;
+        free_univariate_polynomial(polynomial);
+        if (context->status != SURFER_OK) result.status = context->status;
+        else if (isnan(candidate)) result.status = SURFER_MISS;
+        else if (!isfinite(candidate)) result.status = SURFER_INVALID_INPUT;
+        else { result.status = SURFER_OK; hit_parameter = candidate; }
+    }
     if (result.status != SURFER_OK) {
         return result;
     }
@@ -1670,8 +1688,19 @@ static surfer_trace_result trace_prepared_ray_validated(
     /* surface point → prepared gradient → camera normal */
     const surfer_vec3 surface_point =
         point_on_ray_at_parameter(rays.surface_ray, hit_parameter);
-    const surfer_vec3 surface_gradient =
+    surfer_vec3 surface_gradient;
+    if (row == NULL) surface_gradient =
         prepared_gradient_at_surface_point(context, scene->surface, surface_point);
+    else {
+        double components[3] = {NAN, NAN, NAN};
+        for (size_t component = 0; component < 3 && continue_operation(context); ++component) {
+            univariate_polynomial polynomial = original_evaluate_y(context, &row[component + 1], horizontal);
+            if (context->status == SURFER_OK)
+                components[component] = evaluate_univariate_polynomial_at(context, &polynomial, hit_parameter);
+            free_univariate_polynomial(polynomial);
+        }
+        surface_gradient = (surfer_vec3){components[0], components[1], components[2]};
+    }
     if (context->status != SURFER_OK) { result.status = context->status; return result; }
     surfer_vec3 camera_normal =
         camera_normal_from_surface_gradient(rays, surface_gradient);
@@ -1703,6 +1732,12 @@ static surfer_trace_result trace_prepared_ray_validated(
         result.status = SURFER_INVALID_INPUT;
     }
     return result;
+}
+
+static surfer_trace_result trace_prepared_ray_validated(
+    surfer_operation_context *context, const surfer_scene *scene, surfer_ray_bundle rays)
+{
+    return trace_prepared_ray_with_row(context, scene, rays, NULL, 0.0);
 }
 
 surfer_trace_result surfer_trace_prepared_ray(
@@ -1775,6 +1810,8 @@ surfer_scene surfer_default_scene(const surfer_prepared_surface *surface)
     return scene;
 }
 
+#include "surfer_original_camera.inc"
+
 static orthographic_view make_orthographic_view(
     size_t width,
     size_t height,
@@ -1802,7 +1839,8 @@ static orthographic_view make_orthographic_view(
             (surfer_vec3){0.0, 1.0, 0.0}),
         apply_matrix_to_vector(
             camera_to_surface,
-            (surfer_vec3){0.0, 0.0, -1.0})
+            (surfer_vec3){0.0, 0.0, -1.0}),
+        NULL
     };
     return view;
 }
@@ -1821,6 +1859,7 @@ static surfer_ray_bundle orthographic_ray_bundle_at(
     double u,
     double v)
 {
+    if (view.original_camera != NULL) return original_camera_ray_bundle(view.original_camera, u, v);
     const surfer_vec3 surface_origin = add_vectors(
         scale_vector(view.surface_u, u),
         scale_vector(view.surface_v, v));
@@ -1969,22 +2008,26 @@ static surfer_color antialias_color(
 
 static surfer_status quality_sample(
     surfer_operation_context *context, const surfer_scene *scene,
-    orthographic_view view, double u, double v, surfer_color *color)
+    orthographic_view view, original_render_pipeline *pipeline,
+    double u, double v, surfer_color *color)
 {
     if (!continue_operation(context)) return context->status;
     if (!isfinite(u) || !isfinite(v)) return SURFER_INVALID_INPUT;
-    const surfer_trace_result trace = trace_prepared_ray_validated(
-        context, scene, orthographic_ray_bundle_at(view, u, v));
+    const original_xy_polynomial *row = original_row_for_sample(context, pipeline, v);
+    if (row == NULL) return context->status;
+    const surfer_trace_result trace = trace_prepared_ray_with_row(
+        context, scene, orthographic_ray_bundle_at(view, u, v), row, u);
     if (trace.status != SURFER_OK && trace.status != SURFER_MISS) return trace.status;
     *color = trace.color;
     return SURFER_OK;
 }
 
-static surfer_status render_orthographic_quality_request(
+static surfer_status render_orthographic_quality_prepared(
     surfer_operation_context *context, const surfer_scene *scene,
     size_t width, size_t height,
     double camera_height, double yaw, double pitch, double zoom,
-    surfer_render_quality quality, uint32_t *argb_pixels, size_t pixel_capacity)
+    surfer_render_quality quality, uint32_t *argb_pixels, size_t pixel_capacity,
+    original_render_pipeline *pipeline)
 {
     if (!continue_operation(context)) return context->status;
     if (argb_pixels == NULL || width < 2 || height < 2 ||
@@ -1996,23 +2039,29 @@ static surfer_status render_orthographic_quality_request(
         !isfinite(quality.threshold) || quality.threshold < 0.0f) {
         return context->status == SURFER_OK ? SURFER_INVALID_INPUT : context->status;
     }
-    const orthographic_view view = make_orthographic_view(
-        width, height, camera_height, yaw, pitch, zoom);
+    original_camera_view camera;
+    orthographic_view view;
+    if (!make_original_orthographic_view(context, width, height, camera_height,
+        yaw, pitch, zoom, &camera, &view)) return context->status;
     if (!isfinite(view.half_u) || !isfinite(view.half_v) ||
         !finite_matrix(view.camera_to_surface) || !finite_matrix(view.surface_normal_to_camera) ||
         !finite_vector(view.surface_u) || !finite_vector(view.surface_v) ||
         !finite_vector(view.surface_direction)) return SURFER_INVALID_INPUT;
 
-    const double u_increment = (view.half_u - (-view.half_u)) / (double)(width - 1);
-    const double v_increment = (view.half_v - (-view.half_v)) / (double)(height - 1);
+    const double u_increment = ((camera.uoffset + camera.uscale) -
+        (camera.uoffset - camera.uscale)) / (double)(width - 1);
+    const double v_increment = ((camera.voffset + camera.vscale) -
+        (camera.voffset - camera.vscale)) / (double)(height - 1);
     const double start_fraction_u = quality.pattern == SURFER_AA_OG_1X1 ?
         0.0 : -0.5 / (double)(width - 1);
     const double start_fraction_v = quality.pattern == SURFER_AA_OG_1X1 ?
         0.0 : -0.5 / (double)(height - 1);
-    const double u_start = 0.0 + view.half_u * (2.0 * start_fraction_u - 1.0);
-    const double v_start = 0.0 + view.half_v * (2.0 * start_fraction_v - 1.0);
+    const double u_start = camera.uoffset + camera.uscale * (2.0 * start_fraction_u - 1.0);
+    const double v_start = camera.voffset + camera.vscale * (2.0 * start_fraction_v - 1.0);
     if (!isfinite(u_increment) || !isfinite(v_increment) ||
         !isfinite(u_start) || !isfinite(v_start)) return SURFER_INVALID_INPUT;
+
+    if (!original_initialize_pipeline(context, scene->surface, view, pipeline)) return context->status;
 
     if (quality.pattern == SURFER_AA_OG_1X1) {
         if (!isfinite(u_start + (double)(width - 1) * u_increment) ||
@@ -2022,7 +2071,7 @@ static surfer_status render_orthographic_quality_request(
             for (size_t x = 0; x < width; ++x) {
                 const double u = u_start + (double)x * u_increment;
                 surfer_color color;
-                const surfer_status status = quality_sample(context, scene, view, u, v, &color);
+                const surfer_status status = quality_sample(context, scene, view, pipeline, u, v, &color);
                 if (status != SURFER_OK) return status;
                 argb_pixels[y * width + x] = color_to_argb_validated(color);
             }
@@ -2046,7 +2095,7 @@ static surfer_status render_orthographic_quality_request(
         const double v = v_start + (double)y * v_increment;
         for (size_t x = 0; x < corner_width; ++x) {
             const double u = u_start + (double)x * u_increment;
-            result = quality_sample(context, scene, view, u, v, &corners[y * corner_width + x]);
+            result = quality_sample(context, scene, view, pipeline, u, v, &corners[y * corner_width + x]);
             if (result != SURFER_OK) break;
             if (x > 0 && y > 0) {
                 const surfer_color upper_left = corners[y * corner_width + x - 1];
@@ -2059,7 +2108,7 @@ static surfer_status render_orthographic_quality_request(
                     /* Preserve the original subtract-then-add center coordinates. */
                     const double lower_u = u - u_increment;
                     const double lower_v = v - v_increment;
-                    result = quality_sample(context, scene, view,
+                    result = quality_sample(context, scene, view, pipeline,
                         lower_u + 0.5 * u_increment, lower_v + 0.5 * v_increment, &center);
                     if (result != SURFER_OK) break;
                 }
@@ -2072,6 +2121,19 @@ static surfer_status render_orthographic_quality_request(
     }
     free(corners);
     return result == SURFER_OK && !continue_operation(context) ? context->status : result;
+}
+
+static surfer_status render_orthographic_quality_request(
+    surfer_operation_context *context, const surfer_scene *scene,
+    size_t width, size_t height,
+    double camera_height, double yaw, double pitch, double zoom,
+    surfer_render_quality quality, uint32_t *argb_pixels, size_t pixel_capacity)
+{
+    original_render_pipeline pipeline = {0};
+    const surfer_status status = render_orthographic_quality_prepared(context, scene,
+        width, height, camera_height, yaw, pitch, zoom, quality, argb_pixels, pixel_capacity, &pipeline);
+    original_destroy_pipeline(&pipeline);
+    return status;
 }
 
 surfer_status surfer_render_orthographic_quality(

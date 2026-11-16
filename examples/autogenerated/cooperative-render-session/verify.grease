@@ -31,6 +31,7 @@ sha256sum "$compiler" "$cc1" > "$output/compiler-artifacts.sha256"
 cp "$manifest" "$output/build-toolchain.tsv"
 git -C "$repository" rev-parse HEAD > "$output/source-revision.txt"
 sha256sum "$repository/native/surfer_raytracer.c" "$repository/native/surfer_raytracer.h" \
+  "$repository/native/surfer_original_specialization.inc" "$repository/native/surfer_original_camera.inc" "$repository/native/surfer_vecmath.h" "$repository/native/surfer_vecmath.c" \
   "$repository/native/surfer_cancel_test.c" "$repository/native/surfer_render_session.c" \
   "$repository/native/surfer_render_session.h" "$repository/native/surfer_render_session_test.c" \
   "$repository/native/surfer_surface_store.c" "$repository/native/surfer_surface_store.h" \
@@ -38,7 +39,7 @@ sha256sum "$repository/native/surfer_raytracer.c" "$repository/native/surfer_ray
 
 printf '\033[36mACTION\033[0m exercise cancellation inside real numerical loops\n'
 "$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O2 \
-  -fno-fast-math -ffp-contract=off "$repository/native/surfer_cancel_test.c" -lm -o "$output/core-test"
+  -fno-fast-math -ffp-contract=off "$repository/native/surfer_cancel_test.c" "$repository/native/surfer_vecmath.c" -lm -o "$output/core-test"
 "$output/core-test" > "$output/core.txt" 2>&1
 cat "$output/core.txt"
 rg -x -F 'SURFER cooperative numerical cancellation: PASS' "$output/core.txt"
@@ -49,7 +50,7 @@ proc build_registry(source, destination) {
     -fno-fast-math -ffp-contract=off -DSURFER_RENDER_SESSION_TESTING -DSURFER_SURFACE_STORE_TESTING \
     "$source" "$repository/native/surfer_render_session_test.c" \
     "$repository/native/surfer_surface_store.c" "$repository/native/surfer_raytracer.c" \
-    -I "$repository/native" -lm -pthread -o "$destination/test"
+    -I "$repository/native" "$repository/native/surfer_vecmath.c" -lm -pthread -o "$destination/test"
 }
 build_registry "$repository/native/surfer_render_session.c" "$output/registry"
 "$output/registry/test" > "$output/registry.txt" 2>&1
@@ -63,7 +64,7 @@ if (atomic_imports !== 1) { echo 'FAIL unexpected host atomic import or scanner 
 printf '\033[36mACTION\033[0m require sanitizer and leak execution on the hosted owner\n'
 "$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O1 -g \
   -fno-fast-math -ffp-contract=off -fsanitize=address,undefined -fno-omit-frame-pointer \
-  "$repository/native/surfer_cancel_test.c" -lm -o "$output/core-sanitized"
+  "$repository/native/surfer_cancel_test.c" "$repository/native/surfer_vecmath.c" -lm -o "$output/core-sanitized"
 env ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 \
   "$output/core-sanitized" > "$output/core-sanitized.txt" 2>&1
 cat "$output/core-sanitized.txt"
@@ -73,7 +74,7 @@ rg -x -F 'SURFER cooperative numerical cancellation: PASS' "$output/core-sanitiz
   -DSURFER_RENDER_SESSION_TESTING -DSURFER_SURFACE_STORE_TESTING \
   "$repository/native/surfer_render_session.c" "$repository/native/surfer_render_session_test.c" \
   "$repository/native/surfer_surface_store.c" "$repository/native/surfer_raytracer.c" \
-  -lm -pthread -o "$output/registry-sanitized"
+  "$repository/native/surfer_vecmath.c" -lm -pthread -o "$output/registry-sanitized"
 env ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 \
   "$output/registry-sanitized" > "$output/registry-sanitized.txt" 2>&1
 cat "$output/registry-sanitized.txt"
@@ -82,12 +83,13 @@ rg -x -F 'SURFER cooperative render sessions, publication and ownership: PASS' "
 proc reject_core_mutant(name, expression) {
   var destination = "$output/mutants/$name"
   mkdir -p "$destination"
-  cp "$repository/native/surfer_raytracer.h" "$repository/native/surfer_cancel_test.c" "$destination/"
+  cp "$repository/native/surfer_raytracer.h" "$repository/native/surfer_original_specialization.inc" "$repository/native/surfer_original_camera.inc" "$repository/native/surfer_vecmath.h" "$repository/native/surfer_vecmath.c" \
+    "$repository/native/surfer_cancel_test.c" "$destination/"
   sed "$expression" "$repository/native/surfer_raytracer.c" > "$destination/surfer_raytracer.c"
   try { cmp -s "$repository/native/surfer_raytracer.c" "$destination/surfer_raytracer.c" }
   if (_error.code !== 1) { echo 'FAIL unchanged mutant or comparison failure' >&2; exit 1 }
   "$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O2 \
-    -fno-fast-math -ffp-contract=off "$destination/surfer_cancel_test.c" -lm -o "$destination/test"
+    -fno-fast-math -ffp-contract=off "$destination/surfer_cancel_test.c" "$repository/native/surfer_vecmath.c" -lm -o "$destination/test"
   try { "$destination/test" > "$destination/result.txt" 2>&1 }
   var status = _error.code
   cat "$destination/result.txt"

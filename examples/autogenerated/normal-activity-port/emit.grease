@@ -1,0 +1,90 @@
+#!/usr/bin/env grease
+set -eu -o pipefail
+if (len(ARGV) !== 7) {
+  echo 'usage: grease emit.grease REPOSITORY FRONTEND_ROOT DRIVER_PROGRAM BACKEND_TTC BAKSMALI SMALI FRESH_OUTPUT' >&2
+  exit 2
+}
+var repository = ARGV[0]
+var frontend = ARGV[1]
+var driver = ARGV[2]
+var modules = ARGV[3]
+var baksmali = ARGV[4]
+var smali = ARGV[5]
+var output = ARGV[6]
+for path in (ARGV) {
+  if (path[0] !== '/') { echo 'FAIL absolute paths required' >&2; exit 2 }
+}
+if test -e "$output" { echo 'FAIL refusing reused Activity evidence' >&2; exit 1 }
+printf '%s  %s\n' 37ae4a41a8886e15c20b8362fa4250f96bbdb55e1a608199ad8b5dff068b588f "$baksmali" | sha256sum -c -
+printf '%s  %s\n' 32fa0e88a6c397b3922201adf5f3e534fbaed5a663c71d0c558c3ddce0af844a "$smali" | sha256sum -c -
+var scheme = "$frontend/.tools/chez-10.4.1/bin/scheme"
+var compiler = "$frontend/build/exec/idris2_app/idris2.so"
+setglobal ENV.SCHEMEHEAPDIRS = "$frontend/.tools/chez-10.4.1/lib/csv10.4.1/ta6le"
+setglobal ENV.IDRIS2_PREFIX = "$frontend/bootstrap-build"
+setglobal ENV.IDRIS2_PACKAGE_PATH = "$frontend/bootstrap-build/idris2-0.8.0"
+setglobal ENV.IDRIS2_PATH = modules
+setglobal ENV.LD_LIBRARY_PATH = "$frontend/build/exec/idris2_app"
+setglobal ENV.CHEZ = scheme
+mkdir -p "$output"
+cp -R "$repository/c-lua/idric" "$output/source"
+cp "$repository/layout.activity_idric.xml" "$repository/values.idric_examples.xml" "$output/"
+git -C "$repository" rev-parse HEAD > "$output/repository-head.txt"
+git -C "$repository" status --porcelain > "$output/repository-status.txt"
+sha256sum "$compiler" "$driver" "$baksmali" "$smali" \
+  "$output/layout.activity_idric.xml" "$output/values.idric_examples.xml" > "$output/inputs.sha256"
+for name in AVEActivity.idric AVEActivityState.idric AVEExamples.idric AVEExceptions.idric \
+  AVEInteraction.idric AVEPlatform.idric AVEPngExport.idric AVERenderController.idric \
+  AVEStatus.idric AlgebraicExpression.idric PolynomialQualification.idric \
+  CoefficientArithmetic.idr CoefficientValue.idric PreparedFormula.idric \
+  OrderedExpansion.idric PreparedSurfaceTransfer.idric RenderQuality.idric \
+  RenderedBitmap.idric RenderSession.idric RequestedBitmap.idric ave-jni.tsv {
+  sha256sum "$output/source/$name" >> "$output/inputs.sha256"
+}
+printf '\033[36mACTION\033[0m compile ordinary Activity from checked Idriç source\n'
+try {
+  "$scheme" --program "$driver" --cg dex --directive managed-exports \
+    --directive "jni-map=$output/source/ave-jni.tsv" --source-dir "$output/source" \
+    --build-dir "$output/build" --output-dir "$output" \
+    "$output/source/AVEActivity.idric" -o candidate > "$output/compiler.txt" 2>&1
+}
+var status = _error.code
+printf '%s\n' "$status" > "$output/compiler.exit"
+cat "$output/compiler.txt"
+if (status !== 0) { echo 'FAIL Activity source compilation' >&2; exit 1 }
+try { rg -n '^[[:space:]]*(Error:|INTERNAL ERROR)' "$output/compiler.txt" }
+var diagnostics = _error.code
+if (diagnostics !== 1) { echo 'FAIL Activity diagnostic check' >&2; exit 1 }
+test -s "$output/candidate.dex"
+test -s "$output/candidate.checked.anf"
+test -s "$output/candidate.field-types.tsv"
+test -s "$output/candidate.captured-runnable.smali"
+java -jar "$baksmali" disassemble "$output/candidate.dex" -o "$output/decoded"
+var generated = "$output/decoded/Idric/Generated.smali"
+rg -x -F '.super Landroid/app/Activity;' "$generated"
+rg -x -F '.field private state:Ljava/util/ArrayList;' "$generated"
+for declaration in '.implements Landroid/view/View$OnLayoutChangeListener;' \
+  '.implements Landroid/widget/TextView$OnEditorActionListener;' \
+  '.implements Landroid/view/View$OnTouchListener;' \
+  '.implements Landroid/view/View$OnApplyWindowInsetsListener;' \
+  '.implements Landroid/view/ScaleGestureDetector$OnScaleGestureListener;' \
+  '.method public onCreate(Landroid/os/Bundle;)V' '.method public onDestroy()V' \
+  '.method public onPause()V' '.method public onSaveInstanceState(Landroid/os/Bundle;)V' \
+  '.method public onActivityResult(IILandroid/content/Intent;)V' \
+  '.method public onLayoutChange(Landroid/view/View;IIIIIIII)V' \
+  '.method public onEditorAction(Landroid/widget/TextView;ILandroid/view/KeyEvent;)Z' \
+  '.method public onApplyWindowInsets(Landroid/view/View;Landroid/view/WindowInsets;)Landroid/view/WindowInsets;' \
+  '.method public static native renderSessionSurface(JJJIIIDDDD[I)I' \
+  '.method public static native copyPreparedSurface(IIIIIII[D[I)J' {
+  rg -x -F "$declaration" "$generated"
+}
+rg -F 'Ljava/lang/System;->loadLibrary(Ljava/lang/String;)V' "$generated"
+rg -F 'Landroid/content/res/Resources;->getString(I[Ljava/lang/Object;)Ljava/lang/String;' "$generated"
+rg -F 'Landroid/widget/EditText;->getText()Landroid/text/Editable;' "$generated"
+rg -F 'Landroid/view/View;->addOnLayoutChangeListener(Landroid/view/View$OnLayoutChangeListener;)V' "$generated"
+rg -F 'Landroid/content/ContentResolver;->openOutputStream(Landroid/net/Uri;Ljava/lang/String;)Ljava/io/OutputStream;' "$generated"
+rg -F 'Ljava/lang/Throwable;->addSuppressed(Ljava/lang/Throwable;)V' "$generated"
+rg -F '.catch Ljava/lang/Throwable;' "$generated" > "$output/decoded-catch-regions.txt"
+java -jar "$smali" assemble "$output/decoded" -o "$output/roundtrip.dex"
+sha256sum "$output/candidate.dex" "$output/roundtrip.dex" > "$output/artifacts.sha256"
+printf 'checked_Activity_source\tPASS\nsource_to_DEX\tPASS\nindependent_decode\tPASS\nindependent_reassembly\tPASS\nwhole_Activity_ART\tNOT_RUN\ninstalled_lifecycle\tNOT_RUN\nIME_gestures_picker_PNG\tNOT_RUN\nAPK_update_identity\tNOT_RUN\nphysical_device\tNOT_RUN\n' > "$output/result.tsv"
+printf '\033[32mPASS\033[0m ordinary Activity source and independent DEX structure; execution pending\n'

@@ -82,7 +82,7 @@ cflags=(--sysroot="$sysroot"
   -D__ANDROID__ -D__ANDROID_API__="$api"
   -DBIONIC_IOCTL_NO_SIGNEDNESS_OVERLOAD
   -O2 -fPIC -fno-fast-math -ffp-contract=off)
-for src in native/surfer_raytracer.c native/android/presets.c \
+for src in native/surfer_raytracer.c native/surfer_vecmath.c native/android/presets.c \
            native/android/formula.c native/android/editor.c native/android/activity.c; do
   "$ICK" "${flags[@]}" "${cflags[@]}" -std=c17 \
     -Wall -Wextra -Werror -c "$root/$src" \
@@ -157,6 +157,9 @@ signed="$out/SURFER-native-probe-$abi-debug.apk"
     "$(git -C "$root" rev-parse HEAD)" "$actual_pin" "$ndk_pin" "$abi"
   printf 'compiler=%s\n' "$(readlink -f "$ICK")"
   "$ICK" --version | head -1
+  sha256sum "$root/native/surfer_original_specialization.inc" \
+    "$root/native/surfer_original_camera.inc" "$root/native/surfer_vecmath.c" \
+    "$root/native/surfer_vecmath.h"
   sha256sum "$work"/obj/*.o "$lib" "$unsigned" "$signed"
 } > "$out/provenance.txt"
 printf '%s\n' "$signed"

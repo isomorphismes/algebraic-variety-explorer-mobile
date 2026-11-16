@@ -1,0 +1,36 @@
+module PickerLifecycle
+
+-- Real required callback signature, reduced from MainActivity.onActivityResult.
+-- This checks delivery/null handling; PNG stream cleanup is a separate gap.
+data ActivityReference : Type where [external]
+data IntentReference : Type where [external]
+data UriReference : Type where [external]
+data ObjectReference : Type where [external]
+
+%foreign "dex:virtual:Landroid/app/Activity;:setTitle:(Ljava/lang/CharSequence;)V"
+set_title : ActivityReference → Text → PrimIO ()
+%foreign "dex:cast:Landroid/content/Intent;:Ljava/lang/Object;"
+intent_object : IntentReference → ObjectReference
+%foreign "dex:cast:Landroid/net/Uri;:Ljava/lang/Object;"
+uri_object : UriReference → ObjectReference
+%foreign "dex:static:Ljava/util/Objects;:isNull:(Ljava/lang/Object;)Z"
+object_is_null : ObjectReference → Int32
+%foreign "dex:virtual:Landroid/content/Intent;:getData:()Landroid/net/Uri;"
+picker_uri : IntentReference → PrimIO UriReference
+
+%cg dex extends Landroid/app/Activity;
+%cg dex override onActivityResult (IILandroid/content/Intent;)V receive_picker
+
+%export "dex:receive_picker"
+receive_picker : ActivityReference → Int32 → Int32 → IntentReference → IO ()
+receive_picker activity request result intent =
+  if request ≟ 1 && result ≟ (-1) && object_is_null (intent_object intent) ≟ 0
+    then do
+      destination ← primIO (picker_uri intent)
+      if object_is_null (uri_object destination) ≟ 0
+        then primIO (set_title activity "PNG destination chosen")
+        else pure ()
+    else pure ()
+
+main : IO ()
+main = pure ()

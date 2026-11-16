@@ -37,6 +37,7 @@ git -C "$repository" show d4bc9b3c84d8adeb4c82d1354c84833aace5aec9:native/surfer
 git -C "$repository" show d4bc9b3c84d8adeb4c82d1354c84833aace5aec9:native/android/presets.c > "$output/reference/native/android/presets.c"
 git -C "$repository" show d4bc9b3c84d8adeb4c82d1354c84833aace5aec9:native/android/presets.h > "$output/reference/native/android/presets.h"
 sha256sum "$repository/native/surfer_raytracer.c" "$repository/native/surfer_raytracer.h" \
+  "$repository/native/surfer_original_specialization.inc" "$repository/native/surfer_original_camera.inc" "$repository/native/surfer_vecmath.h" "$repository/native/surfer_vecmath.c" \
   "$repository/native/surfer_raytracer_test.c" "$repository/native/surfer_status_test.c" \
   "$repository/native/surfer_success_oracle.c" > "$output/sources.sha256"
 
@@ -44,14 +45,14 @@ printf '\033[36mACTION\033[0m execute existing numerical checks through qualifie
 "$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O2 \
   -fno-fast-math -ffp-contract=off \
   "$repository/native/surfer_raytracer.c" "$repository/native/surfer_raytracer_test.c" \
-  -lm -o "$output/numerical-test"
+  "$repository/native/surfer_vecmath.c" -lm -o "$output/numerical-test"
 "$output/numerical-test" > "$output/numerical.txt" 2>&1
 cat "$output/numerical.txt"
 rg -x -F 'SURFER prepared-surface C ray tracer: PASS' "$output/numerical.txt"
 "$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O1 -g \
   -fno-fast-math -ffp-contract=off -fsanitize=address,undefined -fno-omit-frame-pointer \
   "$repository/native/surfer_raytracer.c" "$repository/native/surfer_raytracer_test.c" \
-  -lm -o "$output/numerical-sanitized-test"
+  "$repository/native/surfer_vecmath.c" -lm -o "$output/numerical-sanitized-test"
 env ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 \
   "$output/numerical-sanitized-test" > "$output/numerical-sanitized.txt" 2>&1
 cat "$output/numerical-sanitized.txt"
@@ -60,7 +61,7 @@ rg -x -F 'SURFER prepared-surface C ray tracer: PASS' "$output/numerical-sanitiz
 printf '\033[36mACTION\033[0m execute allocation faults and input/status checks under sanitizers\n'
 "$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O1 -g \
   -fno-fast-math -ffp-contract=off -fsanitize=address,undefined \
-  -fno-omit-frame-pointer "$repository/native/surfer_status_test.c" -lm -o "$output/status-test"
+  -fno-omit-frame-pointer "$repository/native/surfer_status_test.c" "$repository/native/surfer_vecmath.c" -lm -o "$output/status-test"
 env ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 \
   "$output/status-test" > "$output/status.txt" 2>&1
 cat "$output/status.txt"
@@ -68,7 +69,8 @@ rg -x -F 'SURFER native status, validation and allocation propagation: PASS' "$o
 
 printf '\033[36mACTION\033[0m reject an actual compiled blank-on-error renderer mutation\n'
 mkdir -p "$output/mutant"
-cp "$repository/native/surfer_raytracer.h" "$repository/native/surfer_status_test.c" "$output/mutant/"
+  cp "$repository/native/surfer_raytracer.h" "$repository/native/surfer_original_specialization.inc" "$repository/native/surfer_original_camera.inc" "$repository/native/surfer_vecmath.h" "$repository/native/surfer_vecmath.c" \
+  "$repository/native/surfer_status_test.c" "$output/mutant/"
 sed 's/                return trace.status;/                argb_pixels[y * width + x] = color_to_argb_validated(scene->background); continue;/' \
   "$repository/native/surfer_raytracer.c" > "$output/mutant/surfer_raytracer.c"
 if cmp -s "$repository/native/surfer_raytracer.c" "$output/mutant/surfer_raytracer.c" {
@@ -76,7 +78,7 @@ if cmp -s "$repository/native/surfer_raytracer.c" "$output/mutant/surfer_raytrac
 }
 "$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O1 -g \
   -fno-fast-math -ffp-contract=off -fsanitize=address,undefined \
-  -fno-omit-frame-pointer "$output/mutant/surfer_status_test.c" -lm -o "$output/mutant/status-test"
+  -fno-omit-frame-pointer "$output/mutant/surfer_status_test.c" "$repository/native/surfer_vecmath.c" -lm -o "$output/mutant/status-test"
 try {
   env ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 \
     "$output/mutant/status-test" > "$output/mutant/result.txt" 2>&1
@@ -96,7 +98,7 @@ printf '\033[36mACTION\033[0m compare successful numerical bytes against the unc
   -fno-fast-math -ffp-contract=off -DSURFER_STATUS_API \
   -I "$repository/native" -I "$repository/native/android" \
   "$repository/native/surfer_raytracer.c" "$repository/native/android/presets.c" \
-  "$repository/native/surfer_success_oracle.c" -lm -o "$output/current-success"
+  "$repository/native/surfer_success_oracle.c" "$repository/native/surfer_vecmath.c" -lm -o "$output/current-success"
 "$output/reference-success" > "$output/reference-success.bin"
 "$output/current-success" > "$output/current-success.bin"
 cmp "$output/reference-success.bin" "$output/current-success.bin"

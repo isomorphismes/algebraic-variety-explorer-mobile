@@ -1,0 +1,206 @@
+#!/usr/bin/env grease
+set -eu -o pipefail
+if (len(ARGV) !== 6) {
+  echo 'usage: grease package.grease EXPLORER SDK NDK ACTIVITY_EVIDENCE NATIVE_EVIDENCE_ROOT FRESH_OUTPUT' >&2
+  exit 2
+}
+var repository = ARGV[0]
+var sdk = ARGV[1]
+var ndk = ARGV[2]
+var activity = ARGV[3]
+var native = ARGV[4]
+var output = ARGV[5]
+for path in (ARGV) { if (path[0] !== '/') { echo 'FAIL absolute packaging paths required' >&2; exit 2 } }
+if test -e "$output" { echo 'FAIL refusing reused unsigned APK output' >&2; exit 1 }
+proc constant(name) {
+  test $(rg -c "^readonly $name=" "$repository/build.sh") = 1
+  var pattern = 's/^readonly ' ++ name ++ r'="\([^"]*\)"$/\1/p'
+  sed -n "$pattern" "$repository/build.sh"
+}
+var application = $(constant APPLICATION_ID)
+var compile_sdk = $(constant COMPILE_SDK)
+var tools_version = $(constant BUILD_TOOLS_VERSION)
+var minimum = $(constant MIN_SDK)
+var target = $(constant TARGET_SDK)
+var version_code = $(constant VERSION_CODE)
+var version_name = $(constant VERSION_NAME)
+if (application !== 'org.algebraicvarietyexplorer' or compile_sdk !== '35' or tools_version !== '35.0.1' or minimum !== '23' or target !== '35') {
+  echo 'FAIL original application or declared SDK identity changed' >&2; exit 1
+}
+printf '%s\n' "$version_code" | rg -x '[1-9][0-9]*'
+printf '%s\n' "$version_name" | rg -x '[0-9]+([.][0-9A-Za-z_-]+)*'
+var tools = "$sdk/build-tools/$tools_version"
+var aapt2 = "$tools/aapt2"
+var align = "$tools/zipalign"
+var signer = "$tools/apksigner"
+var platform = "$sdk/platforms/android-$compile_sdk/android.jar"
+var elf = "$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+var nm = "$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+for program in "$aapt2" "$align" "$signer" "$elf" "$nm" { test -x "$program" }
+test -s "$platform"
+rg '^Pkg.Revision[[:space:]]*=[[:space:]]*35\.0\.1$' "$tools/source.properties"
+rg '^Pkg.Revision[[:space:]]*=[[:space:]]*29\.0\.14206865$' "$ndk/source.properties"
+for program in zip unzip sha256sum cmp sed rg od touch { command -v "$program" }
+test $(cat "$activity/compiler.exit") = 0
+rg -x 'source_to_DEX[[:space:]]PASS' "$activity/result.tsv"
+test -s "$activity/candidate.checked.anf"
+test -s "$activity/candidate.field-types.tsv"
+test -s "$activity/candidate.dex"
+test $(od -An -tx1 -N8 "$activity/candidate.dex" | tr -s ' ' | sed 's/^ //') = '64 65 78 0a 30 33 35 00'
+rg -x -F '.super Landroid/app/Activity;' "$activity/decoded/Idric/Generated.smali"
+rg -x -F 'library ave' "$activity/source/ave-jni.tsv"
+# Reconcile content, not an ancestor commit label: a packaging-only revision
+# may consume an earlier source build when every material source byte agrees.
+for name in AVEActivity.idric AVEActivityState.idric AVEExamples.idric AVEExceptions.idric \
+  AVEInteraction.idric AVEPlatform.idric AVEPngExport.idric AVERenderController.idric \
+  AVEStatus.idric AlgebraicExpression.idric PolynomialQualification.idric \
+  CoefficientArithmetic.idr CoefficientValue.idric PreparedFormula.idric \
+  OrderedExpansion.idric PreparedSurfaceTransfer.idric RenderQuality.idric \
+  RenderedBitmap.idric RenderSession.idric RequestedBitmap.idric ave-jni.tsv {
+  cmp "$repository/c-lua/idric/$name" "$activity/source/$name"
+}
+proc artifact_hash(receipt, suffix) {
+  var pattern = r's|^\([0-9a-f]\{64\}\)  .*/' ++ suffix ++ r'$|\1|p'
+  sed -n "$pattern" "$receipt"
+}
+var candidate_hash = $(sha256sum "$activity/candidate.dex" | cut -d ' ' -f 1)
+test "$candidate_hash" = $(artifact_hash "$activity/artifacts.sha256" candidate.dex)
+mkdir -p "$output/res/drawable" "$output/res/layout" "$output/res/values" \
+  "$output/payload/lib" "$output/payload/assets/licenses" "$output/evidence"
+git -C "$repository" rev-parse HEAD > "$output/evidence/packaging-head.txt"
+git -C "$repository" status --porcelain > "$output/evidence/packaging-status.txt"
+cp "$activity/repository-head.txt" "$output/evidence/Activity-source-head.txt"
+cp "$activity/inputs.sha256" "$activity/artifacts.sha256" "$output/evidence/"
+sha256sum "$aapt2" "$align" "$signer" "$platform" "$elf" "$nm" > "$output/evidence/tools.sha256"
+cp "$repository/drawable.formula_field.xml" "$output/res/drawable/formula_field.xml"
+cp "$repository/drawable.ic_launcher.xml" "$output/res/drawable/ic_launcher.xml"
+cp "$repository/drawable.surface_frame.xml" "$output/res/drawable/surface_frame.xml"
+cp "$repository/layout.activity_main.xml" "$output/res/layout/activity_main.xml"
+cp "$repository/layout.activity_idric.xml" "$output/res/layout/activity_idric.xml"
+cp "$repository/values.colors.xml" "$output/res/values/colors.xml"
+cp "$repository/values.strings.xml" "$output/res/values/strings.xml"
+cp "$repository/values.styles.xml" "$output/res/values/styles.xml"
+cp "$repository/values.idric_examples.xml" "$output/res/values/idric_examples.xml"
+test $(rg -c -F 'android:name=".MainActivity"' "$repository/AndroidManifest.xml") = 1
+try { rg 'extractNativeLibs' "$repository/AndroidManifest.xml" }
+if (_error.code !== 1) { echo 'FAIL unexpected original native-extraction declaration or checker' >&2; exit 1 }
+sed -e 's/android:name=".MainActivity"/android:name="Idric.Generated"/' \
+  -e '/<application/a\        android:extractNativeLibs="false"' \
+  "$repository/AndroidManifest.xml" > "$output/AndroidManifest.xml"
+sha256sum "$repository/build.sh" "$repository/AndroidManifest.xml" \
+  "$output/AndroidManifest.xml" "$repository/layout.activity_idric.xml" \
+  "$repository/values.idric_examples.xml" "$repository/values.strings.xml" \
+  "$repository/values.styles.xml" "$repository/values.colors.xml" \
+  "$repository/layout.activity_main.xml" "$repository/drawable.formula_field.xml" \
+  "$repository/drawable.surface_frame.xml" "$repository/drawable.ic_launcher.xml" \
+  > "$output/evidence/resources.sha256"
+cp "$repository/LICENSE" "$output/payload/assets/licenses/PROJECT-LICENSE"
+cp "$repository/NOTICE" "$output/payload/assets/licenses/NOTICE"
+cp "$repository/THIRD_PARTY_LICENSES.md" "$output/payload/assets/licenses/THIRD_PARTY_LICENSES.md"
+cp "$repository/native/licenses/vecmath-GPL-2-CE.txt" "$output/payload/assets/licenses/vecmath-GPL-2-CE.txt"
+sha256sum "$repository/LICENSE" "$repository/NOTICE" "$repository/THIRD_PARTY_LICENSES.md" \
+  "$repository/native/licenses/vecmath-GPL-2-CE.txt" > "$output/evidence/licenses.sha256"
+cp "$activity/candidate.dex" "$output/payload/classes.dex"
+for abi in arm64-v8a armeabi-v7a x86_64 {
+  var built = "$native/$abi"
+  var library = "$built/libave.so"
+  test -s "$library"
+  rg -x 'production_ICK_cross_compile[[:space:]]PASS' "$built/result.tsv"
+  rg -x 'API23_link[[:space:]]PASS' "$built/result.tsv"
+  rg -x "abi[[:space:]]$abi" "$built/inputs.tsv"
+  var library_hash = $(sha256sum "$library" | cut -d ' ' -f 1)
+  test "$library_hash" = $(artifact_hash "$built/artifacts.sha256" libave.so)
+  for source in native/surfer_raytracer.c native/surfer_vecmath.c native/surfer_surface_store.c native/surfer_frame_output.c \
+    native/surfer_render_session.c native/android/prepared_surface_jni.c \
+    native/android/render_surface_jni.c native/android/render_session_jni.c {
+    var expected = $(artifact_hash "$built/sources.sha256" "$source")
+    test "$expected" = $(sha256sum "$repository/$source" | cut -d ' ' -f 1)
+  }
+  for header in native/surfer_raytracer.h native/surfer_vecmath.h native/surfer_original_camera.inc native/surfer_original_specialization.inc \
+    native/surfer_surface_store.h native/surfer_frame_output.h native/surfer_render_session.h \
+    native/android/prepared_surface_jni.h native/android/render_surface_jni.h native/android/render_session_jni.h {
+    var expected = $(artifact_hash "$built/native-headers.sha256" "$header")
+    test "$expected" = $(sha256sum "$repository/$header" | cut -d ' ' -f 1)
+  }
+  mkdir -p "$output/evidence/$abi" "$output/payload/lib/$abi"
+  cp "$built/inputs.tsv" "$built/result.tsv" "$built/toolchain.sha256" \
+    "$built/sources.sha256" "$built/native-headers.sha256" "$built/artifacts.sha256" "$output/evidence/$abi/"
+  "$elf" -h -lW -d "$library" > "$output/evidence/$abi/elf.txt"
+  var machine = 'Advanced Micro Devices X86-64'
+  if (abi === 'arm64-v8a') { setvar machine = 'AArch64' }
+  if (abi === 'armeabi-v7a') { setvar machine = 'ARM' }
+  rg -F "Machine:                           $machine" "$output/evidence/$abi/elf.txt"
+  rg -F 'Library soname: [libave.so]' "$output/evidence/$abi/elf.txt"
+  rg '^[[:space:]]*LOAD[[:space:]]' "$output/evidence/$abi/elf.txt" > "$output/evidence/$abi/load-segments.txt"
+  try { rg -v '[[:space:]]0x4000[[:space:]]*$' "$output/evidence/$abi/load-segments.txt" }
+  if (_error.code !== 1) { echo 'FAIL native LOAD alignment differs from declared16KiB link or checker' >&2; exit 1 }
+  "$nm" -D --defined-only "$library" > "$output/evidence/$abi/exports.txt"
+  "$nm" -D --undefined-only "$library" > "$output/evidence/$abi/imports.txt"
+  for method in copyPreparedSurface replacePreparedSurface releasePreparedSurface renderPreparedSurface \
+    createRenderSession beginRenderEpoch isRenderEpochCurrent cancelRenderSession releaseRenderSession renderSessionSurface {
+    rg -e " Java_Idric_Generated_$method\$" "$output/evidence/$abi/exports.txt"
+  }
+  try { rg '__atomic_|__sync_|__stack_chk|libatomic|test|Observer' "$output/evidence/$abi/exports.txt" "$output/evidence/$abi/imports.txt" }
+  if (_error.code !== 1) { echo 'FAIL unexpected production native test/runtime symbol or checker' >&2; exit 1 }
+  try { rg -v ' Java_Idric_Generated_(copyPreparedSurface|replacePreparedSurface|releasePreparedSurface|renderPreparedSurface|createRenderSession|beginRenderEpoch|isRenderEpochCurrent|cancelRenderSession|releaseRenderSession|renderSessionSurface)$' "$output/evidence/$abi/exports.txt" }
+  if (_error.code !== 1) { echo 'FAIL production library dynamically exports a symbol outside declared JNI API or checker' >&2; exit 1 }
+  cp "$library" "$output/payload/lib/$abi/libave.so"
+}
+setglobal ENV.TZ = 'UTC'
+touch -t 198001010000.00 "$output/payload/classes.dex" \
+  "$output/payload/lib/arm64-v8a/libave.so" "$output/payload/lib/armeabi-v7a/libave.so" "$output/payload/lib/x86_64/libave.so" \
+  "$output/payload/assets/licenses/PROJECT-LICENSE" "$output/payload/assets/licenses/NOTICE" \
+  "$output/payload/assets/licenses/THIRD_PARTY_LICENSES.md" "$output/payload/assets/licenses/vecmath-GPL-2-CE.txt"
+printf '\033[36mACTION\033[0m package original resources with exact checked DEX and production JNI\n'
+"$aapt2" compile --dir "$output/res" -o "$output/resources.zip"
+"$aapt2" link -o "$output/resources.apk" --manifest "$output/AndroidManifest.xml" -I "$platform" \
+  --min-sdk-version "$minimum" --target-sdk-version "$target" \
+  --version-code "$version_code" --version-name "$version_name" "$output/resources.zip"
+cp "$output/resources.apk" "$output/unaligned.apk"
+cd "$output/payload"
+zip -X -0 "$output/unaligned.apk" classes.dex lib/arm64-v8a/libave.so lib/armeabi-v7a/libave.so lib/x86_64/libave.so \
+  assets/licenses/PROJECT-LICENSE assets/licenses/NOTICE assets/licenses/THIRD_PARTY_LICENSES.md assets/licenses/vecmath-GPL-2-CE.txt
+var apk = "$output/Algebraic-Variety-Explorer-$version_name-idric-unsigned.apk"
+"$align" -P 16 -f -v 4 "$output/unaligned.apk" "$apk" > "$output/evidence/alignment.txt"
+"$align" -P 16 -c -v 4 "$apk" >> "$output/evidence/alignment.txt"
+unzip -t "$apk" > "$output/evidence/zip-test.txt"
+unzip -Z1 "$apk" > "$output/evidence/entries.txt"
+unzip -lv "$apk" > "$output/evidence/compression.txt"
+for entry in resources.arsc lib/arm64-v8a/libave.so lib/armeabi-v7a/libave.so lib/x86_64/libave.so {
+  rg -F "$entry" "$output/evidence/compression.txt" | rg '[[:space:]]Stored[[:space:]]'
+}
+test $(rg -c '^classes[0-9]*\.dex$' "$output/evidence/entries.txt") = 1
+for entry in classes.dex lib/arm64-v8a/libave.so lib/armeabi-v7a/libave.so lib/x86_64/libave.so {
+  test $(rg -c -x -F "$entry" "$output/evidence/entries.txt") = 1
+}
+test $(rg -c '^lib/[^/]+/[^/]+$' "$output/evidence/entries.txt") = 3
+for license in PROJECT-LICENSE NOTICE THIRD_PARTY_LICENSES.md vecmath-GPL-2-CE.txt {
+  test $(rg -c -x -F "assets/licenses/$license" "$output/evidence/entries.txt") = 1
+}
+test $(rg -c '^assets/licenses/[^/]+$' "$output/evidence/entries.txt") = 4
+try { rg '^META-INF/|[.](class|java|kt|jar)$|(^|/)(Observer|Runner)' "$output/evidence/entries.txt" }
+if (_error.code !== 1) { echo 'FAIL signed or foreign candidate payload or checker' >&2; exit 1 }
+mkdir -p "$output/extracted"
+unzip -q "$apk" classes.dex 'lib/*' 'assets/licenses/*' -d "$output/extracted"
+cmp "$activity/candidate.dex" "$output/extracted/classes.dex"
+for abi in arm64-v8a armeabi-v7a x86_64 { cmp "$native/$abi/libave.so" "$output/extracted/lib/$abi/libave.so" }
+for license in PROJECT-LICENSE NOTICE THIRD_PARTY_LICENSES.md vecmath-GPL-2-CE.txt {
+  cmp "$output/payload/assets/licenses/$license" "$output/extracted/assets/licenses/$license"
+}
+"$aapt2" dump badging "$apk" > "$output/evidence/badging.txt"
+rg -F "package: name='$application' versionCode='$version_code' versionName='$version_name'" "$output/evidence/badging.txt"
+rg -x -F "sdkVersion:'23'" "$output/evidence/badging.txt"
+rg -x -F "targetSdkVersion:'35'" "$output/evidence/badging.txt"
+rg -x -F "application-label:'Algebraic Variety Explorer'" "$output/evidence/badging.txt"
+rg -F "launchable-activity: name='Idric.Generated'" "$output/evidence/badging.txt"
+"$aapt2" dump xmltree "$apk" --file AndroidManifest.xml > "$output/evidence/manifest.txt"
+try { "$signer" verify --verbose --print-certs "$apk" > "$output/evidence/unsigned-check.txt" 2>&1 }
+var unsigned_status = _error.code
+printf '%s\n' "$unsigned_status" > "$output/evidence/unsigned-check.exit"
+if (unsigned_status === 0) { echo 'FAIL candidate unexpectedly signed' >&2; exit 1 }
+rg -F 'ERROR: Missing META-INF/MANIFEST.MF' "$output/evidence/unsigned-check.txt"
+sha256sum "$activity/candidate.dex" "$output/extracted/classes.dex" "$apk" > "$output/artifacts.sha256"
+printf '%s\n' "$apk" > "$output/apk-path.txt"
+basename "$apk" > "$output/apk-name.txt"
+printf 'unsigned_pure_DEX_APK\tPASS\noriginal_package_resources_version\tPASS\nexact_candidate_DEX_bytes\tPASS\nproduction_JNI_3ABIs\tPASS\nzipalign_4byte_16KiB\tPASS\nsigned_for_user\tNOT_RUN\ninstalled_emulator\tNOT_RUN\nproduction_update_identity\tNOT_RUN\nphysical_device\tNOT_RUN\n' > "$output/result.tsv"
+printf '\033[32mPASS\033[0m unsigned checked-DEX AVE APK; signing, installed behavior and device acceptance separate\n'

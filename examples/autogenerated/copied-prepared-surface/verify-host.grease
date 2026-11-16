@@ -19,12 +19,14 @@ sha256sum "$repository/native/surfer_surface_store.c" \
   "$repository/native/surfer_surface_store.h" \
   "$repository/native/surfer_surface_store_test.c" \
   "$repository/native/surfer_raytracer.c" "$repository/native/surfer_raytracer.h" \
+  "$repository/native/surfer_original_specialization.inc" "$repository/native/surfer_original_camera.inc" \
+  "$repository/native/surfer_vecmath.c" "$repository/native/surfer_vecmath.h" \
   > "$output/sources.sha256"
 "$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O2 \
   -fno-fast-math -ffp-contract=off -DSURFER_SURFACE_STORE_TESTING \
   "$repository/native/surfer_surface_store.c" \
   "$repository/native/surfer_surface_store_test.c" \
-  "$repository/native/surfer_raytracer.c" -lm -pthread \
+  "$repository/native/surfer_raytracer.c" "$repository/native/surfer_vecmath.c" -lm -pthread \
   -o "$output/surface-store-test" > "$output/compile.txt" 2>&1
 cat "$output/compile.txt"
 "$output/surface-store-test" > "$output/test.txt" 2>&1
@@ -34,7 +36,7 @@ rg -x -F 'PASS copied PreparedSurface ownership and render borrowing' "$output/t
   -fno-fast-math -ffp-contract=off -DSURFER_SURFACE_STORE_TESTING \
   -fsanitize=address,undefined -fno-omit-frame-pointer \
   "$repository/native/surfer_surface_store.c" "$repository/native/surfer_surface_store_test.c" \
-  "$repository/native/surfer_raytracer.c" -lm -pthread \
+  "$repository/native/surfer_raytracer.c" "$repository/native/surfer_vecmath.c" -lm -pthread \
   -o "$output/surface-store-sanitized-test" > "$output/sanitized-compile.txt" 2>&1
 cat "$output/sanitized-compile.txt"
 env ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 \

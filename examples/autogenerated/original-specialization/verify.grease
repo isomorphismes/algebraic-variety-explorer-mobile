@@ -1,0 +1,80 @@
+#!/usr/bin/env grease
+set -eu -o pipefail
+if (len(ARGV) !== 5) { echo 'usage: grease verify.grease EXPLORER ICK_SOURCE QUALIFIED_ICK ORIGINAL_REFERENCE FRESH_OUTPUT' >&2; exit 2 }
+var repository = ARGV[0]
+var ick_source = ARGV[1]
+var compiler = ARGV[2]
+var reference = ARGV[3]
+var output = ARGV[4]
+for path in (ARGV) { if (path[0] !== '/') { echo 'FAIL absolute paths required' >&2; exit 2 } }
+if test -e "$output" { echo 'FAIL refusing reused specialization evidence' >&2; exit 1 }
+test $(git -C "$ick_source" rev-parse HEAD) = fbe86e23d55cfec2000c08e61deea2a407fd7175
+test -x "$compiler"
+command -v rg > /dev/null
+rg -x -F b'actual_XYZ_substitute_evaluateZ_XY_evaluateY\tPASS' "$reference/result.tsv"
+rg -x -F b'actual_Univariate_evaluateAt\tPASS' "$reference/result.tsv"
+rg -x -F b'repeat_bytes\tPASS' "$reference/result.tsv"
+var manifest = "$repository/ci/native-specialization-toolchain.tsv"
+rg -x -F b'build_id\ttarget\ttoolchain\tick_revision\tick_status\tick_evidence' "$manifest"
+for stage in numerical kahan-mutant row-direction-mutant column-direction-mutant exponent-mutant success sanitizers {
+  printf 'native-specialization-%s\tx86_64-pc-linux-gnu\tick\tfbe86e23d55cfec2000c08e61deea2a407fd7175\tqualified\treceipt:ai-ci-ick-host-32cb45b3\n' "$stage" | rg -x -F -f - "$manifest"
+}
+test $(wc -l < "$manifest") = 8
+mkdir -p "$output/mutants"
+"$compiler" --version > "$output/ick-version.txt"
+"$compiler" -dumpmachine > "$output/ick-target.txt"
+rg -x -F x86_64-pc-linux-gnu "$output/ick-target.txt"
+var cc1 = $("$compiler" -print-prog-name=cc1)
+test -x "$cc1"
+sha256sum "$compiler" "$cc1" > "$output/toolchain.sha256"
+sha256sum "$repository/native/surfer_raytracer.c" "$repository/native/surfer_raytracer.h" \
+  "$repository/native/surfer_original_specialization.inc" "$repository/native/surfer_original_camera.inc" "$repository/native/surfer_vecmath.h" "$repository/native/surfer_vecmath.c" "$repository/native/surfer_specialization_test.c" \
+  "$reference/observations.tsv" > "$output/inputs.sha256"
+cp "$reference/result.tsv" "$output/original-reference-profile.tsv"
+cp "$manifest" "$output/toolchain.tsv"
+git -C "$repository" rev-parse HEAD > "$output/source-revision.txt"
+proc compile_test(directory, destination) {
+  "$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O2 \
+    -fno-fast-math -ffp-contract=off "$directory/surfer_specialization_test.c" "$repository/native/surfer_vecmath.c" -lm -o "$destination"
+}
+printf '\033[36mACTION\033[0m compare original transformed coefficient and gradient bytes\n'
+compile_test "$repository/native" "$output/test"
+"$output/test" "$reference/observations.tsv" > "$output/numerical.txt" 2>&1
+cat "$output/numerical.txt"
+rg -x -F 'PASS original transformed XYZ row column and gradient univariate bytes' "$output/numerical.txt"
+proc reject_mutant(name, expression) {
+  var destination = "$output/mutants/$name"
+  mkdir -p "$destination"
+  cp "$repository/native/surfer_raytracer.c" "$repository/native/surfer_raytracer.h" \
+    "$repository/native/surfer_original_camera.inc" "$repository/native/surfer_vecmath.h" "$repository/native/surfer_vecmath.c" "$repository/native/surfer_specialization_test.c" "$destination/"
+  sed "$expression" "$repository/native/surfer_original_specialization.inc" > "$destination/surfer_original_specialization.inc"
+  try { cmp -s "$repository/native/surfer_original_specialization.inc" "$destination/surfer_original_specialization.inc" }
+  if (_error.code !== 1) { echo 'FAIL specialization mutation unchanged or comparison failed' >&2; exit 1 }
+  compile_test "$destination" "$destination/test"
+  try { "$destination/test" "$reference/observations.tsv" > "$destination/result.txt" 2>&1 }
+  var status = _error.code
+  cat "$destination/result.txt"
+  if (status !== 1) { echo "FAIL designated specialization mutation rejection absent: $name" >&2; exit 1 }
+  rg '^FAIL original specialization:' "$destination/result.txt"
+}
+reject_mutant kahan 's/coefficient - correction/coefficient + 0.0 * correction/'
+reject_mutant row-direction '/^static original_xy_polynomial original_evaluate_z/,/^}/s/const bool forwards = fabs(where) > 1.0;/const bool forwards = false;/'
+reject_mutant column-direction '/^static univariate_polynomial original_evaluate_y/,/^}/s/const bool forwards = fabs(where) > 1.0;/const bool forwards = false;/'
+reject_mutant exponent 's/previous.z_exponent - current.z_exponent))/previous.z_exponent - current.z_exponent + 1))/'
+"$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O2 \
+  -fno-fast-math -ffp-contract=off -DSURFER_STATUS_API -I "$repository/native" -I "$repository/native/android" \
+  "$repository/native/surfer_raytracer.c" "$repository/native/android/presets.c" \
+  "$repository/native/surfer_success_oracle.c" "$repository/native/surfer_vecmath.c" -lm -o "$output/legacy-success"
+"$output/legacy-success" > "$output/legacy-success.bin"
+test $(wc -c < "$output/legacy-success.bin") = 32179
+printf '%s  %s\n' 65f44c201676e330068804e4059a369cb6479efa1673660fd78a42681a1f55ca "$output/legacy-success.bin" | sha256sum -c -
+"$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O1 -g \
+  -fno-fast-math -ffp-contract=off -fsanitize=address,undefined -fno-omit-frame-pointer \
+  "$repository/native/surfer_specialization_test.c" "$repository/native/surfer_vecmath.c" -lm -o "$output/sanitized"
+env ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 \
+  "$output/sanitized" "$reference/observations.tsv" > "$output/sanitizers.txt" 2>&1
+cat "$output/sanitizers.txt"
+rg -x -F 'PASS original transformed XYZ row column and gradient univariate bytes' "$output/sanitizers.txt"
+sha256sum "$output/test" "$output/sanitized" "$output/legacy-success" > "$output/binaries.sha256"
+printf 'original_method_raw_coefficient_gradient_bits\tPASS\nreference_profile\tsee-original-reference-profile.tsv\nactual_allocation_faults_Interactive_Final\tPASS\ncancelled_transformed_ownership\tPASS\nfour_compiled_mutants\tPASS\nlegacy_success_bytes\tPASS\nASAN_UBSAN_leaks\tPASS\nfull_original_camera_lighting_tiling\tNOT_ESTABLISHED\nAndroid\tNOT_RUN\nphysical_devices\tNOT_RUN\n' > "$output/result.tsv"
+printf '\033[32mPASS\033[0m original same-coordinate specialization; full camera/image acceptance separate\n'

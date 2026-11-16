@@ -1,0 +1,39 @@
+#!/usr/bin/env grease
+set -eu -o pipefail
+if (len(ARGV) !== 3) { echo 'usage: grease observe-art.grease ADB SERIAL EVIDENCE' >&2; exit 2 }
+var adb = ARGV[0]
+var serial = ARGV[1]
+var evidence = ARGV[2]
+if (adb[0] !== '/' or evidence[0] !== '/') { echo 'FAIL absolute paths required' >&2; exit 2 }
+if test -e "$evidence/art" { echo 'FAIL refusing reused interaction ART evidence' >&2; exit 1 }
+mkdir -p "$evidence/art"
+"$adb" -s "$serial" shell getprop ro.build.version.sdk > "$evidence/art/sdk.txt"
+"$adb" -s "$serial" shell getprop ro.product.cpu.abi > "$evidence/art/abi.txt"
+for candidate in positive float-mutant quality-mutant {
+  var remote = "/data/local/tmp/ave-interaction-$candidate"
+  "$adb" -s "$serial" shell mkdir -p "$remote"
+  "$adb" -s "$serial" push "$evidence/$candidate/candidate.dex" "$remote/candidate.dex"
+  "$adb" -s "$serial" push "$evidence/runner.dex" "$remote/runner.dex"
+  "$adb" -s "$serial" shell chmod 444 "$remote/candidate.dex" "$remote/runner.dex"
+  "$adb" -s "$serial" pull "$remote/candidate.dex" "$evidence/art/$candidate-received.dex"
+  "$adb" -s "$serial" pull "$remote/runner.dex" "$evidence/art/$candidate-runner-received.dex"
+  cmp "$evidence/$candidate/candidate.dex" "$evidence/art/$candidate-received.dex"
+  cmp "$evidence/runner.dex" "$evidence/art/$candidate-runner-received.dex"
+  try {
+    timeout 60 "$adb" -s "$serial" shell \
+      "CLASSPATH=$remote/candidate.dex:$remote/runner.dex app_process /system/bin InteractionRunner" \
+      > "$evidence/art/$candidate.stdout.txt" 2> "$evidence/art/$candidate.stderr.txt"
+  }
+  var status = _error.code
+  printf '%s\n' "$status" > "$evidence/art/$candidate.exit"
+  cat "$evidence/art/$candidate.stdout.txt" "$evidence/art/$candidate.stderr.txt"
+  if (candidate === 'positive') {
+    if (status !== 0) { echo 'FAIL interaction ART process; inspect retained Throwable' >&2; exit 1 }
+    rg -x -F 'PASS Explorer interaction and quality source' "$evidence/art/$candidate.stdout.txt"
+  } else {
+    if (status !== 87) { echo 'FAIL missing designated interaction source mutation rejection' >&2; exit 1 }
+    rg -x -F 'FAIL Explorer interaction and quality source' "$evidence/art/$candidate.stderr.txt"
+  }
+}
+printf 'source_interaction_ART\tPASS\nFloat32_drag_then_widen\tPASS\nFloat32_scale_widen_then_multiply\tPASS\nsource_throttle\tPASS\nquality_rounding_order\tPASS\ncompiled_source_mutants_rejected\tPASS\nnormal_Activity\tPENDING\nphysical_device\tNOT_RUN\n' > "$evidence/art/result.tsv"
+printf '\033[32mPASS\033[0m Explorer interaction and quality source on ART\n'

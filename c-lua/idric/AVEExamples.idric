@@ -1,0 +1,33 @@
+module AVEExamples
+
+public export
+record SurfaceExample where
+  constructor Example
+  name : Text
+  formula : Text
+
+export
+initial_formula : Text
+initial_formula = "x^2+y^2+z^2-0.64"
+
+export
+surface_examples : List SurfaceExample
+surface_examples =
+  [ Example "Sphere" "x^2+y^2+z^2-0.64"
+  , Example "Torus" "(x^2+y^2+z^2+0.36)^2-1.69*(x^2+y^2)"
+  , Example "Cayley cubic" "x^2+y^2+z^2+2*x*y*z-1"
+  , Example "Whitney umbrella" "x^2-y^2*z"
+  , Example "Roman surface" "x^2*y^2+y^2*z^2+z^2*x^2-x*y*z"
+  , Example "Heart" "(x^2+2.25*y^2+z^2-1)^3-x^2*z^3-0.1125*y^2*z^3"
+  , Example "Madore E6 cubic" "x^2+x*z^2+y^3"
+  ]
+
+export
+selected_example : Int32 → Maybe SurfaceExample
+selected_example selected =
+  if selected < 0 then Nothing else select selected surface_examples
+  where
+    select : Int32 → List SurfaceExample → Maybe SurfaceExample
+    select _ [] = Nothing
+    select 0 (example :: _) = Just example
+    select index (_ :: remaining) = select (index + (-1)) remaining

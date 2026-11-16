@@ -27,11 +27,19 @@ mkdir -p "$output/production" "$output/qualification"
 "$compiler" -dumpmachine > "$output/ick-target.txt"
 rg '^x86_64-' "$output/ick-target.txt"
 sha256sum "$compiler" > "$output/ick-compiler.sha256"
+sha256sum "$repository/native/surfer_raytracer.h" \
+  "$repository/native/surfer_original_specialization.inc" \
+  "$repository/native/surfer_original_camera.inc" "$repository/native/surfer_vecmath.h" \
+  "$repository/native/surfer_surface_store.h" "$repository/native/surfer_frame_output.h" \
+  "$repository/native/surfer_render_session.h" "$repository/native/android/prepared_surface_jni.h" \
+  "$repository/native/android/render_surface_jni.h" "$repository/native/android/render_session_jni.h" \
+  > "$output/native-headers.sha256"
 proc compile_source(source, name) {
+  sha256sum "$repository/$source" >> "$output/native-sources.sha256"
   "$compiler" --sysroot="$sysroot" -isystem "$sysroot/usr/include" \
     -isystem "$sysroot/usr/include/x86_64-linux-android" \
     -D__ANDROID__ -D__ANDROID_API__=26 -DBIONIC_IOCTL_NO_SIGNEDNESS_OVERLOAD \
-    -std=c17 -Wall -Wextra -Werror -pedantic -O2 -fPIC -fno-stack-protector \
+    -std=c17 -Wall -Wextra -Werror -pedantic -O2 -fPIC -fvisibility=hidden -fno-stack-protector \
     -march=x86-64-v2 -mno-avx -mno-movbe -fno-fast-math -ffp-contract=off \
     -c "$repository/$source" -o "$output/production/$name.o"
   "$compiler" --sysroot="$sysroot" -isystem "$sysroot/usr/include" \
@@ -45,6 +53,7 @@ proc compile_source(source, name) {
     -c "$repository/$source" -o "$output/qualification/$name.o"
 }
 compile_source native/surfer_raytracer.c numerical
+compile_source native/surfer_vecmath.c vecmath
 compile_source native/surfer_surface_store.c ownership
 compile_source native/android/prepared_surface_jni.c jni
 compile_source native/surfer_frame_output.c frame
@@ -77,12 +86,12 @@ compile_source native/android/render_session_jni.c session-jni
   -o "$output/qualification/session-observer.o"
 # The platform driver receives objects only; ICK compiled every C source.
 "$linker" -shared -Wl,-z,defs -Wl,-z,relro -Wl,-z,now -Wl,-z,max-page-size=16384 \
-  "$output/production/numerical.o" "$output/production/ownership.o" "$output/production/jni.o" \
+  "$output/production/numerical.o" "$output/production/vecmath.o" "$output/production/ownership.o" "$output/production/jni.o" \
   "$output/production/frame.o" "$output/production/render-jni.o" \
   "$output/production/session.o" "$output/production/session-jni.o" \
   -lm -o "$output/production/libave_prepared_surface.so"
 "$qualification_linker" -shared -Wl,-z,defs -Wl,-z,relro -Wl,-z,now -Wl,-z,max-page-size=16384 \
-  "$output/qualification/numerical.o" "$output/qualification/ownership.o" \
+  "$output/qualification/numerical.o" "$output/qualification/vecmath.o" "$output/qualification/ownership.o" \
   "$output/qualification/jni.o" "$output/qualification/observer.o" \
   "$output/qualification/frame.o" "$output/qualification/render-jni.o" "$output/qualification/render-observer.o" \
   "$output/qualification/session.o" "$output/qualification/session-jni.o" "$output/qualification/session-observer.o" \

@@ -38,6 +38,36 @@ including start-plus-increment and subtract-then-add center coordinates.
 Original host-dependent overlapping tile partitioning is not reproduced by
 this synchronous numerical entry.
 
+The explicit quality and cancellable entries now transform the four prepared
+XYZ polynomials once and use the original `evaluateZ` row and `evaluateY`
+column operations. Sorted product terms retain original Kahan collection;
+row/column evaluation preserves the ordinary versus inverse Horner choice.
+The three gradient univariates are evaluated at the hit. A bounded two-row
+cache owns its storage within the render call. The legacy single-sample API
+keeps its earlier direct expansion as a historical successful-byte control.
+
+The specialization oracle observes unchanged original methods for thirty
+formula/map cases, 840 columns and 5880 scalar evaluations, including signed
+zero, cancellation, reciprocal and coefficient-order cases. These compare the
+same explicit coordinate polynomials; they do not establish original camera
+construction or complete image equivalence on their own.
+
+The explicit quality and cancellable entries also preserve the original
+orthographic camera sequence for AVE's fixed camera translation, identity
+surface transform and yaw/pitch view. This includes the full 4×4 vecmath
+multiplication and LU inversion, separate camera/clipping/surface bases,
+normalization, projected offsets, inverse normal matrix and left-to-right
+ray interpolation. The separately compiled `surfer_vecmath.c` retains its
+Sun GPLv2 with Classpath Exception notices and full license text. Every build
+of the current numerical core must link this module.
+
+The camera oracle observes unchanged original methods for seven profiles,
+672 matrix elements, 109 coordinate samples, 327 rays, 1962 ray points and
+28 normal transformations. Four compiled mutations must distinguish omitted
+normalization, omitted offsets, reassociated interpolation and an altered LU
+back-substitution. This restricted camera gate does not establish complete
+image equivalence or target libm behavior.
+
 `surfer_render_orthographic_cancellable` adds a borrowed synchronous predicate
 to the same quality operation. Long polynomial, Descartes and bisection loops
 and individual samples poll it and return `SURFER_CANCELLED`; the predicate
@@ -87,7 +117,7 @@ frames distinguish threshold ties, all six comparisons, weights, accumulation
 order, binary32 arithmetic and sample placement. Every observed AA/ray
 allocation fault must propagate failure; targeted compiled mutations must be
 rejected. These tests use real original roots/rays/AA with simple prepared
-surfaces and isolate AA from the remaining lighting/specialization gaps. They
+surfaces and isolate AA from the remaining full lighting/preset gaps. They
 do not qualify the full FINAL preset corpus or general image equivalence.
 
 ## Error and ownership contract
@@ -114,10 +144,7 @@ exist only in caller-owned test probes, with no global allocator/error state.
 This is the restored ray-tracing nucleus, not a claim that Java can be removed.
 The remaining numerical translation includes:
 
-- exact `XYZ -> XY -> univariate` specialization/evaluation order and Kahan
-  collection parity rather than the current direct sparse-to-ray expansion;
-- gradient specialization parity rather than direct sparse derivative
-  evaluation at the hit;
+- target execution of the restricted original camera and combined image path;
 - the full original FINAL-quality material/lighting/preset corpus beyond the
   bounded original AA observations;
 - complete Activity worker concurrency and latest-request delivery through the

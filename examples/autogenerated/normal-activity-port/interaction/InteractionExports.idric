@@ -1,0 +1,79 @@
+module InteractionExports
+
+import AVEInteraction
+
+%foreign "dex:static:Ljava/lang/Float;:intBitsToFloat:(I)F"
+coordinate : Int32 → CoordinateFloat
+
+%foreign "dex:static:Ljava/lang/Double;:doubleToRawLongBits:(D)J"
+double_bits : Double → Int64
+
+%export "dex:interaction_drag_yaw_bits"
+interaction_drag_yaw_bits : Int32 → Int32 → Int32 → Int64
+interaction_drag_yaw_bits previous_bits next_bits width =
+  let down = touch_down (coordinate previous_bits) (coordinate 0) initial_interaction
+      (moved, _) = touch_move 1 False width 1 (coordinate next_bits) (coordinate 0) down
+  in double_bits moved.camera.yaw
+
+%export "dex:interaction_drag_pitch_bits"
+interaction_drag_pitch_bits : Int32 → Int32 → Int32 → Int64
+interaction_drag_pitch_bits previous_bits next_bits height =
+  let down = touch_down (coordinate 0) (coordinate previous_bits) initial_interaction
+      (moved, _) = touch_move 1 False 1 height (coordinate 0) (coordinate next_bits) down
+  in double_bits moved.camera.pitch
+
+%export "dex:interaction_scale_zoom_bits"
+interaction_scale_zoom_bits : Int32 → Int32 → Int64
+interaction_scale_zoom_bits starting_zoom factor_bits =
+  let camera = CameraOrientation 0.55 (-0.35) (cast starting_zoom)
+      state = ViewInteraction camera Nothing 0
+  in double_bits (scale_view (coordinate factor_bits) state).camera.zoom
+
+%export "dex:interaction_blocked_move_yaw_bits"
+interaction_blocked_move_yaw_bits : Int32 → Bool → Int64
+interaction_blocked_move_yaw_bits pointers scaling =
+  let down = touch_down (coordinate 1092616192) (coordinate 0) initial_interaction
+      (blocked, _) = touch_move pointers scaling 100 100 (coordinate 1120403456) (coordinate 0) down
+      (moved, _) = touch_move 1 False 100 100 (coordinate 1120534528) (coordinate 0) blocked
+  in double_bits moved.camera.yaw
+
+%export "dex:interaction_reset_drag_yaw_bits"
+interaction_reset_drag_yaw_bits : Int32 → Int64
+interaction_reset_drag_yaw_bits width =
+  let down = touch_down (coordinate 1092616192) (coordinate 0) initial_interaction
+      reset = reset_view down
+      (moved, _) = touch_move 1 False width 1 (coordinate 1093664768) (coordinate 0) reset
+  in double_bits moved.camera.yaw
+
+%export "dex:interaction_initial_move_yaw_bits"
+interaction_initial_move_yaw_bits : Int32 → Int64
+interaction_initial_move_yaw_bits width =
+  let (moved, _) = touch_move 1 False width 1 (coordinate 1065353216) (coordinate 0) initial_interaction
+  in double_bits moved.camera.yaw
+
+%export "dex:interaction_notify_timestamp"
+interaction_notify_timestamp : Bool → Bool → Int64 → Int64 → Int64
+interaction_notify_timestamp listener finished now previous =
+  let state = ViewInteraction initial_orientation Nothing previous
+      (notified, _) = notify_view_changed listener finished now state
+  in notified.last_interactive_render_at
+
+selected_quality : Bool → RenderQuality
+selected_quality = quality_for_gesture
+
+%export "dex:interaction_request_width"
+interaction_request_width : Bool → Int32 → Int32 → Int32
+interaction_request_width final width height =
+  case render_size (selected_quality final) width height of
+    Nothing ⇒ -1
+    Just size ⇒ size.pixel_width
+
+%export "dex:interaction_request_height"
+interaction_request_height : Bool → Int32 → Int32 → Int32
+interaction_request_height final width height =
+  case render_size (selected_quality final) width height of
+    Nothing ⇒ -1
+    Just size ⇒ size.pixel_height
+
+main : IO ()
+main = pure ()
