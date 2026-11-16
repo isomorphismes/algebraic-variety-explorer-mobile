@@ -71,8 +71,11 @@ source-level question by claiming all inherited grouping has been qualified.
 
 ## Verification and integration
 
-PENDING: source checks and execution through the pinned frontend and direct DEX
-backend. `PolynomialQualificationCheck.idric` tests structural distinctions,
+The working source compiled and passed its host suite through the exact retained
+frontend740bbf2b1. Backend153e7fc emitted the combined parser/qualification DEX,
+and pinned baksmali independently decoded both Text exports. The independent
+combined runner assembled. ART execution of this new semantic stage remains
+PENDING. `PolynomialQualificationCheck.idric` tests structural distinctions,
 valid/invalid powers and divisors, named coefficients, supported functions and
 overflow reporting. It must be compiled alongside the unchanged
 `AlgebraicExpression.idric` and the new `PolynomialQualification.idric`.
@@ -85,10 +88,21 @@ check separately on the host, then generate direct DEX from the separate
 compiled mutation remain required. Do not present this source or host check as
 F64, PreparedSurface/JNI, APK or physical-device acceptance.
 
-Local checks: `git diff --cached --check` passed in the isolated checkout.
-`command -v idric idris2 grease` found no local compiler/runtime entrypoint, so
-no host or DEX execution is claimed from this checkout. The parent task owns
-hosted qualification through the already selected pinned compiler.
+The isolated authoring checkout initially lacked a compiler. The parent task
+then recovered the exact compiler/driver artifact from run43785829334,
+verified its archive digest and executable hashes, and performed the host,
+emission and decoding observations above. The artifact is a build-host tool,
+not a phone/tablet package.
+
+Run43787844128 at source95040ff passed the host suite and generated/decoded the
+new candidate and both compiled source mutations. Its original-jsurf admission
+step exposed the inherited ANTLR error-reporting bug: a deliberate walker
+refusal has `RecognitionException.input=null`, then `TreeParser.getErrorMessage`
+throws a NullPointerException while reporting it. The oracle now requires that
+exact message and both parser/reporting stack frames when the ordinary ANTLR
+exception name is absent. It does not accept arbitrary crashes as refusals.
+The failing and corrected reporting observations remain distinct from candidate
+ART behavior and from numerical equivalence.
 
 ## Remaining work
 

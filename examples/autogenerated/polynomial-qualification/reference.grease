@@ -27,12 +27,27 @@ proc accept(name, formula) {
   if (preview_status !== 0) { cat "$output/$name.txt"; echo "FAIL original jsurf rejected $name" >&2; exit 1 }
   test -s "$output/$name.ppm"
 }
+proc grammar_refusal(log) {
+  try { rg 'RecognitionException|MismatchedTokenException|MismatchedSetException|NoViableAltException' "$log" }
+  var status = _error.code
+  if (status !== 0) {
+    if (status !== 1) { echo 'FAIL original grammar diagnostic checker' >&2; exit 1 }
+    # The retained generated walker loses RecognitionException.input and its
+    # ANTLR error reporter then throws. Admit only this exact reporting chain,
+    # never an arbitrary application NullPointerException or other crash.
+    rg -F 'java.lang.NullPointerException: Cannot invoke "org.antlr.runtime.tree.TreeNodeStream.getTreeAdaptor()" because "e.input" is null' "$log"
+    rg -F 'at org.antlr.runtime.tree.TreeParser.getErrorMessage(' "$log"
+    rg -F 'at de.mfo.jsurf.parser.AlgebraicExpressionWalker.expr(' "$log"
+  }
+}
 proc refuse(name, formula) {
   preview "$name" "$formula"
   if (preview_status !== 1) { cat "$output/$name.txt"; echo "FAIL original jsurf refusal status for $name" >&2; exit 1 }
-  rg 'RecognitionException|MismatchedTokenException|MismatchedSetException|NoViableAltException' "$output/$name.txt"
+  grammar_refusal "$output/$name.txt"
 }
 accept sphere 'x^2+y^2+z^2-0.64'
+cp -a "$repository/.build/test/classes" "$output/oracle-classes"
+cp "$repository/.dependencies/antlr-runtime-3.4.jar" "$repository/.dependencies/vecmath-1.5.2.jar" "$output/"
 accept grouped-decimal 'x^(2)+y^2+z^2-0.64'
 accept constant-function 'sqrt(.25)*x+y^2+z^2-0.64'
 accept exponent-overflow 'x^2147483648+y^2+z^2-0.64'
@@ -50,7 +65,7 @@ if (preview_status === 0) {
   printf 'nested_group\taccepted\n' > "$output/nested-group.tsv"
 } else {
   if (preview_status !== 1) { cat "$output/nested-group.txt"; echo 'FAIL nested-group oracle execution' >&2; exit 1 }
-  rg 'RecognitionException|MismatchedTokenException|MismatchedSetException|NoViableAltException' "$output/nested-group.txt"
+  grammar_refusal "$output/nested-group.txt"
   printf 'nested_group\trejected\n' > "$output/nested-group.tsv"
 }
 cat "$output/nested-group.tsv"
