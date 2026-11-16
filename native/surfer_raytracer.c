@@ -824,7 +824,11 @@ static double find_positive_root_with_descartes(surfer_operation_context *contex
     double upper_bound,
     which_root order)
 {
-    if (upper_bound <= 0.0 || coefficient_count_without_trailing_zeroes(context, source) <= 1) {
+    /* Stussak tests the represented degree BEFORE p.shrink(). A polynomial
+     * with retained higher zero coefficients can therefore still return the
+     * zero root after shrinking. Moving this test changes singular rays.
+     */
+    if (upper_bound <= 0.0 || source->length <= 1) {
         return NAN;
     }
 
@@ -1509,7 +1513,8 @@ static surfer_color add_one_light_to_shaded_color(
     surfer_vec3 hit,
     surfer_vec3 view,
     surfer_vec3 normal,
-    surfer_material material)
+    surfer_material material,
+    bool original_binary64_power)
 {
     if (!light.enabled) {
         return color;
@@ -1533,7 +1538,10 @@ static surfer_color add_one_light_to_shaded_color(
     const float normal_half =
         (float)fmax(0.0, dot_product(normal, half_vector));
     const float specular_factor =
-        powf(normal_half, material.shininess);
+        original_binary64_power
+            ? (float)pow(fmax(0.0, dot_product(normal, half_vector)),
+                (double)material.shininess)
+            : powf(normal_half, material.shininess);
     const surfer_color specular_product = scale_color(
         light.color,
         material.specular_intensity * light.intensity);
@@ -1567,7 +1575,29 @@ static surfer_color shade_hit_with_material(
             hit,
             view,
             normal,
-            material);
+            material,
+            false);
+    }
+    return clamp_color_to_maximum(color, 1.0f);
+}
+
+/* Preserve the frozen original DrawcallStaticData and RenderingTask sequence.
+ * In particular, backAmbientColor is scaled by the FRONT ambient intensity in
+ * collectDrawCallStaticData. This observed behavior is not silently corrected.
+ * The historical single-sample entry above remains a successful-byte control.
+ */
+static surfer_color shade_hit_with_original_material(
+    const surfer_scene *scene,
+    surfer_vec3 hit,
+    surfer_vec3 view,
+    surfer_vec3 normal,
+    surfer_material material)
+{
+    surfer_color color = scale_color(material.color,
+        scene->front_material.ambient_intensity);
+    for (size_t index = 0; index < scene->light_count; ++index) {
+        color = add_one_light_to_shaded_color(color, scene->lights[index], hit,
+            view, normal, material, true);
     }
     return clamp_color_to_maximum(color, 1.0f);
 }
@@ -1605,17 +1635,21 @@ static surfer_vec3 prepared_gradient_at_surface_point(
     return gradient;
 }
 
-static surfer_vec3 camera_normal_from_surface_gradient(
-    surfer_ray_bundle rays,
-    surfer_vec3 surface_gradient)
+static surfer_vec3 normalize_surface_normal(surfer_vec3 camera_normal)
 {
-    surfer_vec3 camera_normal =
-        apply_matrix_to_vector(rays.surface_normal_to_camera, surface_gradient);
     const float length = (float)length_of_vector(camera_normal);
     if (length != 0.0f) {
         camera_normal = scale_vector(camera_normal, 1.0f / length);
     }
     return camera_normal;
+}
+
+static surfer_vec3 camera_normal_from_surface_gradient(
+    surfer_ray_bundle rays,
+    surfer_vec3 surface_gradient)
+{
+    return normalize_surface_normal(
+        apply_matrix_to_vector(rays.surface_normal_to_camera, surface_gradient));
 }
 
 static surfer_material material_for_visible_side(
@@ -1680,7 +1714,11 @@ static surfer_trace_result trace_prepared_ray_with_row(
 
     const surfer_vec3 clipping_point =
         point_on_ray_at_parameter(rays.clipping_ray, hit_parameter);
-    if (dot_product(clipping_point, clipping_point) > 1.0 + 1e-12) {
+    /* Clipper.clipPoint(point, true) skips the original sphere point check:
+     * ClipToSphere.pointClippingNecessary() is false. Retain the old extra
+     * check only in the historical direct-expansion control.
+     */
+    if (row == NULL && dot_product(clipping_point, clipping_point) > 1.0 + 1e-12) {
         result.status = SURFER_MISS;
         return result;
     }
@@ -1726,8 +1764,9 @@ static surfer_trace_result trace_prepared_ray_with_row(
     result.ray_parameter = hit_parameter;
     result.point = camera_point;
     result.surface_normal = camera_normal;
-    result.color =
-        shade_hit_with_material(scene, camera_point, view, camera_normal, material);
+    result.color = row == NULL
+        ? shade_hit_with_material(scene, camera_point, view, camera_normal, material)
+        : shade_hit_with_original_material(scene, camera_point, view, camera_normal, material);
     if (!finite_color(result.color)) {
         result.status = SURFER_INVALID_INPUT;
     }

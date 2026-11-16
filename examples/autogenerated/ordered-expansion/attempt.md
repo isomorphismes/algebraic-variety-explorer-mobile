@@ -26,8 +26,9 @@ before this stage expands the surface and derivatives separately.
   model or establish unrestricted equivalence.
 - Expansion returns a typed failure for missing parameters, nonfinite
   coefficients/intermediate values, resource exhaustion or exponents outside
-  the original nonnegative signed-byte-safe range. Every retained/intermediate
-  term must have coordinate exponents and total degree in `0…127`. This avoids
+  the original nonnegative signed-byte-safe range. Every retained term or
+  consumed intermediate must have coordinate exponents and total degree in
+  `0…127`. This avoids
   silently translating original byte overflow into different signed32 math.
 
 ## Numerical order to preserve
@@ -39,10 +40,11 @@ monomial and coefficient, using the original comparator's sign/equality rules.
 Within a monomial group, Kahan starts from its first coefficient rather than
 adding it to zero. Division evaluates the divisor once, takes its reciprocal
 once, then scales with reciprocal as the left operand. Power uses the original
-base/result initialization and decrement/odd-product/square/halve sequence,
-including the final unused square. Checked refusals apply to those intermediate
-operations too, so the admitted subset is intentionally narrower than every
-finite final polynomial that the original happens to return.
+base/result initialization and decrement/odd-product/square/halve sequence.
+A square is required only when a later multiplication consumes that factor.
+The original final unused square has no semantic contribution and must not make
+a finite retained result fail a checked exponent/coefficient limit. Checks still
+apply to every consumed operation and retained term.
 
 NaN makes the original coefficient comparator non-total; nonfinite values are
 therefore an explicit unsupported expansion boundary. Scalar evaluation still
@@ -112,3 +114,53 @@ Evidence artifact14194851821 has ZIP SHA256
 `edfe268493a2ad0a03dc286386bea9fe3e0dff937fe97ba6214ef01b92dc6cb0`.
 No C/native transfer, APK or physical-device acceptance follows from this
 managed-stage ART pass.
+
+## Finite-result correction: unused final power square
+
+The review exposed a concrete mismatch between the original return value and
+the checked intermediate limits: `x^127` retains a valid exponent127 result,
+but its discarded final factor square has exponent128. Likewise,
+`(1e100*x)^3` and all three derivatives have finite retained coefficients,
+but the discarded square has coefficient about1e400. Previously either unused
+value could cause a refusal.
+
+The existing semantic types remain unchanged:
+`power_loop : Number → ExpansionLimits → Int32 → ExpandedPolynomial →
+ExpandedPolynomial → Either ExpansionFailure ExpandedPolynomial`.
+The remaining exponent decides whether another factor will be consumed. Once
+it is zero, return the completed polynomial before computing a discarded
+square. Preserve every consumed multiplication, coefficient operation order,
+term order, checked failure and derivative expansion. No extra runtime or
+foreign primitive is required.
+
+The maintained original-jsurf/actual-Idriç observer will compare family degree,
+raw coefficient bits and ordered terms for the surface plus three derivatives
+of both examples. `(1e200*x)^2` must still refuse a consumed nonfinite result,
+and `x^128` must still refuse a consumed out-of-range exponent. A third compiled
+source mutant restores the discarded-square check; the same independent
+observer must reject it with the existing exact failure status77. Existing
+Kahan and family-degree mutations remain required.
+
+Status before implementation: source-level defect established; new source
+compilation, original observation, mutant rejection and ART execution NOT_RUN.
+No fallback is proposed. This exposes no new Idriç language gap; it corrects
+which semantic operations require an existing checked polynomial result.
+
+The corrected implementation and amended independent observer now pass the
+complete local maintained `verify.grease` emission/decode/repeat procedure with
+frontend740bbf2b1 and exact driver SHA256
+`a2641ca7eb34f596b6d3ad9a9ba821b7014d5116ec1454572e6ab80f9f45b773`.
+The candidate is SHA256
+`b644419d9bf3286cb566db83aaf7014cb20a4d80f3c996e4a612e62061abaf39`;
+the deliberately restored dead-square source mutant is
+`92e12472efaa44e610d8c556a43a28a1ef58b55ffbb8d62c96d39db02707635a`.
+Both existing mutants also emit different independently decoded DEX, and the
+positive repeat is byte-identical. Both changed Grease helpers parse through
+the retained pinned Grease runtime. The observer assembles to SHA256
+`562b6f58057e01073eda82ce697cf8d4aa90f464ee6fa5ab95a39046893a6160`.
+The complete prepared-transfer observer also contains both finite cases, so its
+next execution compares the four native-owned copied polynomials as well.
+These are compiler/generation/structure observations only: new original-jsurf
+comparison, actual checked-source behavior, all three mutant rejections and
+JNI-transfer behavior remain NOT_RUN until the amended candidates execute
+through their maintained ART observers.

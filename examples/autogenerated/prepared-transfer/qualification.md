@@ -95,3 +95,15 @@ It records frontend740bbf2b1 and backend6e28d6c1, actual received candidate/
 oracle/library bytes and the per-stage result. Positive parameter binding,
 Activity integration, APK and physical-device execution remain NOT_RUN for
 this complete handoff; earlier semantic-stage binding evidence is separate.
+
+## Finite results with a discarded overflowing factor square
+
+The actual source-transfer corpus additionally includes `x^127` and
+`(1e100*x)^3`. Both compare the family degree, exact ordered surface terms and
+all three separately prepared/expanded derivatives with the original program
+after reading the actual JNI-owned native snapshot. The companion
+ordered-expansion corpus rejects a compiled source mutant that reinstates the
+discarded-square refusal and retains consumed overflow/exponent128 controls.
+These new transfer observations remain NOT_RUN until the amended runner and
+actual candidate execute together on ART; previous-head results do not qualify
+the added cases.

@@ -10,7 +10,7 @@ var remote = '/data/local/tmp/ave-ordered-expansion'
 "$adb" -s "$serial" shell mkdir "$remote"
 "$adb" -s "$serial" push "$evidence/runner.dex" "$remote/runner.dex"
 "$adb" -s "$serial" push "$oracle" "$remote/original-oracle.dex"
-for name in positive kahan-mutant family-mutant {
+for name in positive kahan-mutant family-mutant dead-square-mutant {
   "$adb" -s "$serial" push "$evidence/$name/candidate.dex" "$remote/$name.dex"
   "$adb" -s "$serial" shell chmod 444 "$remote/$name.dex"
   "$adb" -s "$serial" pull "$remote/$name.dex" "$evidence/$name-received.dex"
@@ -25,7 +25,7 @@ cmp "$oracle" "$evidence/original-oracle-received.dex"
   > "$evidence/art-positive.txt" 2>&1
 cat "$evidence/art-positive.txt"
 rg -x -F 'PASS Explorer ordered expansion on ART' "$evidence/art-positive.txt"
-for mutant in kahan-mutant family-mutant {
+for mutant in kahan-mutant family-mutant dead-square-mutant {
   try {
     "$adb" -s "$serial" shell "CLASSPATH=$remote/$mutant.dex:$remote/original-oracle.dex:$remote/runner.dex app_process /system/bin ExpansionRunner" \
       > "$evidence/art-$mutant.txt" 2>&1
@@ -37,5 +37,5 @@ for mutant in kahan-mutant family-mutant {
 }
 "$adb" -s "$serial" shell getprop ro.build.version.sdk > "$evidence/art-sdk.txt"
 "$adb" -s "$serial" shell getprop ro.product.cpu.abi > "$evidence/art-abi.txt"
-printf 'ordered_expansion_ART\tPASS\noriginal_jsurf_terms_and_gradients\tPASS\ncompiled_kahan_mutant_rejected\tPASS\ncompiled_family_mutant_rejected\tPASS\nJNI_transfer\tNOT_RUN\nAPK\tNOT_RUN\nphysical_C67\tNOT_RUN\nphysical_A1\tNOT_RUN\n' > "$evidence/art-result.tsv"
+printf 'ordered_expansion_ART\tPASS\noriginal_jsurf_terms_and_gradients\tPASS\nfinite_result_unused_square\tPASS\nconsumed_overflow_refused\tPASS\ncompiled_kahan_mutant_rejected\tPASS\ncompiled_family_mutant_rejected\tPASS\ncompiled_dead_square_mutant_rejected\tPASS\nJNI_transfer\tNOT_RUN\nAPK\tNOT_RUN\nphysical_C67\tNOT_RUN\nphysical_A1\tNOT_RUN\n' > "$evidence/art-result.tsv"
 printf '\033[32mPASS\033[0m actual ordered expansion and compiled source mutations on ART\n'

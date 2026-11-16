@@ -379,6 +379,10 @@
     invoke-static {v0}, LPreparedTransferRunner;->check(Ljava/lang/String;)V
     const-string v0, "(-10000000000000000+x+x^2+10000000000000000*x^3)*(1+x+x^2+x^3)"
     invoke-static {v0}, LPreparedTransferRunner;->check(Ljava/lang/String;)V
+    const-string v0, "x^127"
+    invoke-static {v0}, LPreparedTransferRunner;->check(Ljava/lang/String;)V
+    const-string v0, "(1e100*x)^3"
+    invoke-static {v0}, LPreparedTransferRunner;->check(Ljava/lang/String;)V
     invoke-static {}, LPreparedTransferRunner;->sourceValidation()V
     const-string v0, "x"
     const-string v1, "accepted and released"

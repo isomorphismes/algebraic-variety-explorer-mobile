@@ -120,6 +120,15 @@ rejected. These tests use real original roots/rays/AA with simple prepared
 surfaces and isolate AA from the remaining full lighting/preset gaps. They
 do not qualify the full FINAL preset corpus or general image equivalence.
 
+The original-lighting gate adds actual collected ambient/light products, 288
+raw-bit shade cases and a documented 44-frame full-canvas corpus (5412 decoded
+ARGB pixels). The C quality/session route preserves original binary64 specular
+power, binary32 normal length, front-intensity scaling of both ambient colors,
+and the Descartes degree test before shrinking. Six compiled mutations must be
+rejected. These bounded composed images qualify one original full-canvas task;
+the separately observed overlapping production tiles differ and can race.
+Production partition/thread parity and target arithmetic remain explicit gates.
+
 ## Error and ownership contract
 
 Public operations return `SURFER_OK`, `SURFER_MISS`, `SURFER_INVALID_INPUT`,

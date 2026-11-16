@@ -96,6 +96,12 @@
     invoke-static {v0}, LExpansionRunner;->check(Ljava/lang/String;)V
     const-string v0, "x^2+y^2+z^2-radius^2"
     invoke-static {v0}, LExpansionRunner;->bound(Ljava/lang/String;)V
+    # Both retained results and all three derivatives are finite/in range.
+    # The original final factor square is discarded, so its overflow is moot.
+    const-string v0, "x^127"
+    invoke-static {v0}, LExpansionRunner;->check(Ljava/lang/String;)V
+    const-string v0, "(1e100*x)^3"
+    invoke-static {v0}, LExpansionRunner;->check(Ljava/lang/String;)V
     const-string v0, "terms"
     const-string v1, "error: polynomial expansion term budget exceeded"
     invoke-static {v0, v1}, LExpansionRunner;->refusal(Ljava/lang/String;Ljava/lang/String;)V
@@ -110,6 +116,9 @@
     invoke-static {v0, v1}, LExpansionRunner;->refusal(Ljava/lang/String;Ljava/lang/String;)V
     const-string v0, "x^128"
     const-string v1, "error: polynomial exponent exceeds original nonnegative signed-byte range"
+    invoke-static {v0, v1}, LExpansionRunner;->refusal(Ljava/lang/String;Ljava/lang/String;)V
+    const-string v0, "(1e200*x)^2"
+    const-string v1, "error: nonfinite coefficient is outside checked ordered expansion"
     invoke-static {v0, v1}, LExpansionRunner;->refusal(Ljava/lang/String;Ljava/lang/String;)V
     const-string v0, "radius*x"
     const-string v1, "error: no value has been assigned to parameter 'radius'"

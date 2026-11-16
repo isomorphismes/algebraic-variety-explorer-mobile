@@ -274,10 +274,12 @@ power_loop (S budget) limits exponent result factor =
   if exponent <= 0 then Right result else do
     let odd = mod exponent 2 ≟ 1
     next_result ← if odd then multiply_polynomials limits result factor else Right result
-    -- Keep the original final unused square and its checked resource limits.
-    next_factor ← multiply_polynomials limits factor factor
     let remaining = if odd then exponent + (-1) else exponent
-    power_loop budget limits (div remaining 2) next_result next_factor
+    -- A final discarded square must not reject a finite retained polynomial.
+    -- Every factor consumed by a later multiplication remains fully checked.
+    if remaining <= 0 then Right next_result else do
+      next_factor ← multiply_polynomials limits factor factor
+      power_loop budget limits (div remaining 2) next_result next_factor
 
 power_polynomial : ExpansionLimits → ExpandedPolynomial → Int32 →
                    Either ExpansionFailure ExpandedPolynomial
