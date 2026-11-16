@@ -1,10 +1,12 @@
 #!/usr/bin/env grease
 # Diagnostic build-host tools, never a phone/tablet package or fallback compiler.
-if (len(ARGV) !== 2) { echo 'usage: grease retain-compiler.grease REPOSITORY FRESH_OUTPUT' >&2; exit 2 }
+if (len(ARGV) !== 3) { echo 'usage: grease retain-compiler.grease REPOSITORY FRESH_OUTPUT QUALIFIED_ICK_STAGE' >&2; exit 2 }
 var repository = ARGV[0]
 var output = ARGV[1]
-if (repository[0] !== '/' or output[0] !== '/') { echo 'FAIL absolute paths required' >&2; exit 2 }
+var ick_stage = ARGV[2]
+if (repository[0] !== '/' or output[0] !== '/' or ick_stage[0] !== '/') { echo 'FAIL absolute paths required' >&2; exit 2 }
 if test -e "$output" { echo 'FAIL refusing reused compiler output' >&2; exit 1 }
+test -d "$ick_stage"
 mkdir -p "$output"
 cd "$repository"
 printf 'explorer\t%s\nfrontend\t%s\nbackend\t%s\n' \
@@ -22,6 +24,8 @@ tar -czf "$output/compiler.tar.gz" \
 tar --exclude-vcs -czf "$output/grease-runtime.tar.gz" \
   .tools/runtime/grease/source .tools/runtime/.build/grease/python2 \
   .tools/runtime/.build/grease/bin
+tar -czf "$output/ick-host-stage.tar.gz" -C "$ick_stage" .
 sha256sum "$output/compiler.tar.gz" > "$output/compiler.sha256"
 sha256sum "$output/grease-runtime.tar.gz" > "$output/grease-runtime.sha256"
+sha256sum "$output/ick-host-stage.tar.gz" > "$output/ick-host-stage.sha256"
 printf '\033[32mPASS\033[0m exact build-host compiler/driver retained for diagnostic replay\n'
