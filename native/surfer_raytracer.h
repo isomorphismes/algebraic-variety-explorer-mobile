@@ -18,7 +18,8 @@ typedef enum {
     SURFER_OK = 0,
     SURFER_MISS = 1,
     SURFER_INVALID_INPUT = 2,
-    SURFER_OUT_OF_MEMORY = 3
+    SURFER_OUT_OF_MEMORY = 3,
+    SURFER_CANCELLED = 4
 } surfer_status;
 
 const char *surfer_status_name(surfer_status status);
@@ -158,6 +159,43 @@ surfer_status surfer_render_orthographic(
     uint32_t *argb_pixels,
     size_t pixel_capacity);
 
+typedef enum {
+    SURFER_AA_OG_1X1 = 0,
+    SURFER_AA_QUINCUNX = 1
+} surfer_antialiasing_pattern;
+
+typedef struct {
+    surfer_antialiasing_pattern pattern;
+    /* Original ADAPTIVE_SUPERSAMPLING uses 0.3f; SUPERSAMPLING uses 0.0f. */
+    float threshold;
+} surfer_render_quality;
+
+/* One full-canvas original RenderingTask sampling order. This additive entry
+ * leaves the legacy single-sample entry above unchanged. F64 coordinates feed
+ * the existing ray core; threshold, weights and accumulated colors are F32.
+ * Tile scheduling, cancellation and broader numerical parity are separate.
+ */
+surfer_status surfer_render_orthographic_quality(
+    const surfer_scene *scene, size_t width, size_t height,
+    double camera_height, double yaw, double pitch, double zoom,
+    surfer_render_quality quality, uint32_t *argb_pixels, size_t pixel_capacity);
+
+/* Synchronous borrowed predicate; its state must stay alive for this call and
+ * be safe to read while another thread cancels. No pointer is retained.
+ * A non-OK result invalidates the complete output, including partial writes.
+ * The session owner provides retained identities and transactional publication.
+ */
+typedef struct {
+    bool (*cancelled)(void *state);
+    void *state;
+} surfer_cancellation;
+
+surfer_status surfer_render_orthographic_cancellable(
+    const surfer_scene *scene, size_t width, size_t height,
+    double camera_height, double yaw, double pitch, double zoom,
+    surfer_render_quality quality, const surfer_cancellation *cancellation,
+    uint32_t *argb_pixels, size_t pixel_capacity);
+
 surfer_scene surfer_default_scene(const surfer_prepared_surface *surface);
 surfer_status surfer_color_to_argb(surfer_color color, uint32_t *argb);
 
@@ -184,6 +222,11 @@ surfer_status surfer_test_render_orthographic(
     const surfer_scene *scene, size_t width, size_t height,
     double camera_height, double yaw, double pitch, double zoom,
     uint32_t *argb_pixels, size_t pixel_capacity, surfer_allocation_probe *probe);
+surfer_status surfer_test_render_orthographic_quality(
+    const surfer_scene *scene, size_t width, size_t height,
+    double camera_height, double yaw, double pitch, double zoom,
+    surfer_render_quality quality, uint32_t *argb_pixels, size_t pixel_capacity,
+    surfer_allocation_probe *probe);
 #endif
 
 #endif

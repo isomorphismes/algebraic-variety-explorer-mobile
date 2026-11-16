@@ -28,18 +28,28 @@ diagnostic before the receiver step
 ([run43800812201](https://github.com/isomorphismes/algebraic-variety-explorer-mobile/actions/runs/43800812201)).
 No receiver execution is inferred from that run. The source-level
 `PreparedSurfaceTransfer.idric` connects the real expanded values to primitive
-arrays and generated JNI; its actual native/ART observation remains pending.
-After reconstruction of the same qualified ICK compiler, strict host receiver
-tests passed. The fixed and frozen numerical observers separately produced
+arrays and generated JNI. That complete actual source path passed on API34
+ART at `cfd543e1886bc6b7eb9e1ede6641569b673aac8d` in
+[run43803682868](https://github.com/isomorphismes/algebraic-variety-explorer-mobile/actions/runs/43803682868).
+It matched the original ordered four-polynomial bits, rejected both compiled
+transfer mutations, preserved existing handles on allocation failure and
+finished with zero live snapshots/borrows/allocations. Positive parameter
+binding through this complete handoff remains separately unqualified.
+
+The fixed and frozen numerical observers separately produced
 identical 32179-byte outputs for the seven presets, SHA256
 `65f44c201676e330068804e4059a369cb6479efa1673660fd78a42681a1f55ca`.
-Local ASan/UBSan receiver execution passed with leak detection explicitly
-disabled; the maintained leak-enabled run stops because this environment uses
-ptrace. Hosted leak-enabled receiver execution remains required.
+At the same source, strict host receiver and leak-enabled ASan/UBSan execution
+passed in [run43803682852](https://github.com/isomorphismes/algebraic-variety-explorer-mobile/actions/runs/43803682852).
+The earlier local ptrace restriction supplies no leak claim; this hosted gate
+supplies that evidence.
 
-The accepted normal Activity still needs checked callback returns and state,
-additional lifecycle methods, float-valued touch/scale calls and reliable
-provider-stream cleanup. The NativeActivity keypad remains a bootstrap. These
+The accepted normal Activity still needs persistent state/captured callbacks,
+additional lifecycle methods and reliable provider-stream cleanup. Generic
+callback returns/Activity receivers and Float32 platform values are implemented
+in [isomorphisms/android-NDK PR #47, “Lower checked Activity callbacks and Float32 platform values”](https://github.com/isomorphisms/android-NDK/pull/47);
+their API29/API34 qualification remains separate from the handoff above.
+The NativeActivity keypad remains a bootstrap. These
 semantic and transport stages do not remove the shipping Java implementation
 or establish a complete APK or physical-device behavior.
 
@@ -154,8 +164,9 @@ version and integer size arithmetic, then copy the four polynomials into one
 native-owned immutable snapshot. Publish only after every validation and copy
 succeeds, and keep that snapshot alive while any render worker uses it.
 Replacement and destruction cannot race an active render. No AST, parameter
-object graph or serialized Text crosses this cut. The receiver is implemented;
-the full actual generated producer-to-JNI path still requires execution. Do not retain
+object graph or serialized Text crosses this cut. The receiver and complete
+generated producer-to-JNI path are now implemented and observed as recorded
+above. Do not retain
 temporary array access pointers through asynchronous rendering.
 
 ## Required observations

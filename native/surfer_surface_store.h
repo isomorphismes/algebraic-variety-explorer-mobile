@@ -59,6 +59,14 @@ surfer_status surfer_surface_render_orthographic(
     double yaw, double pitch, double zoom,
     uint32_t *argb_pixels, size_t pixel_capacity);
 
+/* Additive original-quality path. Ownership and synchronous borrow lifetime
+ * are identical to the existing render wrapper above. */
+surfer_status surfer_surface_render_orthographic_quality(
+    surfer_surface_handle handle, const surfer_scene *scene_settings,
+    size_t width, size_t height, double camera_height,
+    double yaw, double pitch, double zoom, surfer_render_quality quality,
+    uint32_t *argb_pixels, size_t pixel_capacity);
+
 #ifdef SURFER_SURFACE_STORE_TESTING
 /* Test-only per-call failure injection. No allocator state is retained.
  * fail_at is zero-based; SIZE_MAX disables failures. */

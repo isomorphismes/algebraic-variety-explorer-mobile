@@ -22,6 +22,7 @@
 
 typedef struct {
     surfer_status status;
+    const surfer_cancellation *cancellation;
 #ifdef SURFER_TEST_ALLOCATION_FAILURES
     surfer_allocation_probe *probe;
 #endif
@@ -31,6 +32,7 @@ static surfer_operation_context new_operation_context(void)
 {
     surfer_operation_context context;
     context.status = SURFER_OK;
+    context.cancellation = NULL;
 #ifdef SURFER_TEST_ALLOCATION_FAILURES
     context.probe = NULL;
 #endif
@@ -44,8 +46,22 @@ const char *surfer_status_name(surfer_status status)
     case SURFER_MISS: return "geometric miss (SURFER_MISS)";
     case SURFER_INVALID_INPUT: return "invalid input (SURFER_INVALID_INPUT)";
     case SURFER_OUT_OF_MEMORY: return "out of memory (SURFER_OUT_OF_MEMORY)";
+    case SURFER_CANCELLED: return "cancelled (SURFER_CANCELLED)";
     }
     return "unknown SURFER status";
+}
+
+/* Cancellation never changes arithmetic or replaces an earlier failure.
+ * Existing public entry points leave the predicate NULL. */
+static bool continue_operation(surfer_operation_context *context)
+{
+    if (context->status != SURFER_OK) return false;
+    if (context->cancellation != NULL &&
+        context->cancellation->cancelled(context->cancellation->state)) {
+        context->status = SURFER_CANCELLED;
+        return false;
+    }
+    return true;
 }
 
 static bool checked_array_bytes(
@@ -99,7 +115,7 @@ static void *allocate_array(
     bool clear)
 {
     size_t bytes = 0;
-    if (context->status != SURFER_OK ||
+    if (!continue_operation(context) ||
         !checked_array_bytes(context, count, item_size, &bytes) || bytes == 0 ||
         should_fail_allocation(context)) {
         return NULL;
@@ -116,7 +132,7 @@ static void *resize_array(
     size_t count, size_t item_size)
 {
     size_t bytes = 0;
-    if (context->status != SURFER_OK ||
+    if (!continue_operation(context) ||
         !checked_array_bytes(context, count, item_size, &bytes) || bytes == 0 ||
         should_fail_allocation(context)) {
         return NULL;
@@ -137,6 +153,7 @@ static bool finite_coefficients(
     surfer_operation_context *context, const double *coefficients, size_t length)
 {
     for (size_t i = 0; i < length; ++i) {
+        if (!continue_operation(context)) return false;
         if (!isfinite(coefficients[i])) {
             context->status = SURFER_INVALID_INPUT;
             return false;
@@ -171,6 +188,7 @@ static bool valid_ray(surfer_ray ray)
 }
 
 static bool valid_sparse_polynomial(
+    surfer_operation_context *context,
     surfer_sparse_polynomial polynomial, int64_t *maximum_degree)
 {
     if ((polynomial.term_count != 0 && polynomial.terms == NULL) ||
@@ -179,6 +197,7 @@ static bool valid_sparse_polynomial(
     }
     int64_t degree = 0;
     for (size_t i = 0; i < polynomial.term_count; ++i) {
+        if (!continue_operation(context)) return false;
         const surfer_term term = polynomial.terms[i];
         if (!isfinite(term.coefficient) || term.x_exponent < 0 ||
             term.y_exponent < 0 || term.z_exponent < 0) {
@@ -192,24 +211,25 @@ static bool valid_sparse_polynomial(
     return true;
 }
 
-static bool valid_prepared_surface(const surfer_prepared_surface *surface)
+static bool valid_prepared_surface(
+    surfer_operation_context *context, const surfer_prepared_surface *surface)
 {
     int64_t degree = 0;
     int64_t ignored = 0;
     if (surface == NULL || surface->family_degree < 0 ||
-        !valid_sparse_polynomial(surface->surface, &degree) ||
-        !valid_sparse_polynomial(surface->gradient_x, &ignored) ||
-        !valid_sparse_polynomial(surface->gradient_y, &ignored) ||
-        !valid_sparse_polynomial(surface->gradient_z, &ignored) ||
+        !valid_sparse_polynomial(context, surface->surface, &degree) ||
+        !valid_sparse_polynomial(context, surface->gradient_x, &ignored) ||
+        !valid_sparse_polynomial(context, surface->gradient_y, &ignored) ||
+        !valid_sparse_polynomial(context, surface->gradient_z, &ignored) ||
         degree > surface->family_degree) {
         return false;
     }
     return (uint64_t)degree < SIZE_MAX / sizeof(double);
 }
 
-static bool valid_scene(const surfer_scene *scene)
+static bool valid_scene(surfer_operation_context *context, const surfer_scene *scene)
 {
-    if (scene == NULL || !valid_prepared_surface(scene->surface) ||
+    if (scene == NULL || !valid_prepared_surface(context, scene->surface) ||
         !finite_color(scene->background) || !finite_material(scene->front_material) ||
         !finite_material(scene->back_material) || scene->light_count > SURFER_MAX_LIGHTS) {
         return false;
@@ -225,7 +245,8 @@ static bool valid_scene(const surfer_scene *scene)
 
 surfer_status surfer_validate_prepared_surface(const surfer_prepared_surface *surface)
 {
-    return valid_prepared_surface(surface) ? SURFER_OK : SURFER_INVALID_INPUT;
+    surfer_operation_context context = new_operation_context();
+    return valid_prepared_surface(&context, surface) ? SURFER_OK : SURFER_INVALID_INPUT;
 }
 
 typedef struct {
@@ -452,10 +473,12 @@ static univariate_polynomial copy_univariate_polynomial(surfer_operation_context
     return result;
 }
 
-static size_t coefficient_count_without_trailing_zeroes(const univariate_polynomial *polynomial)
+static size_t coefficient_count_without_trailing_zeroes(
+    surfer_operation_context *context, const univariate_polynomial *polynomial)
 {
     size_t length = polynomial->length;
     while (length > 1 && polynomial->coefficients[length - 1] == 0.0) {
+        if (!continue_operation(context)) return 0;
         --length;
     }
     return length;
@@ -463,7 +486,8 @@ static size_t coefficient_count_without_trailing_zeroes(const univariate_polynom
 
 static univariate_polynomial copy_without_trailing_zeroes(surfer_operation_context *context, const univariate_polynomial *polynomial)
 {
-    return copy_univariate_polynomial(context, polynomial->coefficients, coefficient_count_without_trailing_zeroes(polynomial));
+    return copy_univariate_polynomial(context, polynomial->coefficients,
+        coefficient_count_without_trailing_zeroes(context, polynomial));
 }
 
 /*
@@ -480,6 +504,7 @@ static double evaluate_univariate_polynomial_at(surfer_operation_context *contex
     if (fabs(where) <= 1.0) {
         double result = polynomial->coefficients[polynomial->length - 1];
         for (size_t i = polynomial->length - 1; i-- > 0;) {
+            if (!continue_operation(context)) return NAN;
             result = result * where + polynomial->coefficients[i];
             if (!isfinite(result)) {
                 context->status = SURFER_INVALID_INPUT;
@@ -491,6 +516,7 @@ static double evaluate_univariate_polynomial_at(surfer_operation_context *contex
 
     double result = polynomial->coefficients[0];
     for (size_t i = 1; i < polynomial->length; ++i) {
+        if (!continue_operation(context)) return NAN;
         result = result / where + polynomial->coefficients[i];
         if (!isfinite(result)) {
             context->status = SURFER_INVALID_INPUT;
@@ -513,6 +539,7 @@ static univariate_polynomial stretch_univariate_polynomial(surfer_operation_cont
     }
     double multiplier = 1.0;
     for (size_t i = 0; i < polynomial->length; ++i) {
+        if (!continue_operation(context)) break;
         result.coefficients[i] = polynomial->coefficients[i] * multiplier;
         multiplier *= factor;
     }
@@ -556,6 +583,7 @@ static double *shift_univariate_polynomial_by_one(surfer_operation_context *cont
     memcpy(result, coefficients, length * sizeof(*result));
     for (size_t i = 1; i <= length; ++i) {
         for (size_t j = length - 1; j > i - 1;) {
+            if (!continue_operation(context)) { free(result); return NULL; }
             --j;
             result[j] += result[j + 1];
         }
@@ -580,6 +608,7 @@ static double *stretch_univariate_polynomial_to_half_interval(surfer_operation_c
     result[length - 1] = coefficients[length - 1];
     double multiplier = 2.0;
     for (size_t i = length - 1; i-- > 0;) {
+        if (!continue_operation(context)) break;
         result[i] = coefficients[i] * multiplier;
         multiplier *= 2.0;
     }
@@ -603,6 +632,7 @@ static int descartes_sign_changes_after_reverse_shift_by_one(surfer_operation_co
         return -1;
     }
     for (size_t i = 0; i < length; ++i) {
+        if (!continue_operation(context)) { free(horner); return -1; }
         horner[i] = coefficients[length - i - 1];
     }
 
@@ -610,6 +640,7 @@ static int descartes_sign_changes_after_reverse_shift_by_one(surfer_operation_co
     double last_nonzero = NAN;
     for (size_t i = 1; i <= length; ++i) {
         for (size_t j = length - 1; j > i - 1;) {
+            if (!continue_operation(context)) { free(horner); return -1; }
             --j;
             horner[j] += horner[j + 1];
             if (!isfinite(horner[j])) {
@@ -659,6 +690,7 @@ static double bisect_root_interval(surfer_operation_context *context,
 {
     (void)upper_value;
     while (fabs(upper - lower) > SURFER_ROOT_EPSILON) {
+        if (!continue_operation(context)) return NAN;
         const double center = 0.5 * (lower + upper);
         if (!isfinite(center)) {
             context->status = SURFER_INVALID_INPUT;
@@ -666,6 +698,7 @@ static double bisect_root_interval(surfer_operation_context *context,
         }
         double center_value = polynomial->coefficients[polynomial->length - 1];
         for (size_t i = polynomial->length - 1; i-- > 0;) {
+            if (!continue_operation(context)) return NAN;
             center_value = center_value * center + polynomial->coefficients[i];
             if (!isfinite(center_value)) {
                 context->status = SURFER_INVALID_INPUT;
@@ -788,7 +821,7 @@ static double find_positive_root_with_descartes(surfer_operation_context *contex
     double upper_bound,
     which_root order)
 {
-    if (upper_bound <= 0.0 || coefficient_count_without_trailing_zeroes(source) <= 1) {
+    if (upper_bound <= 0.0 || coefficient_count_without_trailing_zeroes(context, source) <= 1) {
         return NAN;
     }
 
@@ -859,6 +892,7 @@ static double find_positive_root_with_descartes(surfer_operation_context *contex
     }
 
     while (candidates.length != 0) {
+        if (!continue_operation(context)) break;
         descartes_interval current = pop_descartes_candidate(&candidates);
         if (current.shift_by_one_when_used) {
             double *shifted = shift_univariate_polynomial_by_one(context, current.coefficients, current.length);
@@ -1092,6 +1126,7 @@ static bool polynomial_for_axis_power_along_ray(surfer_operation_context *contex
 
     double binomial = 1.0;
     for (size_t index = 0; index <= (size_t)exponent; ++index) {
+        if (!continue_operation(context)) break;
         const int32_t k = (int32_t)index;
         if (k != 0) {
             binomial *= (double)(exponent - (k - 1));
@@ -1127,6 +1162,10 @@ static univariate_polynomial multiply_univariate_polynomials(surfer_operation_co
     }
     for (size_t i = 0; i < left->length; ++i) {
         for (size_t j = 0; j < right->length; ++j) {
+            if (!continue_operation(context)) {
+                free_univariate_polynomial(result);
+                return empty_univariate_polynomial();
+            }
             result.coefficients[i + j] +=
                 left->coefficients[i] * right->coefficients[j];
         }
@@ -1139,11 +1178,13 @@ static univariate_polynomial multiply_univariate_polynomials(surfer_operation_co
 }
 
 static bool maximum_total_degree_of_sparse_polynomial(
+    surfer_operation_context *context,
     surfer_sparse_polynomial polynomial,
     size_t *maximum_degree)
 {
     int64_t largest_degree = 0;
     for (size_t i = 0; i < polynomial.term_count; ++i) {
+        if (!continue_operation(context)) return false;
         const surfer_term term = polynomial.terms[i];
         if (term.x_exponent < 0 ||
             term.y_exponent < 0 ||
@@ -1218,14 +1259,17 @@ static bool polynomial_for_sparse_term_along_ray(surfer_operation_context *conte
     return true;
 }
 
-static void add_scaled_univariate_polynomial(
+static bool add_scaled_univariate_polynomial(
+    surfer_operation_context *context,
     univariate_polynomial *sum,
     const univariate_polynomial *addition,
     double scale)
 {
     for (size_t i = 0; i < addition->length; ++i) {
+        if (!continue_operation(context)) return false;
         sum->coefficients[i] += scale * addition->coefficients[i];
     }
+    return true;
 }
 
 /*
@@ -1243,8 +1287,8 @@ static bool expand_sparse_polynomial_directly_along_ray(surfer_operation_context
     univariate_polynomial *result)
 {
     size_t maximum_degree = 0;
-    if (!maximum_total_degree_of_sparse_polynomial(source, &maximum_degree)) {
-        context->status = SURFER_INVALID_INPUT;
+    if (!maximum_total_degree_of_sparse_polynomial(context, source, &maximum_degree)) {
+        if (context->status == SURFER_OK) context->status = SURFER_INVALID_INPUT;
         return false;
     }
 
@@ -1265,11 +1309,16 @@ static bool expand_sparse_polynomial_directly_along_ray(surfer_operation_context
             return false;
         }
 
-        add_scaled_univariate_polynomial(
+        const bool added = add_scaled_univariate_polynomial(context,
             result,
             &term_on_ray,
             term.coefficient);
         free_univariate_polynomial(term_on_ray);
+        if (!added) {
+            free_univariate_polynomial(*result);
+            *result = empty_univariate_polynomial();
+            return false;
+        }
     }
     if (!finite_coefficients(context, result->coefficients, result->length)) {
         free_univariate_polynomial(*result);
@@ -1279,10 +1328,13 @@ static bool expand_sparse_polynomial_directly_along_ray(surfer_operation_context
     return true;
 }
 
-static double evaluate_sparse_polynomial_at_point(surfer_sparse_polynomial polynomial, surfer_vec3 point)
+static double evaluate_sparse_polynomial_at_point(
+    surfer_operation_context *context,
+    surfer_sparse_polynomial polynomial, surfer_vec3 point)
 {
     double result = 0.0;
     for (size_t i = 0; i < polynomial.term_count; ++i) {
+        if (!continue_operation(context)) return NAN;
         const surfer_term term = polynomial.terms[i];
         result += term.coefficient *
             integer_power(point.x, term.x_exponent) *
@@ -1346,12 +1398,13 @@ static bool prepare_surface_polynomial_on_ray(surfer_operation_context *context,
 }
 
 static double first_linear_root_in_interval(
+    surfer_operation_context *context,
     const univariate_polynomial *polynomial,
     double lower,
     double upper)
 {
     const size_t coefficient_count =
-        coefficient_count_without_trailing_zeroes(polynomial);
+        coefficient_count_without_trailing_zeroes(context, polynomial);
     if (coefficient_count != 2) {
         return NAN;
     }
@@ -1375,7 +1428,7 @@ static double first_root_for_surface_family(surfer_operation_context *context,
      * family degree two and DescartesRootFinder(false) otherwise.
      */
     if (surface->family_degree < 2) {
-        return first_linear_root_in_interval(polynomial, lower, upper);
+        return first_linear_root_in_interval(context, polynomial, lower, upper);
     }
     return find_first_root_with_descartes(context, polynomial, lower, upper);
 }
@@ -1421,7 +1474,7 @@ static surfer_status first_surface_root_request(
     const surfer_prepared_surface *surface, surfer_ray surface_ray,
     double lower, double upper, double *root)
 {
-    if (!valid_prepared_surface(surface) || !valid_ray(surface_ray) ||
+    if (!valid_prepared_surface(context, surface) || !valid_ray(surface_ray) ||
         root == NULL || !isfinite(lower) || !isfinite(upper) || lower > upper) {
         return SURFER_INVALID_INPUT;
     }
@@ -1537,13 +1590,14 @@ static surfer_status visible_interval_for_ray_bundle(
 }
 
 static surfer_vec3 prepared_gradient_at_surface_point(
+    surfer_operation_context *context,
     const surfer_prepared_surface *surface,
     surfer_vec3 surface_point)
 {
     surfer_vec3 gradient = {
-        evaluate_sparse_polynomial_at_point(surface->gradient_x, surface_point),
-        evaluate_sparse_polynomial_at_point(surface->gradient_y, surface_point),
-        evaluate_sparse_polynomial_at_point(surface->gradient_z, surface_point)
+        evaluate_sparse_polynomial_at_point(context, surface->gradient_x, surface_point),
+        evaluate_sparse_polynomial_at_point(context, surface->gradient_y, surface_point),
+        evaluate_sparse_polynomial_at_point(context, surface->gradient_z, surface_point)
     };
     return gradient;
 }
@@ -1586,6 +1640,7 @@ static surfer_trace_result trace_prepared_ray_validated(
         {0.0f, 0.0f, 0.0f}
     };
     result.color = scene->background;
+    if (!continue_operation(context)) { result.status = context->status; return result; }
 
     /* ray bundle → visible t interval → first surface root */
     surfer_interval visible_interval;
@@ -1616,7 +1671,8 @@ static surfer_trace_result trace_prepared_ray_validated(
     const surfer_vec3 surface_point =
         point_on_ray_at_parameter(rays.surface_ray, hit_parameter);
     const surfer_vec3 surface_gradient =
-        prepared_gradient_at_surface_point(scene->surface, surface_point);
+        prepared_gradient_at_surface_point(context, scene->surface, surface_point);
+    if (context->status != SURFER_OK) { result.status = context->status; return result; }
     surfer_vec3 camera_normal =
         camera_normal_from_surface_gradient(rays, surface_gradient);
 
@@ -1654,12 +1710,12 @@ surfer_trace_result surfer_trace_prepared_ray(
 {
     surfer_trace_result invalid = {SURFER_INVALID_INPUT, NAN,
         {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, {0.0f, 0.0f, 0.0f}};
-    if (!valid_scene(scene) || !valid_ray(rays.camera_ray) ||
+    surfer_operation_context context = new_operation_context();
+    if (!valid_scene(&context, scene) || !valid_ray(rays.camera_ray) ||
         !valid_ray(rays.clipping_ray) || !valid_ray(rays.surface_ray) ||
         !isfinite(rays.eye_location_on_ray) || !finite_matrix(rays.surface_normal_to_camera)) {
         return invalid;
     }
-    surfer_operation_context context = new_operation_context();
     return trace_prepared_ray_validated(&context, scene, rays);
 }
 
@@ -1795,7 +1851,7 @@ static surfer_status render_orthographic_request(
         width > SIZE_MAX / height || width * height > SIZE_MAX / sizeof(*argb_pixels) ||
         pixel_capacity < width * height || !isfinite(camera_height) ||
         !isfinite(yaw) || !isfinite(pitch) || !isfinite(zoom) ||
-        !(camera_height > 0.0) || !(zoom > 0.0) || !valid_scene(scene)) {
+        !(camera_height > 0.0) || !(zoom > 0.0) || !valid_scene(context, scene)) {
         return SURFER_INVALID_INPUT;
     }
 
@@ -1850,6 +1906,197 @@ surfer_status surfer_render_orthographic(
         yaw, pitch, zoom, argb_pixels, pixel_capacity);
 }
 
+/* Stussak RenderingTask.colorDiffSqr uses Vector3f subtraction and dot, so
+ * every operation here remains binary32, including the two left-to-right adds.
+ */
+static float color_distance_squared(surfer_color left, surfer_color right)
+{
+    const float red = left.red - right.red;
+    const float green = left.green - right.green;
+    const float blue = left.blue - right.blue;
+    return red * red + green * green + blue * blue;
+}
+
+static bool antialias_refines(
+    surfer_render_quality quality, surfer_color upper_left, surfer_color upper_right,
+    surfer_color lower_left, surfer_color lower_right)
+{
+    const float threshold_squared = quality.threshold * quality.threshold;
+    return quality.pattern == SURFER_AA_QUINCUNX &&
+        (color_distance_squared(upper_left, upper_right) >= threshold_squared ||
+         color_distance_squared(upper_left, lower_left) >= threshold_squared ||
+         color_distance_squared(upper_left, lower_right) >= threshold_squared ||
+         color_distance_squared(upper_right, lower_left) >= threshold_squared ||
+         color_distance_squared(upper_right, lower_right) >= threshold_squared ||
+         color_distance_squared(lower_left, lower_right) >= threshold_squared);
+}
+
+static surfer_color antialias_color(
+    surfer_render_quality quality, surfer_color upper_left, surfer_color upper_right,
+    surfer_color lower_left, surfer_color lower_right, surfer_color center)
+{
+    surfer_color result;
+    if (antialias_refines(quality, upper_left, upper_right, lower_left, lower_right)) {
+        /* AntiAliasingPattern.getQuincunxPattern and Color3f.scaleAdd order. */
+        const float third_quarter = 0.25f / 3.0f;
+        const float corner_weight = 0.0625f + third_quarter;
+        const float center_weight = 1.0f - 4.0f * corner_weight;
+        const surfer_color samples[5] = {
+            lower_left, upper_left, upper_right, lower_right, center
+        };
+        result = (surfer_color){0.0f, 0.0f, 0.0f};
+        for (size_t sample = 0; sample < 5; ++sample) {
+            const float weight = sample == 4 ? center_weight : corner_weight;
+            result.red = weight * samples[sample].red + result.red;
+            result.green = weight * samples[sample].green + result.green;
+            result.blue = weight * samples[sample].blue + result.blue;
+        }
+    } else {
+        result = upper_left;
+        result.red = result.red + upper_right.red;
+        result.green = result.green + upper_right.green;
+        result.blue = result.blue + upper_right.blue;
+        result.red = result.red + lower_left.red;
+        result.green = result.green + lower_left.green;
+        result.blue = result.blue + lower_left.blue;
+        result.red = result.red + lower_right.red;
+        result.green = result.green + lower_right.green;
+        result.blue = result.blue + lower_right.blue;
+        result = scale_color(result, 0.25f);
+    }
+    return clamp_color_to_maximum(result, 1.0f);
+}
+
+static surfer_status quality_sample(
+    surfer_operation_context *context, const surfer_scene *scene,
+    orthographic_view view, double u, double v, surfer_color *color)
+{
+    if (!continue_operation(context)) return context->status;
+    if (!isfinite(u) || !isfinite(v)) return SURFER_INVALID_INPUT;
+    const surfer_trace_result trace = trace_prepared_ray_validated(
+        context, scene, orthographic_ray_bundle_at(view, u, v));
+    if (trace.status != SURFER_OK && trace.status != SURFER_MISS) return trace.status;
+    *color = trace.color;
+    return SURFER_OK;
+}
+
+static surfer_status render_orthographic_quality_request(
+    surfer_operation_context *context, const surfer_scene *scene,
+    size_t width, size_t height,
+    double camera_height, double yaw, double pitch, double zoom,
+    surfer_render_quality quality, uint32_t *argb_pixels, size_t pixel_capacity)
+{
+    if (!continue_operation(context)) return context->status;
+    if (argb_pixels == NULL || width < 2 || height < 2 ||
+        width > SIZE_MAX / height || width * height > SIZE_MAX / sizeof(*argb_pixels) ||
+        pixel_capacity < width * height || !isfinite(camera_height) ||
+        !isfinite(yaw) || !isfinite(pitch) || !isfinite(zoom) ||
+        !(camera_height > 0.0) || !(zoom > 0.0) || !valid_scene(context, scene) ||
+        (quality.pattern != SURFER_AA_OG_1X1 && quality.pattern != SURFER_AA_QUINCUNX) ||
+        !isfinite(quality.threshold) || quality.threshold < 0.0f) {
+        return context->status == SURFER_OK ? SURFER_INVALID_INPUT : context->status;
+    }
+    const orthographic_view view = make_orthographic_view(
+        width, height, camera_height, yaw, pitch, zoom);
+    if (!isfinite(view.half_u) || !isfinite(view.half_v) ||
+        !finite_matrix(view.camera_to_surface) || !finite_matrix(view.surface_normal_to_camera) ||
+        !finite_vector(view.surface_u) || !finite_vector(view.surface_v) ||
+        !finite_vector(view.surface_direction)) return SURFER_INVALID_INPUT;
+
+    const double u_increment = (view.half_u - (-view.half_u)) / (double)(width - 1);
+    const double v_increment = (view.half_v - (-view.half_v)) / (double)(height - 1);
+    const double start_fraction_u = quality.pattern == SURFER_AA_OG_1X1 ?
+        0.0 : -0.5 / (double)(width - 1);
+    const double start_fraction_v = quality.pattern == SURFER_AA_OG_1X1 ?
+        0.0 : -0.5 / (double)(height - 1);
+    const double u_start = 0.0 + view.half_u * (2.0 * start_fraction_u - 1.0);
+    const double v_start = 0.0 + view.half_v * (2.0 * start_fraction_v - 1.0);
+    if (!isfinite(u_increment) || !isfinite(v_increment) ||
+        !isfinite(u_start) || !isfinite(v_start)) return SURFER_INVALID_INPUT;
+
+    if (quality.pattern == SURFER_AA_OG_1X1) {
+        if (!isfinite(u_start + (double)(width - 1) * u_increment) ||
+            !isfinite(v_start + (double)(height - 1) * v_increment)) return SURFER_INVALID_INPUT;
+        for (size_t y = 0; y < height; ++y) {
+            const double v = v_start + (double)y * v_increment;
+            for (size_t x = 0; x < width; ++x) {
+                const double u = u_start + (double)x * u_increment;
+                surfer_color color;
+                const surfer_status status = quality_sample(context, scene, view, u, v, &color);
+                if (status != SURFER_OK) return status;
+                argb_pixels[y * width + x] = color_to_argb_validated(color);
+            }
+        }
+        return continue_operation(context) ? SURFER_OK : context->status;
+    }
+
+    if (width == SIZE_MAX || height == SIZE_MAX) return SURFER_INVALID_INPUT;
+    const size_t corner_width = width + 1;
+    const size_t corner_height = height + 1;
+    if (corner_width > SIZE_MAX / corner_height ||
+        corner_width * corner_height > SIZE_MAX / sizeof(surfer_color) ||
+        !isfinite(u_start + (double)width * u_increment) ||
+        !isfinite(v_start + (double)height * v_increment)) return SURFER_INVALID_INPUT;
+    mark_allocation_path(context, UINT32_C(0x100)); /* AA corner storage. */
+    surfer_color *corners = allocate_array(context,
+        corner_width * corner_height, sizeof(*corners), false);
+    if (corners == NULL) return context->status;
+    surfer_status result = SURFER_OK;
+    for (size_t y = 0; y < corner_height && result == SURFER_OK; ++y) {
+        const double v = v_start + (double)y * v_increment;
+        for (size_t x = 0; x < corner_width; ++x) {
+            const double u = u_start + (double)x * u_increment;
+            result = quality_sample(context, scene, view, u, v, &corners[y * corner_width + x]);
+            if (result != SURFER_OK) break;
+            if (x > 0 && y > 0) {
+                const surfer_color upper_left = corners[y * corner_width + x - 1];
+                const surfer_color upper_right = corners[y * corner_width + x];
+                const surfer_color lower_left = corners[(y - 1) * corner_width + x - 1];
+                const surfer_color lower_right = corners[(y - 1) * corner_width + x];
+                surfer_color center = {0.0f, 0.0f, 0.0f};
+                if (antialias_refines(quality, upper_left, upper_right, lower_left, lower_right)) {
+                    mark_allocation_path(context, UINT32_C(0x200)); /* AA center trace. */
+                    /* Preserve the original subtract-then-add center coordinates. */
+                    const double lower_u = u - u_increment;
+                    const double lower_v = v - v_increment;
+                    result = quality_sample(context, scene, view,
+                        lower_u + 0.5 * u_increment, lower_v + 0.5 * v_increment, &center);
+                    if (result != SURFER_OK) break;
+                }
+                const surfer_color color = antialias_color(quality,
+                    upper_left, upper_right, lower_left, lower_right, center);
+                if (!finite_color(color)) { result = SURFER_INVALID_INPUT; break; }
+                argb_pixels[(y - 1) * width + x - 1] = color_to_argb_validated(color);
+            }
+        }
+    }
+    free(corners);
+    return result == SURFER_OK && !continue_operation(context) ? context->status : result;
+}
+
+surfer_status surfer_render_orthographic_quality(
+    const surfer_scene *scene, size_t width, size_t height,
+    double camera_height, double yaw, double pitch, double zoom,
+    surfer_render_quality quality, uint32_t *argb_pixels, size_t pixel_capacity)
+{
+    surfer_operation_context context = new_operation_context();
+    return render_orthographic_quality_request(&context, scene, width, height,
+        camera_height, yaw, pitch, zoom, quality, argb_pixels, pixel_capacity);
+}
+
+surfer_status surfer_render_orthographic_cancellable(
+    const surfer_scene *scene, size_t width, size_t height,
+    double camera_height, double yaw, double pitch, double zoom,
+    surfer_render_quality quality, const surfer_cancellation *cancellation,
+    uint32_t *argb_pixels, size_t pixel_capacity)
+{
+    if (cancellation == NULL || cancellation->cancelled == NULL) return SURFER_INVALID_INPUT;
+    surfer_operation_context context = new_operation_context();
+    context.cancellation = cancellation;
+    return render_orthographic_quality_request(&context, scene, width, height,
+        camera_height, yaw, pitch, zoom, quality, argb_pixels, pixel_capacity);
+}
+
 #ifdef SURFER_TEST_ALLOCATION_FAILURES
 surfer_status surfer_test_render_orthographic(
     const surfer_scene *scene, size_t width, size_t height,
@@ -1860,5 +2107,17 @@ surfer_status surfer_test_render_orthographic(
     context.probe = probe;
     return render_orthographic_request(&context, scene, width, height, camera_height,
         yaw, pitch, zoom, argb_pixels, pixel_capacity);
+}
+
+surfer_status surfer_test_render_orthographic_quality(
+    const surfer_scene *scene, size_t width, size_t height,
+    double camera_height, double yaw, double pitch, double zoom,
+    surfer_render_quality quality, uint32_t *argb_pixels, size_t pixel_capacity,
+    surfer_allocation_probe *probe)
+{
+    surfer_operation_context context = new_operation_context();
+    context.probe = probe;
+    return render_orthographic_quality_request(&context, scene, width, height,
+        camera_height, yaw, pitch, zoom, quality, argb_pixels, pixel_capacity);
 }
 #endif

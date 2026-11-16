@@ -331,6 +331,24 @@ surfer_status surfer_surface_render_orthographic(
     return status;
 }
 
+surfer_status surfer_surface_render_orthographic_quality(
+    surfer_surface_handle handle, const surfer_scene *scene_settings,
+    size_t width, size_t height, double camera_height,
+    double yaw, double pitch, double zoom, surfer_render_quality quality,
+    uint32_t *argb_pixels, size_t pixel_capacity)
+{
+    if (scene_settings == NULL) return SURFER_INVALID_INPUT;
+    surfer_surface_borrow borrow;
+    surfer_status status = surfer_surface_begin_borrow(handle, &borrow);
+    if (status != SURFER_OK) return status;
+    surfer_scene scene = *scene_settings;
+    scene.surface = borrow.surface;
+    status = surfer_render_orthographic_quality(&scene, width, height, camera_height,
+        yaw, pitch, zoom, quality, argb_pixels, pixel_capacity);
+    (void)surfer_surface_end_borrow(borrow.token);
+    return status;
+}
+
 #ifdef SURFER_SURFACE_STORE_TESTING
 surfer_status surfer_surface_test_create_copied(
     int32_t version, int32_t family_degree,

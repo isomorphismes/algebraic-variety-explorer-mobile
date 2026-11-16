@@ -55,3 +55,13 @@ emitted323076 bytes, SHA256
 Pinned baksmali decoded `actual_prepare_handle(String)J` and the actual copy,
 replacement and release native calls with their correct paired argument words.
 This is local source/generation evidence; native and ART behavior remain pending.
+
+The complete source-to-native path subsequently passed API34/x86_64 ART at
+`cfd543e1886bc6b7eb9e1ede6641569b673aac8d` in
+[run43803682868](https://github.com/isomorphismes/algebraic-variety-explorer-mobile/actions/runs/43803682868).
+The independent native snapshot/original four-polynomial comparison, source
+validation before JNI, successful/rejected replacement cycles, actual temporary
+and store allocation failures, stale handles and final zero live counts passed.
+Both compiled transfer-source mutations failed with designated exit80.
+See `qualification.md` for exact evidence and remaining boundaries. Normal
+Activity state/lifecycle/cleanup and the shipping Java replacement remain open.

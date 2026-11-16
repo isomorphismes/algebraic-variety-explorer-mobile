@@ -145,3 +145,13 @@ core with the published91d8e7a status core. Both seven-preset observations are
 Compiler/cc1, all input sources, both executables and both observations were
 hashed in the local replay evidence. This supplies the narrow unchanged-success
 comparison skipped by the initial hosted gate; it is not Java or image parity.
+
+The repaired full gate then passed at source
+`cfd543e1886bc6b7eb9e1ede6641569b673aac8d` in
+[run43803682852](https://github.com/isomorphismes/algebraic-variety-explorer-mobile/actions/runs/43803682852),
+job133089448951. This includes leak-enabled ASan/UBSan, all allocation/status
+controls, designated blank-on-error mutation rejection, identical successful
+numerical bytes and the following copied-receiver host tests. The local ptrace
+restriction was not bypassed in the maintained gate; the hosted run supplies
+the leak evidence. Android JNI execution is recorded in the separate receiver
+and prepared-transfer accounts, not inferred from this host result.

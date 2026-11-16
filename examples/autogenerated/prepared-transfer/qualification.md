@@ -78,7 +78,20 @@ library/oracle byte sequence, and executes with JNI checking enabled. Source
 validation requires unchanged receiver entry count. Final counts separately
 cover snapshots, borrow records, all store allocations and JNI temporaries.
 
-PENDING: full maintained-helper execution, actual original/native snapshot
-comparison on ART, positive failure-unwind behavior and compiled mutant
-rejection. No APK, Activity integration or physical-device result is claimed
-from source generation, syntax checks or independent decoding.
+## Actual native/ART execution
+
+At source `cfd543e1886bc6b7eb9e1ede6641569b673aac8d`, the full maintained
+helpers passed in [run43803682868](https://github.com/isomorphismes/algebraic-variety-explorer-mobile/actions/runs/43803682868),
+job133089448400, on API34/x86_64 ART with JNI checking. The actual generated
+producer passed original four-polynomial bit/order comparisons, source errors
+without JNI entry, replacement cycles, both temporary and both native-store
+allocation failures, stale/double-release checks and zero final live counts.
+The coefficient and axis mutations both failed with designated exit80; the
+positive exited0. No candidate semantics were supplied by the observer.
+
+Evidence artifact14197757841 has ZIP SHA256
+`0fdea49547f754824f613e2f65c52f58f236e527cef623b4ea90efbb0b74c224`.
+It records frontend740bbf2b1 and backend6e28d6c1, actual received candidate/
+oracle/library bytes and the per-stage result. Positive parameter binding,
+Activity integration, APK and physical-device execution remain NOT_RUN for
+this complete handoff; earlier semantic-stage binding evidence is separate.

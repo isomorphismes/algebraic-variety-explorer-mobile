@@ -131,3 +131,20 @@ Clang-only `__c11_atomic_*` intrinsics. The test counter now uses C17 `_Atomic`
 scalar increment, decrement and load directly, preserving sequentially
 consistent operations without that incompatible header. Production ownership
 code does not include the counter. Rebuilt JNI/ART execution remains pending.
+
+## Executed repaired receiver
+
+At source `cfd543e1886bc6b7eb9e1ede6641569b673aac8d`, the strict host and
+leak-enabled ASan/UBSan receiver gate passed in
+[run43803682852](https://github.com/isomorphismes/algebraic-variety-explorer-mobile/actions/runs/43803682852),
+job133089448951. Qualified ICK then compiled all JNI C, the pinned NDK linked
+objects only, and the real receiver observer passed API34/x86_64 ART with JNI
+checking in [run43803682868](https://github.com/isomorphismes/algebraic-variety-explorer-mobile/actions/runs/43803682868),
+job133089448400. Production test-symbol/stack-guard import checks also passed.
+
+That same run separately executed the actual Idriç producer through these JNI
+entrypoints and store probes; its stronger original-polynomial/fault/cleanup
+receipt is in `../prepared-transfer/qualification.md`. The raw receiver stage
+still correctly reports that it alone did not execute an Idriç producer. No
+Activity, packaged application or physical-device result follows from either
+stage.

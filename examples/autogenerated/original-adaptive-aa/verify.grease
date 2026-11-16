@@ -1,0 +1,102 @@
+#!/usr/bin/env grease
+set -eu -o pipefail
+if (len(ARGV) !== 5) {
+  echo 'usage: grease verify.grease EXPLORER ICK_SOURCE QUALIFIED_ICK ORIGINAL_JAVA_REFERENCE FRESH_OUTPUT' >&2
+  exit 2
+}
+var repository = ARGV[0]
+var ick_source = ARGV[1]
+var compiler = ARGV[2]
+var reference = ARGV[3]
+var output = ARGV[4]
+for path in (ARGV) { if (path[0] !== '/') { echo 'FAIL absolute paths required' >&2; exit 2 } }
+if test -e "$output" { echo 'FAIL refusing reused AA evidence' >&2; exit 1 }
+test -x "$compiler"
+test $(git -C "$ick_source" rev-parse HEAD) = fbe86e23d55cfec2000c08e61deea2a407fd7175
+command -v rg > /dev/null
+rg -x -F b'original_Java17_source_compile\tPASS' "$reference/result.tsv"
+rg -x -F b'actual_RenderingTask_AA\tPASS' "$reference/result.tsv"
+var manifest = "$repository/ci/native-aa-toolchain.tsv"
+rg -x -F b'build_id\ttarget\ttoolchain\tick_revision\tick_status\tick_evidence' "$manifest"
+for stage in numerical sanitizers weights-mutant threshold-mutant order-mutant smooth-order-mutant float64-mutant coordinate-mutant reference success {
+  printf 'native-aa-%s\tx86_64-pc-linux-gnu\tick\tfbe86e23d55cfec2000c08e61deea2a407fd7175\tqualified\treceipt:ai-ci-ick-host-32cb45b3\n' "$stage" \
+    | rg -x -F -f - "$manifest"
+}
+test $(wc -l < "$manifest") = 11
+var cc1 = $("$compiler" -print-prog-name=cc1)
+test -x "$cc1"
+mkdir -p "$output/reference/native/android" "$output/mutants"
+"$compiler" --version > "$output/compiler-version.txt"
+"$compiler" -dumpmachine > "$output/compiler-target.txt"
+rg -x -F x86_64-pc-linux-gnu "$output/compiler-target.txt"
+sha256sum "$compiler" "$cc1" > "$output/compiler-artifacts.sha256"
+cp "$manifest" "$output/build-toolchain.tsv"
+cp "$reference/result.tsv" "$reference/profile.tsv" "$output/reference/"
+sha256sum "$repository/native/surfer_raytracer.c" "$repository/native/surfer_raytracer.h" \
+  "$repository/native/surfer_antialias_test.c" "$reference/patterns.tsv" "$reference/blends.tsv" \
+  "$reference/pixels.tsv" > "$output/inputs.sha256"
+var baseline = 'cfd543e1886bc6b7eb9e1ede6641569b673aac8d'
+printf 'source\t%s\nbaseline\t%s\ntoolchain\tick\nfallback\tnone\n' \
+  $(git -C "$repository" rev-parse HEAD) "$baseline" > "$output/inputs.tsv"
+
+printf '\033[36mACTION\033[0m compare original F32 blends and complete bounded frames\n'
+"$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O2 \
+  -fno-fast-math -ffp-contract=off "$repository/native/surfer_antialias_test.c" -lm -o "$output/aa-test"
+"$output/aa-test" "$reference/blends.tsv" "$reference/pixels.tsv" > "$output/numerical.txt" 2>&1
+cat "$output/numerical.txt"
+rg -x -F 'SURFER original adaptive AA colors, pixels and allocation faults: PASS' "$output/numerical.txt"
+"$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O1 -g \
+  -fno-fast-math -ffp-contract=off -fsanitize=address,undefined -fno-omit-frame-pointer \
+  "$repository/native/surfer_antialias_test.c" -lm -o "$output/aa-sanitized"
+env ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 \
+  "$output/aa-sanitized" "$reference/blends.tsv" "$reference/pixels.tsv" > "$output/sanitizers.txt" 2>&1
+cat "$output/sanitizers.txt"
+rg -x -F 'SURFER original adaptive AA colors, pixels and allocation faults: PASS' "$output/sanitizers.txt"
+
+proc reject_mutant(name, expression, diagnostic) {
+  var destination = "$output/mutants/$name"
+  mkdir -p "$destination"
+  cp "$repository/native/surfer_raytracer.h" "$repository/native/surfer_antialias_test.c" "$destination/"
+  sed "$expression" "$repository/native/surfer_raytracer.c" > "$destination/surfer_raytracer.c"
+  try { cmp -s "$repository/native/surfer_raytracer.c" "$destination/surfer_raytracer.c" }
+  var changed = _error.code
+  if (changed !== 1) { echo 'FAIL mutant source missing or comparison failed' >&2; exit 1 }
+  "$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O2 \
+    -fno-fast-math -ffp-contract=off "$destination/surfer_antialias_test.c" -lm -o "$destination/test"
+  try { "$destination/test" "$reference/blends.tsv" "$reference/pixels.tsv" > "$destination/result.txt" 2>&1 }
+  var status = _error.code
+  cat "$destination/result.txt"
+  if (status !== 1) { echo "FAIL expected AA mutation rejection absent: $name" >&2; exit 1 }
+  rg -x -F "$diagnostic" "$destination/result.txt"
+}
+reject_mutant weights 's/const float corner_weight = 0.0625f + third_quarter;/const float corner_weight = 0.25f + 0.0f * third_quarter;/' \
+  'FAIL original adaptive AA blend: uniform-force'
+reject_mutant threshold 's/>= threshold_squared/> threshold_squared/g' \
+  'FAIL original adaptive AA refinement: uniform-force'
+reject_mutant order 's/lower_left, upper_left, upper_right, lower_right, center/upper_right, upper_left, lower_left, lower_right, center/' \
+  'FAIL original adaptive AA blend: float-order'
+reject_mutant smooth-order 's/+ upper_right\./+ aa_swap./g;s/+ lower_left\./+ upper_right./g;s/+ aa_swap\./+ lower_left./g' \
+  'FAIL original adaptive AA blend: smooth-float-order'
+reject_mutant float64 's/const float weight = sample/const double weight = sample/' \
+  'FAIL original adaptive AA blend: exact-threshold'
+reject_mutant coordinate 's/lower_u + 0.5 \* u_increment/lower_u + 0.25 * u_increment/' \
+  'FAIL original adaptive AA pixel: plane-final-9x7 2 1 ff322520; expected ff894d27'
+
+printf '\033[36mACTION\033[0m preserve every existing successful legacy pixel/root byte\n'
+for file in surfer_raytracer.c surfer_raytracer.h android/presets.c android/presets.h {
+  git -C "$repository" show "$baseline:native/$file" > "$output/reference/native/$file"
+}
+"$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O2 -DSURFER_STATUS_API \
+  -fno-fast-math -ffp-contract=off -I "$output/reference/native" -I "$output/reference/native/android" \
+  "$output/reference/native/surfer_raytracer.c" "$output/reference/native/android/presets.c" \
+  "$repository/native/surfer_success_oracle.c" -lm -o "$output/reference-success"
+"$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O2 -DSURFER_STATUS_API \
+  -fno-fast-math -ffp-contract=off -I "$repository/native" -I "$repository/native/android" \
+  "$repository/native/surfer_raytracer.c" "$repository/native/android/presets.c" \
+  "$repository/native/surfer_success_oracle.c" -lm -o "$output/current-success"
+"$output/reference-success" > "$output/reference-success.bin"
+"$output/current-success" > "$output/current-success.bin"
+cmp "$output/reference-success.bin" "$output/current-success.bin"
+sha256sum "$output/reference-success.bin" "$output/current-success.bin" > "$output/legacy-success.sha256"
+printf 'original_blend_F32_bits\tPASS\nbounded_original_pixels\tPASS\nAA_allocation_faults\tPASS\nsanitisers_and_leaks\tPASS\ncompiled_weights_threshold_refined_smooth_order_width_coordinate_mutants\tPASS\nlegacy_success_bytes\tPASS\nfull_FINAL_corpus\tNOT_ESTABLISHED\nthread_tile_cancellation_parity\tNOT_ESTABLISHED\nAndroid\tNOT_RUN\nphysical_devices\tNOT_RUN\n' > "$output/result.tsv"
+printf '\033[32mPASS\033[0m original bounded AA numerical slice; full rendering parity separate\n'
