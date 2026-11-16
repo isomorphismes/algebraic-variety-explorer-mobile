@@ -61,6 +61,15 @@ PENDING: direct DEX emission, independent decoding and ART execution. No APK,
 JNI polynomial handoff, renderer equivalence or physical-device result is
 claimed by the host result.
 
+After provisioning `rg`, source `91c0317f94604faf197f0facaf188431117bbeea`
+passed the host checks again in
+[run 43785426435](https://github.com/isomorphismes/algebraic-variety-explorer-mobile/actions/runs/43785426435).
+Direct DEX production then stopped before lowering with `Undefined name main`.
+The grammar is a library, so its pure export now has a separate
+`FormulaExports.idric` adapter with the same no-op source entry used by the
+canonical managed-export fixtures. Both original and mutated parser graphs are
+compiled through that adapter; no substitute grammar is introduced.
+
 ## First language boundary
 
 The next qualification must compile the real parser rather than a backend-owned

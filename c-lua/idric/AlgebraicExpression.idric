@@ -224,7 +224,6 @@ expression_shape (Negative value) = "neg(" ++ expression_shape value ++ ")"
 expression_shape (Called name value) = "call[" ++ name ++ "](" ++ expression_shape value ++ ")"
 expression_shape (Grouped value) = "group(" ++ expression_shape value ++ ")"
 
-%export "dex:formula_shape"
 export
 formula_shape : Text → Text
 formula_shape source = case parse_formula source of
