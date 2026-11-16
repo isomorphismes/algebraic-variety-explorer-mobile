@@ -44,9 +44,22 @@ numeric evaluation and differentiation remain the next semantic stage.
 
 ## Execution
 
-PENDING: checked frontend compilation, direct DEX emission, independent decoding
-and ART execution. No APK, JNI polynomial handoff, renderer equivalence or
-physical-device result is claimed by source presence.
+At `cf73012460ed9b101d7599523ab11e6e676a5c60`,
+[run 43609098012](https://github.com/isomorphismes/algebraic-variety-explorer-mobile/actions/runs/43609098012)
+built the pinned frontend and DEX driver, compiled `FormulaCheck.idric`, and
+executed all nine positive host checks and the malformed-input refusals. The
+whole run failed because `rg` was absent from the runner. That infrastructure
+failure occurred before direct DEX emission. The retained artifact is
+`14120676609`; its downloaded archive identity recorded by Actions is
+`891833740335989dcef5ecaaf1107368a865f98589fb1c5d2a8c23b5661a13d4`.
+
+The workflow now provisions the declared dependency. Diagnostic scanning also
+distinguishes a clean log (status 1) from a broken checker (status >1), so a
+missing checker or unreadable log cannot certify clean compiler output.
+
+PENDING: direct DEX emission, independent decoding and ART execution. No APK,
+JNI polynomial handoff, renderer equivalence or physical-device result is
+claimed by the host result.
 
 ## First language boundary
 

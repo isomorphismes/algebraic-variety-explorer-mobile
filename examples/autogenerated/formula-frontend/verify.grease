@@ -13,6 +13,7 @@ for path in (ARGV) {
   if (path[0] !== '/') { echo 'FAIL absolute path required' >&2; exit 2 }
 }
 if test -e "$output" { echo 'FAIL refusing reused output' >&2; exit 1 }
+command -v rg
 test $(git -C "$frontend" rev-parse HEAD) = 740bbf2b1d9e811fd00c719c3473eede17ceea3b
 test $(git -C "$android" rev-parse HEAD) = 153e7fc8053ba4072954a5e77d4efa3609d829e4
 printf '%s  %s\n' 37ae4a41a8886e15c20b8362fa4250f96bbdb55e1a608199ad8b5dff068b588f "$baksmali" | sha256sum -c -
@@ -36,8 +37,14 @@ printf 'explorer\t%s\nfrontend\t%s\nbackend\t%s\n' \
 sha256sum "$output/source/AlgebraicExpression.idric" "$output/source/FormulaCheck.idric" > "$output/sources.sha256"
 
 proc clean_diagnostics(log) {
-  if rg -n '^[[:space:]]*(Error:|INTERNAL ERROR)' "$log" {
+  try { rg -n '^[[:space:]]*(Error:|INTERNAL ERROR)' "$log" }
+  var status = _error.code
+  if (status === 0) {
     echo 'FAIL source compiler reported an error' >&2
+    exit 1
+  }
+  if (status !== 1) {
+    echo 'FAIL compiler diagnostic checker could not read its input' >&2
     exit 1
   }
 }

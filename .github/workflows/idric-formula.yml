@@ -48,6 +48,8 @@ jobs:
           CATFOOD_ROOT: ${{ github.workspace }}/.tools/runtime
           CATFOOD_JOBS: '2'
         run: sh .tools/catfood/build-tools.sh
+      - name: Install ripgrep required by source and artifact qualification
+        run: .tools/runtime/.build/grease/bin/grease -c 'sudo apt-get update; sudo apt-get install -y --no-install-recommends ripgrep; rg --version'
       - name: Qualify the pinned ICK host compiler
         id: ick
         uses: isomorphisms/ai-ci/ick-host@32cb45b3a3a257aeb07881c75f3b846495cfb2c9
