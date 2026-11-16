@@ -16,7 +16,7 @@ var baksmali = ARGV[8]
 var smali = ARGV[9]
 for path in (ARGV) { printf '%s\n' "$path" | rg -x '/[A-Za-z0-9_./+-]+' }
 test $(git -C "$frontend" rev-parse HEAD) = 740bbf2b1d9e811fd00c719c3473eede17ceea3b
-test $(git -C "$backend" rev-parse HEAD) = ce520edf01623cd66a7f02789018e608ecdc7068
+test $(git -C "$backend" rev-parse HEAD) = dfcf2cb22c0ebcc4ce999189cc2f066593bf3689
 test $(git -C "$cross" rev-parse HEAD) = c61e448251744a2f40ad743ebef1a027bdcd2f9d
 test -x "$host"
 test $("$host" -dumpmachine) = x86_64-pc-linux-gnu
@@ -24,7 +24,8 @@ test -s "$output/host-stage/host-runtime-packages.tsv"
 test -s "$output/host-stage/host-runtime.sha256"
 make -f "$repository/fdroid/Makefile" verify-chez-source CHEZ_SOURCE="$chez_source"
 test ! -e "$repository/.build/fdroid-inputs/chez.tar.gz"
-cp "$chez_source.files.sha256" "$chez_source.entries.txt" "$chez_source.provenance.tsv" "$output/"
+cp "$chez_source.files.sha256" "$chez_source.entries.txt" "$chez_source.provenance.tsv" \
+  "$chez_source.original-files.sha256" "$chez_source.original-entries.txt" "$output/"
 printf '%s  %s\n' 37ae4a41a8886e15c20b8362fa4250f96bbdb55e1a608199ad8b5dff068b588f "$baksmali" | sha256sum -c -
 printf '%s  %s\n' 32fa0e88a6c397b3922201adf5f3e534fbaed5a663c71d0c558c3ddce0af844a "$smali" | sha256sum -c -
 test -s "$sdk/platforms/android-35/android.jar"

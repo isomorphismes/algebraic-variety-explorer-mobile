@@ -49,7 +49,8 @@ receipt and the production `libave.so` outputs of the qualified ICK Android
 cross-build. Packaging combines those immutable inputs with the original AVE
 resources and manifest identity. It does not compile, rewrite, disassemble or
 roundtrip the candidate. The application identifier remains
-`org.algebraicvarietyexplorer`, with entry Activity `Idric.Generated`, original
+`org.algebraicvarietyexplorer`, with entry Activity
+`org.algebraicvarietyexplorer.AVEActivity`, original
 name/icon/theme and min23/target35. Version constants come from `build-values.tsv`.
 
 `package_unsigned : CheckedDex × ProductionLibraries × OriginalResources →

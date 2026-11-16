@@ -3,12 +3,13 @@
 
 #include <jni.h>
 #include <stddef.h>
+#include "activity_jni_owner.h"
 
-JNIEXPORT jlong JNICALL Java_Idric_Generated_copyPreparedSurface(
+JNIEXPORT jlong JNICALL SURFER_ACTIVITY_JNI(copyPreparedSurface)(
     JNIEnv *, jclass, jint, jint, jint, jint, jint, jint, jint, jdoubleArray, jintArray);
-JNIEXPORT jlong JNICALL Java_Idric_Generated_replacePreparedSurface(
+JNIEXPORT jlong JNICALL SURFER_ACTIVITY_JNI(replacePreparedSurface)(
     JNIEnv *, jclass, jlong, jint, jint, jint, jint, jint, jint, jint, jdoubleArray, jintArray);
-JNIEXPORT jint JNICALL Java_Idric_Generated_releasePreparedSurface(JNIEnv *, jclass, jlong);
+JNIEXPORT jint JNICALL SURFER_ACTIVITY_JNI(releasePreparedSurface)(JNIEnv *, jclass, jlong);
 
 #ifdef SURFER_SURFACE_JNI_TESTING
 /* Current-thread temporary-buffer fault injection, absent from production.

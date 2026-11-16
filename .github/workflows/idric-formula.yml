@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: isomorphisms/android-NDK
-          ref: ce520edf01623cd66a7f02789018e608ecdc7068
+          ref: dfcf2cb22c0ebcc4ce999189cc2f066593bf3689
           path: .tools/android-NDK
           persist-credentials: false
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683

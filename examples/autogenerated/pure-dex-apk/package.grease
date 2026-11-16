@@ -46,7 +46,9 @@ test -s "$activity/candidate.checked.anf"
 test -s "$activity/candidate.field-types.tsv"
 test -s "$activity/candidate.dex"
 test $(od -An -tx1 -N8 "$activity/candidate.dex" | tr -s ' ' | sed 's/^ //') = '64 65 78 0a 30 33 35 00'
-rg -x -F '.super Landroid/app/Activity;' "$activity/decoded/Idric/Generated.smali"
+rg -x -F '.super Landroid/app/Activity;' "$activity/decoded/org/algebraicvarietyexplorer/AVEActivity.smali"
+rg -x 'activity_descriptor[[:space:]]Lorg/algebraicvarietyexplorer/AVEActivity;' "$activity/activity-owner.tsv"
+rg -x 'activity_class[[:space:]]org[.]algebraicvarietyexplorer[.]AVEActivity' "$activity/activity-owner.tsv"
 rg -x -F 'library ave' "$activity/source/ave-jni.tsv"
 # Reconcile content, not an ancestor commit label: a packaging-only revision
 # may consume an earlier source build when every material source byte agrees.
@@ -70,6 +72,7 @@ git -C "$repository" rev-parse HEAD > "$output/evidence/packaging-head.txt"
 git -C "$repository" status --porcelain > "$output/evidence/packaging-status.txt"
 cp "$activity/repository-head.txt" "$output/evidence/Activity-source-head.txt"
 cp "$activity/inputs.sha256" "$activity/artifacts.sha256" "$output/evidence/"
+cp "$activity/activity-owner.tsv" "$output/evidence/"
 sha256sum "$aapt2" "$align" "$signer" "$platform" "$elf" "$nm" > "$output/evidence/tools.sha256"
 cp "$repository/drawable.formula_field.xml" "$output/res/drawable/formula_field.xml"
 cp "$repository/drawable.ic_launcher.xml" "$output/res/drawable/ic_launcher.xml"
@@ -79,7 +82,7 @@ cp "$repository/values.colors.xml" "$output/res/values/colors.xml"
 cp "$repository/values.strings.xml" "$output/res/values/strings.xml"
 cp "$repository/values.styles.xml" "$output/res/values/styles.xml"
 cp "$repository/values.idric_examples.xml" "$output/res/values/idric_examples.xml"
-test $(rg -c -F 'android:name="Idric.Generated"' "$repository/AndroidManifest.xml") = 1
+test $(rg -c -F 'android:name="org.algebraicvarietyexplorer.AVEActivity"' "$repository/AndroidManifest.xml") = 1
 test $(rg -c -F 'android:extractNativeLibs="false"' "$repository/AndroidManifest.xml") = 1
 cp "$repository/AndroidManifest.xml" "$output/AndroidManifest.xml"
 sha256sum "$repository/build-values.tsv" "$repository/AndroidManifest.xml" \
@@ -103,6 +106,8 @@ for abi in arm64-v8a armeabi-v7a x86_64 {
   rg -x 'production_ICK_cross_compile[[:space:]]PASS' "$built/result.tsv"
   rg -x 'API23_link[[:space:]]PASS' "$built/result.tsv"
   rg -x "abi[[:space:]]$abi" "$built/inputs.tsv"
+  rg -x 'activity_descriptor[[:space:]]Lorg/algebraicvarietyexplorer/AVEActivity;' "$built/inputs.tsv"
+  rg -x 'JNI_owner_flag[[:space:]]-DSURFER_APPLICATION_ACTIVITY_OWNER=1' "$built/inputs.tsv"
   var library_hash = $(sha256sum "$library" | cut -d ' ' -f 1)
   test "$library_hash" = $(artifact_hash "$built/artifacts.sha256" libave.so)
   for source in native/surfer_raytracer.c native/surfer_vecmath.c native/surfer_surface_store.c native/surfer_frame_output.c \
@@ -114,7 +119,8 @@ for abi in arm64-v8a armeabi-v7a x86_64 {
   for header in native/surfer_raytracer.h native/surfer_vecmath.h native/surfer_original_camera.inc native/surfer_original_specialization.inc \
     native/surfer_surface_store.h native/surfer_frame_output.h native/surfer_render_session.h \
     native/surfer_original_workers.inc \
-    native/android/prepared_surface_jni.h native/android/render_surface_jni.h native/android/render_session_jni.h {
+    native/android/prepared_surface_jni.h native/android/render_surface_jni.h native/android/render_session_jni.h \
+    native/android/activity_jni_owner.h {
     var expected = $(artifact_hash "$built/native-headers.sha256" "$header")
     test "$expected" = $(sha256sum "$repository/$header" | cut -d ' ' -f 1)
   }
@@ -134,11 +140,11 @@ for abi in arm64-v8a armeabi-v7a x86_64 {
   "$nm" -D --undefined-only "$library" > "$output/evidence/$abi/imports.txt"
   for method in copyPreparedSurface replacePreparedSurface releasePreparedSurface renderPreparedSurface \
     createRenderSession beginRenderEpoch isRenderEpochCurrent cancelRenderSession releaseRenderSession renderSessionSurface {
-    rg -e " Java_Idric_Generated_$method\$" "$output/evidence/$abi/exports.txt"
+    rg -e " Java_org_algebraicvarietyexplorer_AVEActivity_$method\$" "$output/evidence/$abi/exports.txt"
   }
   try { rg '__atomic_|__sync_|__stack_chk|libatomic|test|Observer' "$output/evidence/$abi/exports.txt" "$output/evidence/$abi/imports.txt" }
   if (_error.code !== 1) { echo 'FAIL unexpected production native test/runtime symbol or checker' >&2; exit 1 }
-  try { rg -v ' Java_Idric_Generated_(copyPreparedSurface|replacePreparedSurface|releasePreparedSurface|renderPreparedSurface|createRenderSession|beginRenderEpoch|isRenderEpochCurrent|cancelRenderSession|releaseRenderSession|renderSessionSurface)$' "$output/evidence/$abi/exports.txt" }
+  try { rg -v ' Java_org_algebraicvarietyexplorer_AVEActivity_(copyPreparedSurface|replacePreparedSurface|releasePreparedSurface|renderPreparedSurface|createRenderSession|beginRenderEpoch|isRenderEpochCurrent|cancelRenderSession|releaseRenderSession|renderSessionSurface)$' "$output/evidence/$abi/exports.txt" }
   if (_error.code !== 1) { echo 'FAIL production library dynamically exports a symbol outside declared JNI API or checker' >&2; exit 1 }
   cp "$library" "$output/payload/lib/$abi/libave.so"
 }
@@ -188,7 +194,7 @@ rg -F "package: name='$application' versionCode='$version_code' versionName='$ve
 rg -x -F "minSdkVersion:'23'" "$output/evidence/badging.txt"
 rg -x -F "targetSdkVersion:'35'" "$output/evidence/badging.txt"
 rg -x -F "application-label:'Algebraic Variety Explorer'" "$output/evidence/badging.txt"
-rg -F "launchable-activity: name='Idric.Generated'" "$output/evidence/badging.txt"
+rg -F "launchable-activity: name='org.algebraicvarietyexplorer.AVEActivity'" "$output/evidence/badging.txt"
 "$aapt2" dump xmltree "$apk" --file AndroidManifest.xml > "$output/evidence/manifest.txt"
 try { "$signer" verify --verbose --print-certs "$apk" > "$output/evidence/unsigned-check.txt" 2>&1 }
 var unsigned_status = _error.code

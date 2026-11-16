@@ -43,7 +43,7 @@ static bool int_array(JNIEnv *environment, jobject value)
     return matches == JNI_TRUE && !(*environment)->ExceptionCheck(environment);
 }
 
-JNIEXPORT jint JNICALL Java_Idric_Generated_renderPreparedSurface(
+JNIEXPORT jint JNICALL SURFER_ACTIVITY_JNI(renderPreparedSurface)(
     JNIEnv *environment, jclass owner, jlong handle, jint width, jint height, jint quality,
     jdouble camera_height, jdouble yaw, jdouble pitch, jdouble zoom, jintArray output)
 {

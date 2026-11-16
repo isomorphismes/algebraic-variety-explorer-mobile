@@ -15,8 +15,11 @@ Provisioning proceeds in distinct phases:
    submodules. The prebuild phase installs the exact Android SDK/NDK and fetches
    the checksum-locked Chez source archive plus two independent DEX inspection
    tools. The verified Chez archive is unpacked into a fixed content/entry
-   profile and removed before scanning. All source and portable bootstrap seed
-   files remain visible. No source compiler is built before the source scanner.
+   profile before scanning. Preparation verifies and removes only the unused
+   upstream LZ4 CLI `skip.bin` fixture, binds the remaining tree to a second
+   fixed profile, then removes the consumed archive. All production sources and
+   portable bootstrap seeds remain visible. No source compiler is built before
+   the source scanner.
 2. During the build phase, `fdroid/Makefile` invokes ai-ci’s pinned host ICK
    source bootstrap and qualification. The declared Trixie buildserver installs
    `libgcc-13-dev` because that bootstrap requires its exact runtime layout.
@@ -48,7 +51,8 @@ this declaration; its presence is not evidence that the scanner passed.
 
 The package ID remains `org.algebraicvarietyexplorer`, version code 2/name
 0.1.1, min API 23 and target API 35. Libraries are stored uncompressed, with
-16 KiB ELF and ZIP alignment. The manifest selects `Idric.Generated`.
+16 KiB ELF and ZIP alignment. The manifest selects the compiler-emitted
+`org.algebraicvarietyexplorer.AVEActivity`.
 The APK is unsigned; F-Droid applies its own persistent signing key.
 
 The schema’s single License field names the main application’s Apache-2.0

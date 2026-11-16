@@ -3,13 +3,14 @@
 
 #include <jni.h>
 #include <stddef.h>
+#include "activity_jni_owner.h"
 
-JNIEXPORT jlong JNICALL Java_Idric_Generated_createRenderSession(JNIEnv *, jclass);
-JNIEXPORT jlong JNICALL Java_Idric_Generated_beginRenderEpoch(JNIEnv *, jclass, jlong);
-JNIEXPORT jint JNICALL Java_Idric_Generated_isRenderEpochCurrent(JNIEnv *, jclass, jlong, jlong);
-JNIEXPORT jint JNICALL Java_Idric_Generated_cancelRenderSession(JNIEnv *, jclass, jlong);
-JNIEXPORT jint JNICALL Java_Idric_Generated_releaseRenderSession(JNIEnv *, jclass, jlong);
-JNIEXPORT jint JNICALL Java_Idric_Generated_renderSessionSurface(
+JNIEXPORT jlong JNICALL SURFER_ACTIVITY_JNI(createRenderSession)(JNIEnv *, jclass);
+JNIEXPORT jlong JNICALL SURFER_ACTIVITY_JNI(beginRenderEpoch)(JNIEnv *, jclass, jlong);
+JNIEXPORT jint JNICALL SURFER_ACTIVITY_JNI(isRenderEpochCurrent)(JNIEnv *, jclass, jlong, jlong);
+JNIEXPORT jint JNICALL SURFER_ACTIVITY_JNI(cancelRenderSession)(JNIEnv *, jclass, jlong);
+JNIEXPORT jint JNICALL SURFER_ACTIVITY_JNI(releaseRenderSession)(JNIEnv *, jclass, jlong);
+JNIEXPORT jint JNICALL SURFER_ACTIVITY_JNI(renderSessionSurface)(
     JNIEnv *, jclass, jlong, jlong, jlong, jint, jint, jint,
     jdouble, jdouble, jdouble, jdouble, jintArray);
 

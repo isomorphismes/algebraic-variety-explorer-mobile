@@ -11,7 +11,7 @@
         android:theme="@style/Theme.AlgebraicVarietyExplorer">
 
         <activity
-            android:name="Idric.Generated"
+            android:name="org.algebraicvarietyexplorer.AVEActivity"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize"
             android:exported="true">
             <intent-filter>

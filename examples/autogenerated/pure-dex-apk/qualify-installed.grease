@@ -112,7 +112,7 @@ cp -R "$example/observer" "$output/observer/source"
 cp "$example/ObserverManifest.xml" "$output/observer/AndroidManifest.xml"
 java -jar "$smali" assemble "$output/observer/source" -o "$output/observer/classes.dex"
 java -jar "$baksmali" disassemble "$output/observer/classes.dex" -o "$output/observer/decoded"
-try { rg '^\.class .*LIdric/' "$output/observer/decoded" }
+try { rg '^\.class .*(LIdric/|Lorg/algebraicvarietyexplorer/AVEActivity[;$])' "$output/observer/decoded" }
 if (_error.code !== 1) { echo 'FAIL observer impersonates checked candidate or class checker' >&2; exit 1 }
 "$aapt2" link -o "$output/observer/resources.apk" --manifest "$output/observer/AndroidManifest.xml" \
   -I "$platform" --min-sdk-version 23 --target-sdk-version 35
@@ -148,6 +148,7 @@ for license in PROJECT-LICENSE NOTICE THIRD_PARTY_LICENSES.md vecmath-GPL-2-CE.t
 "$aapt2" dump badging "$output/AVE-EMULATOR-TEST-ONLY.apk" > "$output/app-badging.txt"
 "$aapt2" dump badging "$output/OBSERVER-EMULATOR-TEST-ONLY.apk" > "$output/observer-badging.txt"
 rg -F "package: name='org.algebraicvarietyexplorer'" "$output/app-badging.txt"
+rg -F "launchable-activity: name='org.algebraicvarietyexplorer.AVEActivity'" "$output/app-badging.txt"
 rg -F "package: name='org.algebraicvarietyexplorer.idricqualification'" "$output/observer-badging.txt"
 sha256sum "$candidate" "$output/AVE-EMULATOR-TEST-ONLY.apk" "$output/OBSERVER-EMULATOR-TEST-ONLY.apk" \
   "$output/AVE-EMULATOR-TEST-ONLY.cer" "$output/observer/classes.dex" > "$output/artifacts.sha256"
@@ -188,14 +189,26 @@ try { "$timeout" 120 "$adb" -s "$serial" install --no-streaming -t "$output/AVE-
 var install_app = _error.code
 printf '%s\n' "$install_app" > "$output/install-app.exit"
 cat "$output/install-app.txt"
-if (install_app !== 0) { snapshot app-install-failure; echo 'FAIL fresh isolated AVE install' >&2; exit 1 }
-rg -x 'Success\r?' "$output/install-app.txt"
+try { rg -x 'Success\r?' "$output/install-app.txt" }
+var install_app_success = _error.code
+printf '%s\n' "$install_app_success" > "$output/install-app-success.exit"
+# Legacy adbd can report zero even when PackageManager printed Failure.
+# Capture its parser diagnostics before the explicit success check refuses.
+if (install_app !== 0 or install_app_success !== 0) {
+  snapshot app-install-failure
+  echo 'FAIL fresh isolated AVE install' >&2; exit 1
+}
 try { "$timeout" 120 "$adb" -s "$serial" install --no-streaming -t "$output/OBSERVER-EMULATOR-TEST-ONLY.apk" > "$output/install-observer.txt" 2>&1 }
 var install_observer = _error.code
 printf '%s\n' "$install_observer" > "$output/install-observer.exit"
 cat "$output/install-observer.txt"
-if (install_observer !== 0) { snapshot observer-install-failure; echo 'FAIL independent observer install' >&2; exit 1 }
-rg -x 'Success\r?' "$output/install-observer.txt"
+try { rg -x 'Success\r?' "$output/install-observer.txt" }
+var install_observer_success = _error.code
+printf '%s\n' "$install_observer_success" > "$output/install-observer-success.exit"
+if (install_observer !== 0 or install_observer_success !== 0) {
+  snapshot observer-install-failure
+  echo 'FAIL independent observer install' >&2; exit 1
+}
 "$timeout" 20 "$adb" -s "$serial" shell pm path org.algebraicvarietyexplorer > "$output/installed-app-path.txt"
 var installed_path = $(sed -n 's/^package://p' "$output/installed-app-path.txt" | tr -d '\r')
 if (not installed_path.startsWith('/data/app/') or not installed_path.endsWith('/base.apk')) {

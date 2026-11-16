@@ -1,0 +1,74 @@
+#!/usr/bin/env grease
+set -eu -o pipefail
+if (len(ARGV) !== 7) {
+  echo 'usage: grease verify.grease EXPLORER ICK_SOURCE QUALIFIED_ICK JNI_INCLUDE JNI_PLATFORM_INCLUDE NM FRESH_OUTPUT' >&2
+  exit 2
+}
+var repository = ARGV[0]
+var ick_source = ARGV[1]
+var compiler = ARGV[2]
+var jni_include = ARGV[3]
+var platform_include = ARGV[4]
+var nm = ARGV[5]
+var output = ARGV[6]
+for path in (ARGV) { if (path[0] !== '/') { echo 'FAIL absolute JNI-owner paths required' >&2; exit 2 } }
+if test -e "$output" { echo 'FAIL refusing reused JNI-owner evidence' >&2; exit 1 }
+test $(git -C "$ick_source" rev-parse HEAD) = fbe86e23d55cfec2000c08e61deea2a407fd7175
+test -x "$compiler"
+test -x "$nm"
+test -f "$jni_include/jni.h"
+test -f "$platform_include/jni_md.h"
+test $("$compiler" -dumpmachine) = x86_64-pc-linux-gnu
+var cc1 = $("$compiler" -print-prog-name=cc1)
+test -x "$cc1"
+mkdir -p "$output/default" "$output/application" "$output/invalid"
+sha256sum "$compiler" "$cc1" "$nm" > "$output/toolchain.sha256"
+sha256sum "$repository/native/android/activity_jni_owner.h" \
+  "$repository/native/android/prepared_surface_jni.h" "$repository/native/android/prepared_surface_jni.c" \
+  "$repository/native/android/render_surface_jni.h" "$repository/native/android/render_surface_jni.c" \
+  "$repository/native/android/render_session_jni.h" "$repository/native/android/render_session_jni.c" \
+  "$jni_include/jni.h" "$platform_include/jni_md.h" > "$output/inputs.sha256"
+git -C "$repository" rev-parse HEAD > "$output/source-revision.txt"
+proc compile_adapter(source, name) {
+  var flags = []
+  if (name === 'application') { setvar flags = ['-DSURFER_APPLICATION_ACTIVITY_OWNER=1'] }
+  "$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O2 \
+    -fPIC -fvisibility=hidden -fno-fast-math -ffp-contract=off \
+    -I "$jni_include" -I "$platform_include" @flags \
+    -c "$repository/native/android/$source.c" -o "$output/$name/$source.o"
+  "$nm" --defined-only "$output/$name/$source.o" >> "$output/$name/defined.txt"
+}
+for mode in default application {
+  var flags = []
+  var prefix = 'Java_Idric_Generated_'
+  if (mode === 'application') {
+    setvar flags = ['-DSURFER_APPLICATION_ACTIVITY_OWNER=1']
+    setvar prefix = 'Java_org_algebraicvarietyexplorer_AVEActivity_'
+  }
+  printf '%s\n' @flags > "$output/$mode/owner-flags.txt"
+  for source in prepared_surface_jni render_surface_jni render_session_jni {
+    compile_adapter "$source" "$mode"
+  }
+  rg ' [T] Java_' "$output/$mode/defined.txt" | sed 's/^.* T //' | sort > "$output/$mode/JNI-symbols.txt"
+  test $(wc -l < "$output/$mode/JNI-symbols.txt") = 10
+  for method in copyPreparedSurface replacePreparedSurface releasePreparedSurface renderPreparedSurface \
+    createRenderSession beginRenderEpoch isRenderEpochCurrent cancelRenderSession releaseRenderSession renderSessionSurface {
+    rg -x -F "$prefix$method" "$output/$mode/JNI-symbols.txt"
+  }
+}
+try {
+  "$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O2 \
+    -fPIC -I "$jni_include" -I "$platform_include" -DSURFER_APPLICATION_ACTIVITY_OWNER=0 \
+    -c "$repository/native/android/prepared_surface_jni.c" -o "$output/invalid/adapter.o" \
+    > "$output/invalid/compiler.txt" 2>&1
+}
+var invalid = _error.code
+printf '%s\n' "$invalid" > "$output/invalid/compiler.exit"
+if (invalid === 0) { echo 'FAIL invalid application owner flag compiled' >&2; exit 1 }
+rg -F 'SURFER_APPLICATION_ACTIVITY_OWNER must be exactly 1 when selected' "$output/invalid/compiler.txt"
+sha256sum "$output/default/prepared_surface_jni.o" "$output/default/render_surface_jni.o" \
+  "$output/default/render_session_jni.o" "$output/application/prepared_surface_jni.o" \
+  "$output/application/render_surface_jni.o" "$output/application/render_session_jni.o" \
+  > "$output/objects.sha256"
+printf 'default_fixture_JNI_10_symbols\tPASS\napplication_Activity_JNI_10_symbols\tPASS\ninvalid_owner_flag\tREFUSED\nAndroid_ABI_link\tNOT_RUN\nART\tNOT_RUN\n' > "$output/result.tsv"
+printf '\033[32mPASS\033[0m exact default and application JNI symbols from actual ICK-compiled adapters\n'

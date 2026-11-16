@@ -96,7 +96,7 @@ while IFS=$'\t' read -r component repository revision role; do
     grep -Fxq "Repo: https://github.com/$repository.git" "$REPO_ROOT/fdroid/srclibs/$library.yml" ||
         fail "F-Droid source repository differs: $component"
 done < "$REPO_ROOT/build-inputs.tsv"
-grep -Fq 'android:name="Idric.Generated"' "$REPO_ROOT/AndroidManifest.xml" || fail "manifest does not select checked Activity"
+grep -Fq 'android:name="org.algebraicvarietyexplorer.AVEActivity"' "$REPO_ROOT/AndroidManifest.xml" || fail "manifest does not select checked Activity"
 grep -Fq 'android:extractNativeLibs="false"' "$REPO_ROOT/AndroidManifest.xml" || fail "manifest does not select aligned stored native libraries"
 if grep -Eq 'javac|com.android.tools.r8|MainActivity|build_debug' "$REPO_ROOT/build.sh" "$REPO_ROOT/build.grease"; then
     fail "candidate build revived the original Java application"

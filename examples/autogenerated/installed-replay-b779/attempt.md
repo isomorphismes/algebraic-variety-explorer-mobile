@@ -69,3 +69,19 @@ Passing current source as the frozen source fails at the exact revision guard,
 with its intended diagnostic and no output directory created. No SDK package
 or installed-execution PASS is inferred from these checks. No GitHub dispatch
 operation is exposed in this session; the narrow PR trigger runs on publication.
+
+## Archived diagnostic workflow
+
+The active `installed-replay-b779.yml` workflow was retired after the newer
+`e737407c243d5d2ddd8a6c33e017d5e906cdf4cc` candidate itself passed all nine
+installed scenarios on API 34 and 35 in
+[run 43846106934](https://github.com/isomorphismes/algebraic-variety-explorer-mobile/actions/runs/43846106934).
+Its separate API 23 job exposed the old uppercase component-name refusal;
+see [the source diagnosis](../pure-dex-apk/api23-manifest.md). The application
+now selects a new compiler-emitted owner, while the b779 APK permanently
+contains its historical owner. Replaying that old candidate with the current
+application-specific observer would test mismatched identities.
+
+The original replay account, byte identities and actual observations above
+remain historical evidence; removing the active diagnostic caller does not
+reclassify them as current-candidate acceptance.

@@ -159,7 +159,7 @@ static jlong copy_arrays(
     return status == SURFER_OK ? handle : -(jlong)status;
 }
 
-JNIEXPORT jlong JNICALL Java_Idric_Generated_copyPreparedSurface(
+JNIEXPORT jlong JNICALL SURFER_ACTIVITY_JNI(copyPreparedSurface)(
     JNIEnv *environment, jclass owner,
     jint version, jint family_degree,
     jint offset0, jint offset1, jint offset2, jint offset3, jint offset4,
@@ -170,7 +170,7 @@ JNIEXPORT jlong JNICALL Java_Idric_Generated_copyPreparedSurface(
         offset0, offset1, offset2, offset3, offset4, coefficients, xyz);
 }
 
-JNIEXPORT jlong JNICALL Java_Idric_Generated_replacePreparedSurface(
+JNIEXPORT jlong JNICALL SURFER_ACTIVITY_JNI(replacePreparedSurface)(
     JNIEnv *environment, jclass owner, jlong previous,
     jint version, jint family_degree,
     jint offset0, jint offset1, jint offset2, jint offset3, jint offset4,
@@ -181,7 +181,7 @@ JNIEXPORT jlong JNICALL Java_Idric_Generated_replacePreparedSurface(
         offset0, offset1, offset2, offset3, offset4, coefficients, xyz);
 }
 
-JNIEXPORT jint JNICALL Java_Idric_Generated_releasePreparedSurface(
+JNIEXPORT jint JNICALL SURFER_ACTIVITY_JNI(releasePreparedSurface)(
     JNIEnv *environment, jclass owner, jlong handle)
 {
     (void)owner;

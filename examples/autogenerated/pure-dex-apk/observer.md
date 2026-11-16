@@ -3,8 +3,9 @@
 `observer/InstalledObserver.smali` extends Android Instrumentation and implements
 Runnable solely for synchronized main-thread observation/actions. It is packaged
 in the separate test-only application declared by `ObserverManifest.xml`.
-It does not replace, subclass, reflect into or invoke exports of `Idric.Generated`;
-the framework launches the real installed `Idric.Generated` Activity.
+It does not replace, subclass, reflect into or invoke exports of the candidate;
+the framework launches the real installed
+`org.algebraicvarietyexplorer.AVEActivity` Activity.
 
 The logical observation is `InstalledActivity → IO (Either Failure NineScenarios)`.
 Resource identifiers resolve against the original application package. All view,

@@ -63,6 +63,7 @@ mkdir -p "$output/objects"
 printf '\033[36mACTION\033[0m compile actual native render and ownership sources for %s API23\n' "$abi"
 printf 'application\t%s\nick\t%s\nabi\t%s\nminimum_API\t23\nNDK\t29.0.14206865\n' \
   $(git -C "$repository" rev-parse HEAD) $(git -C "$ick_source" rev-parse HEAD) "$abi" > "$output/inputs.tsv"
+printf 'activity_descriptor\tLorg/algebraicvarietyexplorer/AVEActivity;\nJNI_owner_flag\t-DSURFER_APPLICATION_ACTIVITY_OWNER=1\n' >> "$output/inputs.tsv"
 sha256sum "$compiler" "$cc1" "$linker" > "$output/toolchain.sha256"
 sha256sum "$repository/native/surfer_raytracer.h" \
   "$repository/native/surfer_original_specialization.inc" \
@@ -71,6 +72,7 @@ sha256sum "$repository/native/surfer_raytracer.h" \
   "$repository/native/surfer_render_session.h" "$repository/native/android/prepared_surface_jni.h" \
   "$repository/native/surfer_original_workers.inc" \
   "$repository/native/android/render_surface_jni.h" "$repository/native/android/render_session_jni.h" \
+  "$repository/native/android/activity_jni_owner.h" \
   > "$output/native-headers.sha256"
 var sources = ['native/surfer_raytracer.c', 'native/surfer_vecmath.c', 'native/surfer_surface_store.c',
   'native/surfer_frame_output.c', 'native/surfer_render_session.c',
@@ -83,6 +85,7 @@ for source in (sources) {
   "$compiler" @flags --sysroot="$sysroot" -isystem "$sysroot/usr/include" \
     -isystem "$sysroot/usr/include/$include" -I "$repository/native" \
     -D__ANDROID__ -D__ANDROID_API__=23 -DBIONIC_IOCTL_NO_SIGNEDNESS_OVERLOAD \
+    -DSURFER_APPLICATION_ACTIVITY_OWNER=1 \
     -std=c17 -Wall -Wextra -Werror -pedantic -O2 -fPIC -fvisibility=hidden -fno-stack-protector \
     -fno-fast-math -ffp-contract=off -c "$repository/$source" -o "$object"
   call objects->append(object)
@@ -99,8 +102,10 @@ rg -F "Machine:                           $machine" "$output/elf.txt"
 "$nm" -D --undefined-only "$output/libave.so" > "$output/imports.txt"
 for method in copyPreparedSurface replacePreparedSurface releasePreparedSurface renderPreparedSurface \
   createRenderSession beginRenderEpoch isRenderEpochCurrent cancelRenderSession releaseRenderSession renderSessionSurface {
-  rg -e " Java_Idric_Generated_$method\$" "$output/exports.txt"
+  rg -e " Java_org_algebraicvarietyexplorer_AVEActivity_$method\$" "$output/exports.txt"
 }
+try { rg ' Java_Idric_Generated_' "$output/exports.txt" }
+if (_error.code !== 1) { echo 'FAIL production application exports the default fixture owner or checker failed' >&2; exit 1 }
 try { rg '__atomic_|__sync_|__stack_chk|libatomic' "$output/imports.txt" "$output/elf.txt" }
 if (_error.code !== 1) { echo 'FAIL undeclared linked runtime import or checker failure' >&2; exit 1 }
 try { rg 'surfer_(surface|frame|render|session)_.*test|Java_(CopiedSurface|RenderPixel|RenderSession)Observer' "$output/exports.txt" }

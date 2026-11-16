@@ -8,7 +8,8 @@ The application source is checked Idriç for formula semantics and the Android
 Activity, with C for the numerical ray tracer, copied surface storage and
 synchronous JNI pixel transport. The ordinary Android Activity provides the
 formula field, examples dialog, render button, image, drag/pinch input and
-system document picker for PNG export. The manifest selects `Idric.Generated`.
+system document picker for PNG export. The manifest selects
+`org.algebraicvarietyexplorer.AVEActivity`, emitted by the checked compiler.
 The original Java files are retained as comparison oracles and attribution
 source; they are excluded from the application source build.
 

@@ -3,8 +3,9 @@
 
 #include <jni.h>
 #include <stddef.h>
+#include "activity_jni_owner.h"
 
-JNIEXPORT jint JNICALL Java_Idric_Generated_renderPreparedSurface(
+JNIEXPORT jint JNICALL SURFER_ACTIVITY_JNI(renderPreparedSurface)(
     JNIEnv *, jclass, jlong, jint, jint, jint, jdouble, jdouble, jdouble, jdouble, jintArray);
 
 #ifdef SURFER_RENDER_JNI_TESTING

@@ -45,6 +45,7 @@ sha256sum "$jni_include/jni.h" "$platform_include/jni_md.h" "$libjvm" "$jdk/bin/
   > "$output/runtime-inputs.sha256"
 sha256sum "$repository/native/surfer_real_jvm_test.c" \
   "$repository/native/android/render_session_jni.c" "$repository/native/android/render_session_jni.h" \
+  "$repository/native/android/activity_jni_owner.h" \
   "$repository/native/surfer_render_session.c" "$repository/native/surfer_render_session.h" \
   "$repository/native/surfer_original_workers.inc" \
   "$repository/native/surfer_surface_store.c" "$repository/native/surfer_surface_store.h" \
@@ -76,7 +77,7 @@ rg -x -F b'actual_native_live_owners_after_release\t0' "$output/runtime.txt"
 rg -x -F 'PASS actual host JVM CheckJNI daemon priority through numerical work array publication owners and VM destruction' "$output/runtime.txt"
 var mutant = "$output/mutants/priority"
 mkdir -p "$mutant/native/android"
-cp "$repository/native/android/render_session_jni.h" "$mutant/native/android/"
+cp "$repository/native/android/render_session_jni.h" "$repository/native/android/activity_jni_owner.h" "$mutant/native/android/"
 cp "$repository/native/surfer_render_session.h" "$repository/native/surfer_surface_store.h" \
   "$repository/native/surfer_raytracer.h" "$mutant/native/"
 sed 's/(\*environment)->CallVoidMethod(environment, thread, set_priority, (jint)1);/(*environment)->CallVoidMethod(environment, thread, set_priority, (jint)5);/' \

@@ -34,6 +34,7 @@ sha256sum "$repository/native/surfer_raytracer.h" \
   "$repository/native/surfer_render_session.h" "$repository/native/android/prepared_surface_jni.h" \
   "$repository/native/surfer_original_workers.inc" \
   "$repository/native/android/render_surface_jni.h" "$repository/native/android/render_session_jni.h" \
+  "$repository/native/android/activity_jni_owner.h" \
   > "$output/native-headers.sha256"
 proc compile_source(source, name) {
   sha256sum "$repository/$source" >> "$output/native-sources.sha256"

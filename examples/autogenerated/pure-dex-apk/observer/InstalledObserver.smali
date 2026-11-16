@@ -872,7 +872,7 @@
     const-string v1, "android.intent.action.MAIN"
     invoke-direct {v0, v1}, Landroid/content/Intent;-><init>(Ljava/lang/String;)V
     const-string v1, "org.algebraicvarietyexplorer"
-    const-string v2, "Idric.Generated"
+    const-string v2, "org.algebraicvarietyexplorer.AVEActivity"
     invoke-virtual {v0, v1, v2}, Landroid/content/Intent;->setClassName(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;
     const/high16 v1, 0x10000000
     invoke-virtual {v0, v1}, Landroid/content/Intent;->addFlags(I)Landroid/content/Intent;
@@ -984,7 +984,7 @@
     invoke-direct {p0}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->count()V
     invoke-direct {p0}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->positivePng()V
     # Framework recreation, not manual lifecycle calls or direct exports.
-    const-string v4, "Idric.Generated"
+    const-string v4, "org.algebraicvarietyexplorer.AVEActivity"
     const/4 v5, 0
     const/4 v0, 0
     invoke-virtual {p0, v4, v5, v0}, Landroid/app/Instrumentation;->addMonitor(Ljava/lang/String;Landroid/app/Instrumentation$ActivityResult;Z)Landroid/app/Instrumentation$ActivityMonitor;

@@ -43,6 +43,7 @@ for name in AVEActivity.idric AVEActivityState.idric AVEExamples.idric AVEExcept
 printf '\033[36mACTION\033[0m compile ordinary Activity from checked Idriç source\n'
 try {
   "$scheme" --program "$driver" --cg dex --directive managed-exports \
+    --directive 'generated-owner=Lorg/algebraicvarietyexplorer/AVEActivity;' \
     --directive "jni-map=$output/source/ave-jni.tsv" --source-dir "$output/source" \
     --build-dir "$output/build" --output-dir "$output" \
     "$output/source/AVEActivity.idric" -o candidate > "$output/compiler.txt" 2>&1
@@ -56,10 +57,17 @@ var diagnostics = _error.code
 if (diagnostics !== 1) { echo 'FAIL Activity diagnostic check' >&2; exit 1 }
 test -s "$output/candidate.dex"
 test -s "$output/candidate.checked.anf"
+rg -x -F 'generated-owner=Lorg/algebraicvarietyexplorer/AVEActivity;' "$output/candidate.checked.anf"
 test -s "$output/candidate.field-types.tsv"
 test -s "$output/candidate.captured-runnable.smali"
 java -jar "$baksmali" disassemble "$output/candidate.dex" -o "$output/decoded"
-var generated = "$output/decoded/Idric/Generated.smali"
+var generated = "$output/decoded/org/algebraicvarietyexplorer/AVEActivity.smali"
+rg -e '^\.class .* Lorg/algebraicvarietyexplorer/AVEActivity;$' "$generated"
+try { rg -F 'LIdric/Generated' "$output/decoded" }
+if (_error.code !== 1) { echo 'FAIL default generated owner retained in selected Activity DEX or checker' >&2; exit 1 }
+var captured_runnable = output ++ '/decoded/org/algebraicvarietyexplorer/AVEActivity$CapturedRunnable.smali'
+test -s "$captured_runnable"
+printf 'activity_descriptor\tLorg/algebraicvarietyexplorer/AVEActivity;\nactivity_class\torg.algebraicvarietyexplorer.AVEActivity\ngenerated_owner_directive\tgenerated-owner=Lorg/algebraicvarietyexplorer/AVEActivity;\n' > "$output/activity-owner.tsv"
 rg -x -F '.super Landroid/app/Activity;' "$generated"
 rg -x -F '.field private state:Ljava/util/ArrayList;' "$generated"
 for declaration in '.implements Landroid/view/View$OnLayoutChangeListener;' \

@@ -161,7 +161,7 @@ static surfer_status finish_android_worker(void *state, void *worker_token)
         ? SURFER_OK : SURFER_INVALID_INPUT;
 }
 
-JNIEXPORT jlong JNICALL Java_Idric_Generated_createRenderSession(JNIEnv *environment, jclass owner)
+JNIEXPORT jlong JNICALL SURFER_ACTIVITY_JNI(createRenderSession)(JNIEnv *environment, jclass owner)
 {
     (void)owner;
 #ifdef SURFER_RENDER_SESSION_JNI_TESTING
@@ -183,7 +183,7 @@ JNIEXPORT jlong JNICALL Java_Idric_Generated_createRenderSession(JNIEnv *environ
     return status == SURFER_OK ? session : -(jlong)status;
 }
 
-JNIEXPORT jlong JNICALL Java_Idric_Generated_beginRenderEpoch(
+JNIEXPORT jlong JNICALL SURFER_ACTIVITY_JNI(beginRenderEpoch)(
     JNIEnv *environment, jclass owner, jlong session)
 {
     (void)owner;
@@ -203,7 +203,7 @@ JNIEXPORT jlong JNICALL Java_Idric_Generated_beginRenderEpoch(
     return status == SURFER_OK ? epoch : -(jlong)status;
 }
 
-JNIEXPORT jint JNICALL Java_Idric_Generated_isRenderEpochCurrent(
+JNIEXPORT jint JNICALL SURFER_ACTIVITY_JNI(isRenderEpochCurrent)(
     JNIEnv *environment, jclass owner, jlong session, jlong epoch)
 {
     (void)owner;
@@ -218,7 +218,7 @@ JNIEXPORT jint JNICALL Java_Idric_Generated_isRenderEpochCurrent(
     return status == SURFER_OK ? (current ? 1 : 0) : -(jint)status;
 }
 
-JNIEXPORT jint JNICALL Java_Idric_Generated_cancelRenderSession(
+JNIEXPORT jint JNICALL SURFER_ACTIVITY_JNI(cancelRenderSession)(
     JNIEnv *environment, jclass owner, jlong session)
 {
     (void)owner;
@@ -229,7 +229,7 @@ JNIEXPORT jint JNICALL Java_Idric_Generated_cancelRenderSession(
     return (jint)surfer_render_session_cancel(session);
 }
 
-JNIEXPORT jint JNICALL Java_Idric_Generated_releaseRenderSession(
+JNIEXPORT jint JNICALL SURFER_ACTIVITY_JNI(releaseRenderSession)(
     JNIEnv *environment, jclass owner, jlong session)
 {
     (void)owner;
@@ -285,7 +285,7 @@ static bool output_array(JNIEnv *environment, jobject value)
     return matches == JNI_TRUE && !(*environment)->ExceptionCheck(environment);
 }
 
-JNIEXPORT jint JNICALL Java_Idric_Generated_renderSessionSurface(
+JNIEXPORT jint JNICALL SURFER_ACTIVITY_JNI(renderSessionSurface)(
     JNIEnv *environment, jclass owner, jlong session, jlong epoch, jlong surface,
     jint width, jint height, jint quality,
     jdouble camera_height, jdouble yaw, jdouble pitch, jdouble zoom, jintArray output)

@@ -30,6 +30,7 @@ test -x "$cc1"
 sha256sum "$compiler" "$cc1" > "$output/toolchain.sha256"
 sha256sum "$repository/native/surfer_processor_query_test.c" \
   "$repository/native/android/render_session_jni.c" "$repository/native/android/render_session_jni.h" \
+  "$repository/native/android/activity_jni_owner.h" \
   "$repository/native/surfer_render_session.c" "$repository/native/surfer_render_session.h" \
   "$repository/native/surfer_original_workers.inc" \
   "$repository/native/surfer_surface_store.c" "$repository/native/surfer_surface_store.h" \
@@ -60,7 +61,7 @@ proc reject_mutant(name, expression) {
   mkdir -p "$destination/android"
   cp "$repository/native/surfer_processor_query_test.c" "$repository/native/surfer_render_session.h" \
     "$repository/native/surfer_surface_store.h" "$repository/native/surfer_raytracer.h" "$destination/"
-  cp "$repository/native/android/render_session_jni.h" "$destination/android/"
+  cp "$repository/native/android/render_session_jni.h" "$repository/native/android/activity_jni_owner.h" "$destination/android/"
   sed "$expression" "$repository/native/android/render_session_jni.c" > "$destination/android/render_session_jni.c"
   try { cmp -s "$repository/native/android/render_session_jni.c" "$destination/android/render_session_jni.c" }
   if (_error.code !== 1) { echo 'FAIL processor-query mutation unchanged or comparison failed' >&2; exit 1 }

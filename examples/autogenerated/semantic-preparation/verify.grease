@@ -14,7 +14,7 @@ for path in (ARGV) {
 if test -e "$output" { echo 'FAIL refusing reused semantic-preparation output' >&2; exit 1 }
 command -v rg
 test $(git -C "$frontend" rev-parse HEAD) = 740bbf2b1d9e811fd00c719c3473eede17ceea3b
-test $(git -C "$android" rev-parse HEAD) = ce520edf01623cd66a7f02789018e608ecdc7068
+test $(git -C "$android" rev-parse HEAD) = dfcf2cb22c0ebcc4ce999189cc2f066593bf3689
 printf '%s  %s\n' 37ae4a41a8886e15c20b8362fa4250f96bbdb55e1a608199ad8b5dff068b588f "$baksmali" | sha256sum -c -
 var compiler = "$frontend/_/build/exec/idris2"
 var backend = "$android/dex/idric"
