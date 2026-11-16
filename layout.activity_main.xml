@@ -71,8 +71,8 @@
         android:inputType="textVisiblePassword|textNoSuggestions"
         android:maxLines="1"
         android:selectAllOnFocus="false"
-        android:textColor="@color/ink"
-        android:textColorHint="#6A7078"
+        android:textColor="@color/paper"
+        android:textColorHint="@color/muted"
         android:textSize="15sp" />
 
     <LinearLayout

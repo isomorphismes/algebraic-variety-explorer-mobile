@@ -51,11 +51,14 @@ jobs:
             exit 1
           fi
 
+      - name: Qualify the owned C frontend for host sanitizers
+        id: host-ick
+        uses: isomorphisms/ai-ci/ick-host@903b2cb27ea572c9c6cb2ffa9f39e0fbf06ec9f8
       - name: Fail-closed native expression semantics under host sanitizers
         shell: bash
         run: |
           set -euo pipefail
-          cc -std=c17 -Wall -Wextra -Werror -pedantic \
+          "${{ steps.host-ick.outputs.compiler }}" ${{ steps.host-ick.outputs.link_flags }} -std=c17 -Wall -Wextra -Werror -pedantic \
             -O1 -g -fno-fast-math -ffp-contract=off \
             -fsanitize=address,undefined -fno-omit-frame-pointer \
             native/android/formula.c native/android/presets.c \

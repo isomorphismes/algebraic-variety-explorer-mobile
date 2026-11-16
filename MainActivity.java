@@ -228,8 +228,8 @@ public final class MainActivity extends Activity {
         TextView report = new TextView(this);
         int padding = Math.round(16.0f * getResources().getDisplayMetrics().density);
         report.setPadding(padding, padding, padding, padding);
-        report.setTextColor(0xfff3f1ed);
-        report.setBackgroundColor(0xff13161b);
+        report.setTextColor(0xfff4f4f4);
+        report.setBackgroundColor(0xff212121);
         report.setTextIsSelectable(true);
         report.setText(
                 "Algebraic Variety Explorer could not start.\n\n"

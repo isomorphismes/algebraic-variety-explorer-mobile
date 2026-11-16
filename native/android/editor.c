@@ -2,6 +2,8 @@
  * Small built-in 5x7 alphabet avoids platform text APIs pending Idriç UI.
  */
 #include "editor.h"
+#include "charcoal.h"
+#define CHARCOAL_RGB(role) (uint8_t)((role)>>16),(uint8_t)((role)>>8),(uint8_t)(role)
 #include <ctype.h>
 #include <stdint.h>
 #include <string.h>
@@ -150,25 +152,25 @@ void ave_editor_draw(ANativeWindow_Buffer *b, const ave_formula_editor *editor)
         const int button_width = b->width / 5 > 80 ? b->width / 5 : 80;
         const int advance = 6 * text_scale(b);
         rectangle(b, b->width - button_width, 16, b->width - 3, 43,
-                  38, 53, 71);
+                  CHARCOAL_RGB(CHARCOAL_INTERACTIVE));
         letters(b, b->width - button_width / 2 - 2 * advance, 22,
-                "EDIT", 4, 229, 232, 240);
+                "EDIT", 4, CHARCOAL_RGB(CHARCOAL_TEXT));
         return;
     }
-    rectangle(b, 0, 15, b->width, 121, 23, 34, 46);
-    letters(b, 10, 20, "FORMULA", 7, 230, 238, 243);
+    rectangle(b, 0, 15, b->width, 121, CHARCOAL_RGB(CHARCOAL_SURFACE));
+    letters(b, 10, 20, "FORMULA", 7, CHARCOAL_RGB(CHARCOAL_TEXT));
     letters(b, b->width - 4 * 6 * text_scale(b) - 8, 20,
-            "EDIT", 4, 182, 195, 209);
+            "EDIT", 4, CHARCOAL_RGB(CHARCOAL_SECONDARY));
     /* The editor displays the rightmost visible characters, not a truncated input. */
     const int advance = 6 * text_scale(b);
     const size_t max_visible = b->width > 24 ?
         (size_t)(b->width - 20) / (size_t)advance : 0;
     const char *tail = editor->input;
     if (editor->length > max_visible) tail += editor->length - max_visible;
-    letters(b, 10, 52, tail, (int)max_visible, 245, 246, 248);
+    letters(b, 10, 52, tail, (int)max_visible, CHARCOAL_RGB(CHARCOAL_TEXT));
     if (editor->error[0])
-        letters(b, 10, 87, editor->error, (b->width - 20) / advance, 255, 133, 132);
-    else letters(b, 10, 87, "F=0", 3, 129, 187, 209);
+        letters(b, 10, 87, editor->error, (b->width - 20) / advance, CHARCOAL_RGB(CHARCOAL_ERROR));
+    else letters(b, 10, 87, "F=0", 3, CHARCOAL_RGB(CHARCOAL_SECONDARY));
 
     const int row_height = keypad_row_height(b->width, b->height);
     const int y0 = keypad_bottom(editor, b->height) - row_height * 4;
@@ -180,12 +182,11 @@ void ave_editor_draw(ANativeWindow_Buffer *b, const ave_formula_editor *editor)
             const char *key = keypad[row][col];
             const int highlight = strcmp(key, "OK") == 0;
             rectangle(b, x0 + 1, by0 + 1, x1 - 1, by1 - 1,
-                      highlight ? 46 : 39, highlight ? 98 : 50,
-                      highlight ? 91 : 67);
+                      CHARCOAL_RGB(highlight ? CHARCOAL_SELECTION : CHARCOAL_INTERACTIVE));
             const int characters = (int)strlen(key);
             letters(b, (x0 + x1 - characters * advance) / 2,
                     by0 + (row_height - 7 * text_scale(b)) / 2,
-                    key, characters, 233, 240, 241);
+                    key, characters, CHARCOAL_RGB(CHARCOAL_TEXT));
         }
     }
 }

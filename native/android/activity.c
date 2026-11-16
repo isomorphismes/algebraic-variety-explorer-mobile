@@ -8,6 +8,7 @@
 #include "presets.h"
 #include "formula.h"
 #include "editor.h"
+#include "charcoal.h"
 
 #include <android/input.h>
 #include <android/log.h>
@@ -354,7 +355,9 @@ static void draw_frame(struct android_app *app, ave_engine *engine)
             uint8_t *row = (uint8_t *)buffer.bits +
                 (size_t)y * (size_t)buffer.stride * 4;
             for (int32_t x = 0; x < buffer.width; ++x) {
-                uint8_t red = 18, green = 22, blue = 28;
+                uint8_t red = (uint8_t)(CHARCOAL_BACKGROUND >> 16);
+                uint8_t green = (uint8_t)(CHARCOAL_BACKGROUND >> 8);
+                uint8_t blue = (uint8_t)CHARCOAL_BACKGROUND;
                 if (x >= x_offset && y >= y_offset &&
                     x < x_offset + edge && y < y_offset + edge) {
                     const size_t u = (size_t)(x - x_offset) * side / (size_t)edge;
@@ -367,7 +370,9 @@ static void draw_frame(struct android_app *app, ave_engine *engine)
                 /* Seven native marks show which preset a tap selected. */
                 if (y < 14 && (size_t)x * ave_native_preset_count() /
                         (size_t)buffer.width == engine->preset_index) {
-                    red = 225; green = 229; blue = 238;
+                    red = (uint8_t)(CHARCOAL_TEXT >> 16);
+                    green = (uint8_t)(CHARCOAL_TEXT >> 8);
+                    blue = (uint8_t)CHARCOAL_TEXT;
                 }
                 uint8_t *rgba = row + (size_t)x * 4;
                 rgba[0] = red;
