@@ -46,6 +46,18 @@ surfer_status surfer_render_session_render(
 typedef surfer_status (*surfer_render_session_publisher)(
     void *state, uint32_t *pixels, size_t count);
 
+/* Optional platform startup/cleanup on each newly created numerical worker.
+ * No platform types enter the numerical owner. finish runs once after every
+ * attempted start, including partial startup failure and cancellation. The
+ * private token belongs only to that worker; state remains borrowed until all
+ * workers have finished and joined. Either failure rejects whole publication.
+ */
+typedef struct {
+    surfer_status (*start)(void *state, void **worker_token);
+    surfer_status (*finish)(void *state, void *worker_token);
+    void *state;
+} surfer_render_worker_hooks;
+
 /* Synchronous internal publication under the session lock after the final
  * currentness check. Pixels are a unique mutable staging borrow; the publisher
  * may rearrange them in place, but must not reenter session APIs or retain the
@@ -72,6 +84,14 @@ surfer_status surfer_render_session_render_tiled_publish(
     size_t processors, size_t width, size_t height, double camera_height,
     double yaw, double pitch, double zoom, surfer_render_quality quality,
     surfer_render_session_publisher publish, void *publish_state, size_t pixel_capacity);
+
+surfer_status surfer_render_session_render_tiled_publish_with_hooks(
+    surfer_render_session_handle session, surfer_render_epoch epoch,
+    surfer_surface_handle surface, const surfer_scene *scene_settings,
+    size_t processors, size_t width, size_t height, double camera_height,
+    double yaw, double pitch, double zoom, surfer_render_quality quality,
+    surfer_render_session_publisher publish, void *publish_state, size_t pixel_capacity,
+    const surfer_render_worker_hooks *hooks);
 
 surfer_status surfer_render_session_render_tiled(
     surfer_render_session_handle session, surfer_render_epoch epoch,
@@ -139,6 +159,15 @@ surfer_status surfer_render_session_test_render_tiled_publish(
     double yaw, double pitch, double zoom, surfer_render_quality quality,
     surfer_render_session_publisher publish, void *publish_state, size_t pixel_capacity,
     surfer_render_session_probe *probe, surfer_parallel_render_probe *parallel_probe);
+
+surfer_status surfer_render_session_test_render_tiled_publish_with_hooks(
+    surfer_render_session_handle session, surfer_render_epoch epoch,
+    surfer_surface_handle surface, const surfer_scene *scene_settings,
+    size_t processors, size_t width, size_t height, double camera_height,
+    double yaw, double pitch, double zoom, surfer_render_quality quality,
+    surfer_render_session_publisher publish, void *publish_state, size_t pixel_capacity,
+    surfer_render_session_probe *probe, surfer_parallel_render_probe *parallel_probe,
+    const surfer_render_worker_hooks *hooks);
 #endif
 
 #endif

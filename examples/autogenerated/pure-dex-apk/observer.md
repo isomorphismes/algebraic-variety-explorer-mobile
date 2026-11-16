@@ -72,9 +72,14 @@ The nine scenarios are:
 4. `TextView.onEditorAction(IME_ACTION_DONE)` uses the real installed editor
    listener and produces a new Sphere frame. This is a framework editor-action
    callback check, not physical keyboard/IME acceptance.
-5. A real Examples click opens the actual dialog; UiAutomation selects its Torus
-   accessibility item. The editor must contain the exact source-owned formula
-   and the displayed Bitmap must change.
+5. A real Examples click opens the actual dialog. The observer records the
+   fresh enabled/visible Torus node and screen bounds, then injects one actual
+   touchscreen down/up pair at that row's center. Both input injections must
+   succeed. The editor must acquire the exact source-owned Torus formula and
+   the app's active window must move away from the recorded dialog window
+   within10seconds. The completed displayed Bitmap must have a new identity
+   and pixels different from the prior Sphere. No application callback is
+   called directly.
 6. Save PNG must issue exactly one actual CREATE_DOCUMENT intent matching
    OPENABLE and image/png. An Instrumentation ActivityMonitor blocks only that
    request and returns RESULT_CANCELED. The current Bitmap identity/pixels stay
@@ -103,6 +108,29 @@ requires Instrumentation.finish(-1) and Bundle fields
 `scenarios=9`. Failure finishes with0, the corresponding FAIL marker,
 the completed scenario count and `stack` containing the first Throwable trace.
 The host must inspect those exact fields and code, not only adb exit status.
+Success also requires the current Examples action marker and
+`examples_input_injected=true`, `examples_formula_applied=true` and
+`examples_dialog_dismissed=true`. Both success and failure Bundles retain those
+flags and `examples_node` (including the bounds), so later failures preserve
+the applied-action evidence rather than merely reporting an accepted input API.
+
+## Examples action repair and qualification scope
+
+The original observer climbed accessibility ancestors and accepted the first
+`performAction(ACTION_CLICK)` returning true. That return alone did not prove
+the Torus list item was selected. In the unchanged-observer frozen b779 replay,
+real installed scenarios1–4 passed, but the Examples wait timed out with the
+Sphere still displayed; the dialog remained until failure cleanup. The decoded
+actual candidate contains both correctly dispatched onClick overloads, and
+the retained logcat reports no dialog-callback exception.
+
+The observer action is now explicitly changed to a real row tap plus applied
+formula/window/pixel checks. This does not qualify a repaired candidate or make
+the previous observer pass retroactively. A diagnostic replay uses the current
+maintained qualifier and corrected observer against the same frozen candidate;
+its provenance records candidate and observer heads separately and retains the
+old failure run/artifact references. The new action remains unqualified until
+that fresh execution produces its own evidence.
 
 The unchanged Smali observer is independently assembled and decoded locally.
 Android framework execution for the matrix is pending. Pixel observations prove actual image content,

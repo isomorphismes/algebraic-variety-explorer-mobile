@@ -1,5 +1,6 @@
 /* Original task partition with bounded private workers. Included by the
- * synchronous session owner; neither worker nor numerical kernel uses JNI.
+ * synchronous session owner. Numerical code has no JNI/platform types;
+ * optional worker hooks own any thread-local platform startup and cleanup.
  */
 #ifdef SURFER_RENDER_SESSION_TESTING
 typedef surfer_parallel_render_probe parallel_probe;
@@ -15,6 +16,7 @@ typedef struct {
     const surfer_cancellation *cancellation;
     session_probe *probe;
     parallel_probe *parallel_probe;
+    const surfer_render_worker_hooks *hooks;
     size_t width, height, x_step, y_step, y_tiles, tile_count;
     size_t next_work, next_commit, completed_workers, active_workers;
     double camera_height, yaw, pitch, zoom;
@@ -49,7 +51,17 @@ static void *original_numerical_worker(void *opaque)
     original_worker *worker = opaque;
     original_worker_queue *queue = worker->queue;
     const surfer_cancellation cancellation = {original_workers_cancelled, queue};
-    for (;;) {
+    void *worker_token = NULL;
+    surfer_status startup_status = SURFER_OK;
+    if (queue->hooks != NULL) {
+        startup_status = queue->hooks->start(queue->hooks->state, &worker_token);
+        if (startup_status != SURFER_OK) {
+            (void)pthread_mutex_lock(&queue->mutex);
+            original_workers_fail(queue, startup_status);
+            (void)pthread_mutex_unlock(&queue->mutex);
+        }
+    }
+    for (; startup_status == SURFER_OK;) {
         (void)pthread_mutex_lock(&queue->mutex);
         if (queue->status != SURFER_OK || queue->next_work == queue->tile_count) {
             (void)pthread_mutex_unlock(&queue->mutex);
@@ -103,6 +115,14 @@ static void *original_numerical_worker(void *opaque)
         }
         (void)pthread_mutex_unlock(&queue->mutex);
     }
+    if (queue->hooks != NULL) {
+        const surfer_status cleanup_status = queue->hooks->finish(queue->hooks->state, worker_token);
+        if (cleanup_status != SURFER_OK) {
+            (void)pthread_mutex_lock(&queue->mutex);
+            original_workers_fail(queue, cleanup_status);
+            (void)pthread_mutex_unlock(&queue->mutex);
+        }
+    }
     /* This is the worker's final access to caller-owned queue/state. The
      * caller waits for all completions and joins every created joinable handle
      * before destroying queue synchronization or returning its stack storage.
@@ -118,7 +138,8 @@ static surfer_status render_original_workers(const surfer_scene *scene,
     size_t processors, size_t worker_limit, size_t width, size_t height,
     double camera_height, double yaw, double pitch, double zoom,
     surfer_render_quality quality, const surfer_cancellation *cancellation,
-    uint32_t *staging, session_probe *probe, parallel_probe *parallel)
+    uint32_t *staging, session_probe *probe, parallel_probe *parallel,
+    const surfer_render_worker_hooks *hooks)
 {
     if (processors == 0 || processors > INT32_MAX || worker_limit == 0 || worker_limit > 4 ||
         width < 2 || height < 2 || width > SIZE_MAX / height ||
@@ -136,6 +157,7 @@ static surfer_status render_original_workers(const surfer_scene *scene,
     queue.cancellation = cancellation;
     queue.probe = probe;
     queue.parallel_probe = parallel;
+    queue.hooks = hooks;
     queue.width = width; queue.height = height;
     queue.x_step = x_step; queue.y_step = y_step; queue.y_tiles = y_tiles;
     queue.tile_count = x_tiles * y_tiles;

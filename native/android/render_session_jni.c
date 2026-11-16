@@ -100,6 +100,67 @@ cleanup:
     return success;
 }
 
+/* A fresh pthread acquires its own daemon attachment and bootstrap Thread
+ * object. Thread.MIN_PRIORITY uses ART's full priority/task-profile path;
+ * setting only an OS nice value would not preserve that behavior. The caller
+ * environment is never supplied to this hook or to a numerical worker.
+ */
+static surfer_status start_android_worker(void *state, void **worker_token)
+{
+    JavaVM *virtual_machine = state;
+    if (virtual_machine == NULL || worker_token == NULL) return SURFER_INVALID_INPUT;
+    *worker_token = NULL;
+    void *previous_environment = NULL;
+    if ((*virtual_machine)->GetEnv(virtual_machine, &previous_environment, JNI_VERSION_1_6) != JNI_EDETACHED ||
+        previous_environment != NULL) return SURFER_INVALID_INPUT;
+    JNIEnv *environment = NULL;
+#ifdef __ANDROID__
+    const jint attached = (*virtual_machine)->AttachCurrentThreadAsDaemon(virtual_machine, &environment, NULL);
+#else
+    const jint attached = (*virtual_machine)->AttachCurrentThreadAsDaemon(virtual_machine, (void **)&environment, NULL);
+#endif
+    if (attached != JNI_OK || environment == NULL) return SURFER_OUT_OF_MEMORY;
+    *worker_token = environment;
+    bool success = false;
+    jobject thread = NULL;
+    jclass thread_class = (*environment)->FindClass(environment, "java/lang/Thread");
+    if (thread_class == NULL || (*environment)->ExceptionCheck(environment)) goto cleanup;
+    jmethodID current_thread = (*environment)->GetStaticMethodID(environment, thread_class,
+        "currentThread", "()Ljava/lang/Thread;");
+    if (current_thread == NULL || (*environment)->ExceptionCheck(environment)) goto cleanup;
+    thread = (*environment)->CallStaticObjectMethod(environment, thread_class, current_thread);
+    if (thread == NULL || (*environment)->ExceptionCheck(environment)) goto cleanup;
+    jmethodID set_priority = (*environment)->GetMethodID(environment, thread_class, "setPriority", "(I)V");
+    if (set_priority == NULL || (*environment)->ExceptionCheck(environment)) goto cleanup;
+    (*environment)->CallVoidMethod(environment, thread, set_priority, (jint)1);
+    if ((*environment)->ExceptionCheck(environment)) goto cleanup;
+    success = true;
+cleanup:
+    if (thread != NULL) (*environment)->DeleteLocalRef(environment, thread);
+    if (thread_class != NULL) (*environment)->DeleteLocalRef(environment, thread_class);
+    /* Attachment remains owned until finish_android_worker, even on partial
+     * startup failure. The core always invokes that cleanup before completion.
+     */
+    return success ? SURFER_OK : SURFER_INVALID_INPUT;
+}
+
+static surfer_status finish_android_worker(void *state, void *worker_token)
+{
+    if (worker_token == NULL) return SURFER_OK;
+    JavaVM *virtual_machine = state;
+    JNIEnv *environment = worker_token;
+    void *current_environment = NULL;
+    if (virtual_machine == NULL ||
+        (*virtual_machine)->GetEnv(virtual_machine, &current_environment, JNI_VERSION_1_6) != JNI_OK ||
+        current_environment != environment) return SURFER_INVALID_INPUT;
+    /* A worker exception is recorded as native startup failure, rather than
+     * moved across environments. Clear it only on that worker before detach.
+     */
+    if ((*environment)->ExceptionCheck(environment)) (*environment)->ExceptionClear(environment);
+    return (*virtual_machine)->DetachCurrentThread(virtual_machine) == JNI_OK
+        ? SURFER_OK : SURFER_INVALID_INPUT;
+}
+
 JNIEXPORT jlong JNICALL Java_Idric_Generated_createRenderSession(JNIEnv *environment, jclass owner)
 {
     (void)owner;
@@ -252,18 +313,24 @@ JNIEXPORT jint JNICALL Java_Idric_Generated_renderSessionSurface(
     };
     size_t processors = 0;
     if (!platform_processor_count(environment, &processors)) return SURFER_INVALID_INPUT;
+    JavaVM *virtual_machine = NULL;
+    if ((*environment)->GetJavaVM(environment, &virtual_machine) != JNI_OK || virtual_machine == NULL ||
+        (*environment)->ExceptionCheck(environment)) return SURFER_INVALID_INPUT;
+    const surfer_render_worker_hooks worker_hooks = {
+        start_android_worker, finish_android_worker, virtual_machine
+    };
 #ifdef SURFER_RENDER_SESSION_JNI_TESTING
     surfer_render_session_handle hook_session = session;
     surfer_render_session_probe probe = {render_fail_at, 0, 0, 0,
         cancel_before_publish ? cancel_at_commit : NULL, &hook_session};
-    const surfer_status status = surfer_render_session_test_render_tiled_publish(session, epoch, surface,
+    const surfer_status status = surfer_render_session_test_render_tiled_publish_with_hooks(session, epoch, surface,
         &settings, processors, (size_t)width, (size_t)height, camera_height, yaw, pitch, zoom, selected,
-        publish_android_rows, &publication, (size_t)count, &probe, NULL);
+        publish_android_rows, &publication, (size_t)count, &probe, NULL, &worker_hooks);
     render_attempts = probe.attempts;
 #else
-    const surfer_status status = surfer_render_session_render_tiled_publish(session, epoch, surface,
+    const surfer_status status = surfer_render_session_render_tiled_publish_with_hooks(session, epoch, surface,
         &settings, processors, (size_t)width, (size_t)height, camera_height, yaw, pitch, zoom, selected,
-        publish_android_rows, &publication, (size_t)count);
+        publish_android_rows, &publication, (size_t)count, &worker_hooks);
 #endif
     return (jint)status;
 }

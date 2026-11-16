@@ -1,0 +1,97 @@
+#!/usr/bin/env grease
+set -eu -o pipefail
+if (len(ARGV) !== 8) { echo 'usage: grease verify.grease EXPLORER ICK_SOURCE QUALIFIED_ICK JDK_ROOT JNI_INCLUDE JNI_PLATFORM_INCLUDE LIBJVM FRESH_OUTPUT' >&2; exit 2 }
+var repository = ARGV[0]
+var ick_source = ARGV[1]
+var compiler = ARGV[2]
+var jdk = ARGV[3]
+var jni_include = ARGV[4]
+var platform_include = ARGV[5]
+var libjvm = ARGV[6]
+var output = ARGV[7]
+for path in (ARGV) { if (path[0] !== '/') { echo 'FAIL absolute actual-JVM paths required' >&2; exit 2 } }
+if test -e "$output" { echo 'FAIL refusing reused actual-JVM evidence' >&2; exit 1 }
+test $(git -C "$ick_source" rev-parse HEAD) = fbe86e23d55cfec2000c08e61deea2a407fd7175
+test -x "$compiler"
+test -x "$jdk/bin/java"
+test -f "$jdk/release"
+test -f "$libjvm"
+test -f "$jni_include/jni.h"
+test -f "$platform_include/jni_md.h"
+command -v timeout > /dev/null
+command -v rg > /dev/null
+rg '^JAVA_VERSION="17[.]' "$jdk/release"
+cmp "$jni_include/jni.h" "$jdk/include/jni.h"
+cmp "$platform_include/jni_md.h" "$jdk/include/linux/jni_md.h"
+cmp "$libjvm" "$jdk/lib/server/libjvm.so"
+if test -f "$jni_include/jni_md.h" { cmp "$jni_include/jni_md.h" "$platform_include/jni_md.h" }
+var manifest = "$repository/ci/real-jvm-toolchain.tsv"
+rg -x -F b'build_id\ttarget\ttoolchain\tick_revision\tick_status\tick_evidence' "$manifest"
+rg -x -F b'real-jvm-workers-host\tx86_64-pc-linux-gnu\tick\tfbe86e23d55cfec2000c08e61deea2a407fd7175\tqualified\treceipt:ai-ci-ick-host-32cb45b3' "$manifest"
+rg -x -F b'real-jvm-workers-priority-mutant\tx86_64-pc-linux-gnu\tick\tfbe86e23d55cfec2000c08e61deea2a407fd7175\tqualified\treceipt:ai-ci-ick-host-32cb45b3' "$manifest"
+test $(wc -l < "$manifest") = 3
+mkdir -p "$output"
+"$jdk/bin/java" -XX:-UsePerfData -version > "$output/java-version.txt" 2>&1
+rg '(openjdk|java) version "17[.]' "$output/java-version.txt"
+cp "$jdk/release" "$output/jdk-release.txt"
+cp "$manifest" "$output/toolchain.tsv"
+"$compiler" --version > "$output/ick-version.txt"
+"$compiler" -dumpmachine > "$output/ick-target.txt"
+rg -x -F x86_64-pc-linux-gnu "$output/ick-target.txt"
+var cc1 = $("$compiler" -print-prog-name=cc1)
+test -x "$cc1"
+sha256sum "$compiler" "$cc1" > "$output/toolchain.sha256"
+sha256sum "$jni_include/jni.h" "$platform_include/jni_md.h" "$libjvm" "$jdk/bin/java" "$jdk/release" \
+  > "$output/runtime-inputs.sha256"
+sha256sum "$repository/native/surfer_real_jvm_test.c" \
+  "$repository/native/android/render_session_jni.c" "$repository/native/android/render_session_jni.h" \
+  "$repository/native/surfer_render_session.c" "$repository/native/surfer_render_session.h" \
+  "$repository/native/surfer_original_workers.inc" \
+  "$repository/native/surfer_surface_store.c" "$repository/native/surfer_surface_store.h" \
+  "$repository/native/surfer_raytracer.c" "$repository/native/surfer_raytracer.h" \
+  "$repository/native/surfer_original_specialization.inc" "$repository/native/surfer_original_camera.inc" \
+  "$repository/native/surfer_vecmath.c" "$repository/native/surfer_vecmath.h" > "$output/source-inputs.sha256"
+git -C "$repository" rev-parse HEAD > "$output/source-revision.txt"
+var runtime_directory = $(dirname "$libjvm")
+proc compile_actual_jvm(jni_source, destination, compiler_log) {
+  "$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O2 \
+  -fno-fast-math -ffp-contract=off \
+  -DSURFER_RENDER_SESSION_TESTING -DSURFER_SURFACE_STORE_TESTING \
+  -I "$jni_include" -I "$platform_include" \
+  "$repository/native/surfer_real_jvm_test.c" "$jni_source" \
+  "$repository/native/surfer_render_session.c" "$repository/native/surfer_surface_store.c" \
+  "$repository/native/surfer_raytracer.c" "$repository/native/surfer_vecmath.c" \
+  "$libjvm" -pthread -lm -Wl,--wrap=surfer_render_orthographic_tile \
+  -Wl,--wrap=pthread_create -Wl,--wrap=pthread_join "-Wl,-rpath,$runtime_directory" \
+  -o "$destination" > "$compiler_log" 2>&1
+}
+compile_actual_jvm "$repository/native/android/render_session_jni.c" "$output/test" "$output/compiler.txt"
+timeout 60 "$output/test" > "$output/runtime.txt" 2> "$output/runtime.stderr"
+cat "$output/runtime.txt"
+test ! -s "$output/runtime.stderr"
+if rg 'WARNING|FATAL|JNI DETECTED|JNI WARNING' "$output/runtime.txt" { echo 'FAIL actual JVM emitted CheckJNI diagnostics' >&2; exit 1 }
+rg b'^actual_runtime_property\tjava.version\t17[.]' "$output/runtime.txt"
+rg -x -F b'actual_numerical_threads_started_joined\t4\t4' "$output/runtime.txt"
+rg -x -F b'actual_native_live_owners_after_release\t0' "$output/runtime.txt"
+rg -x -F 'PASS actual host JVM CheckJNI daemon priority through numerical work array publication owners and VM destruction' "$output/runtime.txt"
+var mutant = "$output/mutants/priority"
+mkdir -p "$mutant/native/android"
+cp "$repository/native/android/render_session_jni.h" "$mutant/native/android/"
+cp "$repository/native/surfer_render_session.h" "$repository/native/surfer_surface_store.h" \
+  "$repository/native/surfer_raytracer.h" "$mutant/native/"
+sed 's/(\*environment)->CallVoidMethod(environment, thread, set_priority, (jint)1);/(*environment)->CallVoidMethod(environment, thread, set_priority, (jint)5);/' \
+  "$repository/native/android/render_session_jni.c" > "$mutant/native/android/render_session_jni.c"
+try { cmp -s "$repository/native/android/render_session_jni.c" "$mutant/native/android/render_session_jni.c" }
+if (_error.code !== 1) { echo 'FAIL real-JVM priority mutation unchanged or comparison failed' >&2; exit 1 }
+compile_actual_jvm "$mutant/native/android/render_session_jni.c" "$mutant/test" "$mutant/compiler.txt"
+try { timeout 60 "$mutant/test" > "$mutant/runtime.txt" 2> "$mutant/runtime.stderr" }
+if (_error.code !== 1) { echo 'FAIL missing designated actual-JVM priority mutation rejection' >&2; exit 1 }
+rg -x -F 'FAIL actual JVM: worker priority 5 daemon 1' "$mutant/runtime.stderr"
+if rg 'WARNING|FATAL|JNI DETECTED|JNI WARNING' "$mutant/runtime.txt" "$mutant/runtime.stderr" {
+  echo 'FAIL priority mutant emitted JVM diagnostics instead of the intended property rejection' >&2; exit 1
+}
+sha256sum "$mutant/native/android/render_session_jni.c" "$mutant/test" \
+  "$mutant/runtime.txt" "$mutant/runtime.stderr" > "$mutant/observations.sha256"
+sha256sum "$output/test" "$output/runtime.txt" "$output/runtime.stderr" > "$output/observations.sha256"
+printf 'actual_host_runtime\tJDK17\nactual_CheckJNI\tPASS\nactual_four_numerical_workers_joined\tPASS\nactual_priority_1_daemon_through_numerical_work\tPASS\nactual_array_publication_nonuniform_frame\tPASS\nactual_priority_5_mutant_rejected\tPASS\nnative_owners_after_release\t0\nDestroyJavaVM\tPASS\nCheckJNI_diagnostics\tNONE\nJava_source_or_classes\tNONE\nAndroid_JNI_ABI\tNOT_RUN\nART\tNOT_RUN\nphysical_devices\tNOT_RUN\n' > "$output/result.tsv"
+printf '\033[32mPASS\033[0m actual JDK17 CheckJNI worker priority and publication; ART acceptance separate\n'

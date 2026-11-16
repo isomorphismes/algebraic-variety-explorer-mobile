@@ -256,6 +256,10 @@ for name in negative positive {
   } else {
     rg -x 'INSTRUMENTATION_RESULT: ave_observer_result=PASS Explorer installed checked-DEX Activity\r?' "$output/instrumentation-$name.txt"
     rg -x 'INSTRUMENTATION_RESULT: scenarios=9\r?' "$output/instrumentation-$name.txt"
+    rg -x 'INSTRUMENTATION_RESULT: examples_action=real_torus_row_touchscreen_tap\r?' "$output/instrumentation-$name.txt"
+    rg -x 'INSTRUMENTATION_RESULT: examples_input_injected=true\r?' "$output/instrumentation-$name.txt"
+    rg -x 'INSTRUMENTATION_RESULT: examples_formula_applied=true\r?' "$output/instrumentation-$name.txt"
+    rg -x 'INSTRUMENTATION_RESULT: examples_dialog_dismissed=true\r?' "$output/instrumentation-$name.txt"
     rg -x 'INSTRUMENTATION_RESULT: png_export=PASS actual provider bytes dimensions pixels and descriptor close\r?' "$output/instrumentation-$name.txt"
     rg -x 'INSTRUMENTATION_CODE: -1\r?' "$output/instrumentation-$name.txt"
     try { rg 'FAIL Explorer installed' "$output/instrumentation-$name.txt" }

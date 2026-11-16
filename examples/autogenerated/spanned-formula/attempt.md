@@ -93,3 +93,9 @@ mapping for the DEX-only platform coefficient functions. This task does not
 need a fallback. A future generic host mapping would need to execute the same
 prepared-formula corpus with independently checked binary64 results; parser
 metadata alone would not qualify that arithmetic boundary.
+
+The installed controller now retains the original editor text in its immutable
+render request. Trimming remains only the blank-input admission check. Passing
+trimmed text to located preparation would otherwise shift error ranges left
+when the user entered leading whitespace. The lexer already admits ordinary
+leading/trailing whitespace, so accepted formula arithmetic is unchanged.

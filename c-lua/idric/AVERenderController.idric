@@ -169,7 +169,9 @@ request_render activity quality = do
             let camera = state.interaction.camera
             let settings = RenderWith size.pixel_width size.pixel_height quality 2.15
                   camera.yaw camera.pitch camera.zoom
-            let request = ImmutableRequest epoch formula settings state.preparation_limits
+            -- Blank admission uses trimmed text; syntax locations retain the
+            -- exact editor input, including its leading whitespace.
+            let request = ImmutableRequest epoch raw settings state.preparation_limits
             done ← case state.active_future of
               Nothing ⇒ pure True
               Just future ⇒ do finished ← primIO (worker_done future); pure (finished ≟ 1)

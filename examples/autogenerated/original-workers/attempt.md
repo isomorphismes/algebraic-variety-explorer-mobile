@@ -32,7 +32,7 @@ diagnostic references cannot be reported as hosted JDK17 acceptance.
 
 ## Ownership boundary
 
-The numerical worker keeps no `JNIEnv` or Activity pointer. A positive Int32
+The numerical code uses no `JNIEnv` or Activity types. A positive Int32
 processor count crosses the platform boundary, while the numerical owner fixes
 its pool limit once and accepts a fresh draw count only for partitioning.
 Every worker has its own numerical operation context, XYZ/row/AA values and
@@ -40,6 +40,14 @@ packed pixel buffer. Shared inputs are immutable borrows. An atomic boolean
 stops the queue, at most four buffers and threads are live per draw, and ordered
 copies affect only unique internal frame staging. The caller joins all created
 threads before final publication under the session lock.
+
+The later optional startup/finish hooks carry no platform types into this
+owner. Each hook attempt receives one cleanup, including failed partial
+startup. A private opaque token belongs to that worker until cleanup; any
+startup or cleanup failure invalidates the entire frame. The Android adapter
+uses an owned worker-local JVM attachment for its standard thread-priority
+operation. It never supplies the caller's environment or an Activity pointer
+to another thread.
 
 ## Local development evidence
 
@@ -65,3 +73,22 @@ for that separate sanitizer observation. The maintained verifier retains
 Hosted frozen-original JDK17, actual leak checking, Android arithmetic/JNI and
 physical devices remain separate acceptance gates. The test baseline imported
 the in-progress numerical owner without modifying its production source.
+
+## Original Android worker priority
+
+The original factory creates daemon workers and calls
+`Thread.setPriority(Thread.MIN_PRIORITY)`. ART maps that operation through its
+priority and task-profile implementation. Setting only an OS nice value is
+not an equivalent implementation: the exact Android14 libutils path behind
+`Process.setThreadPriority` differs from ART's palette path.
+
+The Android continuation therefore retrieves the process-lifetime JavaVM on
+the caller, attaches each fresh native worker with `AttachCurrentThreadAsDaemon`,
+and uses only that worker's own environment for bootstrap
+`Thread.currentThread().setPriority(1)`. It retains the attachment during
+numerical work, deletes all bootstrap local references, and detaches before
+reporting worker completion. Worker-side startup exceptions reject the frame
+and are cleared only on that worker before detach. Every worker joins before
+the caller uses its original environment to publish. No first-party Java
+source or private Android API is introduced. Actual ART and CheckJNI execution
+of this continuation remains a separate gate from host callback observations.

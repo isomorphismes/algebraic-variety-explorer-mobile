@@ -1,5 +1,6 @@
 module CoefficientExports
 
+import AlgebraicExpression
 import PolynomialQualification
 import CoefficientValue
 import Data.Text
@@ -15,7 +16,7 @@ hexadecimal_bits : Int64 → Text
 %export "dex:coefficient_bits"
 coefficient_bits : Text → Text
 coefficient_bits source = case qualify_formula source of
-  Left (FormulaSyntaxFailure reason) ⇒ "error: " ++ reason
+  Left (FormulaSyntaxFailure reason) ⇒ "error: " ++ parse_error_message reason
   Left (FormulaMeaningFailure reason) ⇒ "error: " ++ qualification_error reason
   Right qualified ⇒ case qualified.meaning of
     PolynomialMeaning _ ⇒ "error: coefficient must be scalar"

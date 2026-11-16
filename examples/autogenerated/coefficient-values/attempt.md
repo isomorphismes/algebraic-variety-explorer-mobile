@@ -81,3 +81,15 @@ This qualifies that scalar stage and exact dependency pin, not later source
 changes, positive parameter bindings, expansion, native transfer, an APK or a
 physical device. The next producer requires the separately implemented Int32
 exponent conversion in backend682515f1c90c77b509940f90a696965d6139b5bd.
+
+## Typed syntax-error integration
+
+The new production qualification result carries ParseError rather than an
+unlocated Text. At source0fd2bf007bb8c755689be26604c78962e9c23e76, hosted
+job133186508956 correctly rejected this observer adapter's old direct Text
+concatenation before emitting DEX. The adapter now explicitly projects
+parse_error_message, retaining its existing scalar-observer text contract.
+The maintained coefficient verifier then passed actual source emission,
+independent decode, byte-identical repeat and a distinct compiled arithmetic
+mutant locally. New ART behavior remains pending; no production arithmetic or
+qualification admission rule changed.

@@ -22,6 +22,11 @@
 .field private negativeApplied:Z
 .field private cleanupState:Ljava/lang/String;
 .field private exportUri:Landroid/net/Uri;
+.field private examplesNode:Ljava/lang/String;
+.field private examplesDialogWindow:I
+.field private examplesInputInjected:Z
+.field private examplesFormulaApplied:Z
+.field private examplesDialogDismissed:Z
 
 .method public constructor <init>()V
     .registers 1
@@ -427,10 +432,103 @@
     .catch Ljava/lang/Throwable; {:begin .. :end} :caught
 .end method
 
+.method private tapTorus(Landroid/graphics/Rect;)V
+    .registers 14
+    invoke-virtual {p0}, Landroid/app/Instrumentation;->getUiAutomation()Landroid/app/UiAutomation;
+    move-result-object v9
+    invoke-static {}, Landroid/os/SystemClock;->uptimeMillis()J
+    move-result-wide v0
+    move-wide v2, v0
+    const/4 v4, 0
+    invoke-virtual {p1}, Landroid/graphics/Rect;->centerX()I
+    move-result v5
+    int-to-float v5, v5
+    invoke-virtual {p1}, Landroid/graphics/Rect;->centerY()I
+    move-result v6
+    int-to-float v6, v6
+    const/4 v7, 0
+    invoke-static/range {v0 .. v7}, Landroid/view/MotionEvent;->obtain(JJIFFI)Landroid/view/MotionEvent;
+    move-result-object v8
+    const/16 v11, 0x1002
+    invoke-virtual {v8, v11}, Landroid/view/MotionEvent;->setSource(I)V
+    const/4 v10, 1
+    invoke-virtual {v9, v8, v10}, Landroid/app/UiAutomation;->injectInputEvent(Landroid/view/InputEvent;Z)Z
+    move-result v10
+    invoke-virtual {v8}, Landroid/view/MotionEvent;->recycle()V
+    const-string v11, "Torus row touchscreen ACTION_DOWN was not injected"
+    invoke-static {v10, v11}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->require(ZLjava/lang/String;)V
+    const-wide/16 v2, 40
+    invoke-static {v2, v3}, Landroid/os/SystemClock;->sleep(J)V
+    invoke-static {}, Landroid/os/SystemClock;->uptimeMillis()J
+    move-result-wide v2
+    const/4 v4, 1
+    invoke-static/range {v0 .. v7}, Landroid/view/MotionEvent;->obtain(JJIFFI)Landroid/view/MotionEvent;
+    move-result-object v8
+    const/16 v11, 0x1002
+    invoke-virtual {v8, v11}, Landroid/view/MotionEvent;->setSource(I)V
+    const/4 v10, 1
+    invoke-virtual {v9, v8, v10}, Landroid/app/UiAutomation;->injectInputEvent(Landroid/view/InputEvent;Z)Z
+    move-result v10
+    invoke-virtual {v8}, Landroid/view/MotionEvent;->recycle()V
+    const-string v11, "Torus row touchscreen ACTION_UP was not injected"
+    invoke-static {v10, v11}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->require(ZLjava/lang/String;)V
+    const/4 v10, 1
+    iput-boolean v10, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->examplesInputInjected:Z
+    invoke-virtual {p0}, Landroid/app/Instrumentation;->waitForIdleSync()V
+    return-void
+.end method
+
+.method private waitTorusApplied()V
+    .registers 9
+    invoke-virtual {p0}, Landroid/app/Instrumentation;->getUiAutomation()Landroid/app/UiAutomation;
+    move-result-object v0
+    const/4 v1, 0
+  :poll
+    const/16 v2, 100
+    if-ge v1, v2, :missing
+    const/16 v2, 8
+    invoke-direct {p0, v2}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->step(I)V
+    iget-object v2, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->observedFormula:Ljava/lang/String;
+    const-string v3, "(x^2+y^2+z^2+0.36)^2-1.69*(x^2+y^2)"
+    invoke-virtual {v3, v2}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
+    move-result v2
+    if-eqz v2, :later
+    const/4 v2, 1
+    iput-boolean v2, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->examplesFormulaApplied:Z
+    invoke-virtual {v0}, Landroid/app/UiAutomation;->getRootInActiveWindow()Landroid/view/accessibility/AccessibilityNodeInfo;
+    move-result-object v2
+    if-eqz v2, :later
+    invoke-virtual {v2}, Landroid/view/accessibility/AccessibilityNodeInfo;->getWindowId()I
+    move-result v3
+    iget v4, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->examplesDialogWindow:I
+    if-eq v3, v4, :later
+    invoke-virtual {v2}, Landroid/view/accessibility/AccessibilityNodeInfo;->getPackageName()Ljava/lang/CharSequence;
+    move-result-object v2
+    if-eqz v2, :later
+    const-string v3, "org.algebraicvarietyexplorer"
+    invoke-virtual {v3, v2}, Ljava/lang/String;->contentEquals(Ljava/lang/CharSequence;)Z
+    move-result v2
+    if-eqz v2, :later
+    const/4 v2, 1
+    iput-boolean v2, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->examplesDialogDismissed:Z
+    return-void
+  :later
+    const-wide/16 v5, 100
+    invoke-static {v5, v6}, Landroid/os/SystemClock;->sleep(J)V
+    add-int/lit8 v1, v1, 1
+    goto :poll
+  :missing
+    const/4 v0, 0
+    const-string v1, "injected Torus row tap did not apply the exact formula and dismiss the dialog within10seconds"
+    invoke-static {v0, v1}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->require(ZLjava/lang/String;)V
+    return-void
+.end method
+
 .method private selectTorus()V
     .registers 11
     invoke-virtual {p0}, Landroid/app/Instrumentation;->getUiAutomation()Landroid/app/UiAutomation;
     move-result-object v0
+    invoke-virtual {p0}, Landroid/app/Instrumentation;->waitForIdleSync()V
     const/4 v1, 0
   :poll
     const/16 v2, 50
@@ -449,6 +547,9 @@
     invoke-interface {v3, v4}, Ljava/util/List;->get(I)Ljava/lang/Object;
     move-result-object v5
     check-cast v5, Landroid/view/accessibility/AccessibilityNodeInfo;
+    invoke-virtual {v5}, Landroid/view/accessibility/AccessibilityNodeInfo;->refresh()Z
+    move-result v6
+    if-eqz v6, :next_node
     invoke-virtual {v5}, Landroid/view/accessibility/AccessibilityNodeInfo;->getText()Ljava/lang/CharSequence;
     move-result-object v6
     if-eqz v6, :next_node
@@ -456,19 +557,37 @@
     invoke-virtual {v7, v6}, Ljava/lang/String;->contentEquals(Ljava/lang/CharSequence;)Z
     move-result v6
     if-eqz v6, :next_node
-    const/4 v6, 0
-  :ancestor
-    if-eqz v5, :next_node
-    const/4 v7, 4
-    if-ge v6, v7, :next_node
-    const/16 v7, 16
-    invoke-virtual {v5, v7}, Landroid/view/accessibility/AccessibilityNodeInfo;->performAction(I)Z
+    invoke-virtual {v5}, Landroid/view/accessibility/AccessibilityNodeInfo;->isVisibleToUser()Z
+    move-result v6
+    if-eqz v6, :next_node
+    invoke-virtual {v5}, Landroid/view/accessibility/AccessibilityNodeInfo;->isEnabled()Z
+    move-result v6
+    if-eqz v6, :next_node
+    new-instance v6, Landroid/graphics/Rect;
+    invoke-direct {v6}, Landroid/graphics/Rect;-><init>()V
+    invoke-virtual {v5, v6}, Landroid/view/accessibility/AccessibilityNodeInfo;->getBoundsInScreen(Landroid/graphics/Rect;)V
+    invoke-virtual {v6}, Landroid/graphics/Rect;->isEmpty()Z
     move-result v7
-    if-nez v7, :selected
-    invoke-virtual {v5}, Landroid/view/accessibility/AccessibilityNodeInfo;->getParent()Landroid/view/accessibility/AccessibilityNodeInfo;
-    move-result-object v5
-    add-int/lit8 v6, v6, 1
-    goto :ancestor
+    if-nez v7, :next_node
+    invoke-virtual {v5}, Landroid/view/accessibility/AccessibilityNodeInfo;->getPackageName()Ljava/lang/CharSequence;
+    move-result-object v7
+    if-eqz v7, :next_node
+    const-string v8, "org.algebraicvarietyexplorer"
+    invoke-virtual {v8, v7}, Ljava/lang/String;->contentEquals(Ljava/lang/CharSequence;)Z
+    move-result v7
+    if-eqz v7, :next_node
+    invoke-virtual {v5}, Landroid/view/accessibility/AccessibilityNodeInfo;->toString()Ljava/lang/String;
+    move-result-object v7
+    iput-object v7, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->examplesNode:Ljava/lang/String;
+    const-string v8, "AVEExamplesObserver"
+    invoke-static {v8, v7}, Landroid/util/Log;->i(Ljava/lang/String;Ljava/lang/String;)I
+    invoke-virtual {v5}, Landroid/view/accessibility/AccessibilityNodeInfo;->getWindowId()I
+    move-result v7
+    if-ltz v7, :next_node
+    iput v7, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->examplesDialogWindow:I
+    invoke-direct {p0, v6}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->tapTorus(Landroid/graphics/Rect;)V
+    invoke-direct {p0}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->waitTorusApplied()V
+    return-void
   :next_node
     add-int/lit8 v4, v4, 1
     goto :node
@@ -477,11 +596,9 @@
     invoke-static {v8, v9}, Landroid/os/SystemClock;->sleep(J)V
     add-int/lit8 v1, v1, 1
     goto :poll
-  :selected
-    return-void
   :missing
     const/4 v0, 0
-    const-string v1, "Examples dialog Torus item was not accessible/clickable within10seconds"
+    const-string v1, "Examples dialog Torus item had no fresh enabled visible bounds within10seconds"
     invoke-static {v0, v1}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->require(ZLjava/lang/String;)V
     return-void
 .end method
@@ -808,6 +925,7 @@
     invoke-direct {p0, v0, v2}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->waitFrame(ZLandroid/graphics/Bitmap;)V
     invoke-direct {p0}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->count()V
     iget-object v2, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->observedBitmap:Landroid/graphics/Bitmap;
+    iget-object v3, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->observedPixels:[I
     const/4 v0, 4
     invoke-direct {p0, v0}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->step(I)V
     invoke-direct {p0}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->selectTorus()V
@@ -818,6 +936,12 @@
     invoke-virtual {v1, v0}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
     move-result v0
     const-string v1, "Examples must select the actual source-owned Torus formula"
+    invoke-static {v0, v1}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->require(ZLjava/lang/String;)V
+    iget-object v0, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->observedPixels:[I
+    invoke-static {v0, v3}, Ljava/util/Arrays;->equals([I[I)Z
+    move-result v0
+    xor-int/lit8 v0, v0, 1
+    const-string v1, "Examples Torus must produce pixels different from the prior Sphere"
     invoke-static {v0, v1}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->require(ZLjava/lang/String;)V
     invoke-direct {p0}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->count()V
     # Block only the real CREATE_DOCUMENT/image/png request; return cancellation.
@@ -930,6 +1054,26 @@
     return-void
 .end method
 
+.method private recordExamples(Landroid/os/Bundle;)V
+    .registers 4
+    const-string v0, "examples_action"
+    const-string v1, "real_torus_row_touchscreen_tap"
+    invoke-virtual {p1, v0, v1}, Landroid/os/Bundle;->putString(Ljava/lang/String;Ljava/lang/String;)V
+    const-string v0, "examples_node"
+    iget-object v1, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->examplesNode:Ljava/lang/String;
+    invoke-virtual {p1, v0, v1}, Landroid/os/Bundle;->putString(Ljava/lang/String;Ljava/lang/String;)V
+    const-string v0, "examples_input_injected"
+    iget-boolean v1, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->examplesInputInjected:Z
+    invoke-virtual {p1, v0, v1}, Landroid/os/Bundle;->putBoolean(Ljava/lang/String;Z)V
+    const-string v0, "examples_formula_applied"
+    iget-boolean v1, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->examplesFormulaApplied:Z
+    invoke-virtual {p1, v0, v1}, Landroid/os/Bundle;->putBoolean(Ljava/lang/String;Z)V
+    const-string v0, "examples_dialog_dismissed"
+    iget-boolean v1, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->examplesDialogDismissed:Z
+    invoke-virtual {p1, v0, v1}, Landroid/os/Bundle;->putBoolean(Ljava/lang/String;Z)V
+    return-void
+.end method
+
 .method public onStart()V
     .registers 7
     new-instance v0, Landroid/os/Bundle;
@@ -953,6 +1097,7 @@
     const-string v1, "png_export"
     const-string v2, "PASS actual provider bytes dimensions pixels and descriptor close"
     invoke-virtual {v0, v1, v2}, Landroid/os/Bundle;->putString(Ljava/lang/String;Ljava/lang/String;)V
+    invoke-direct {p0, v0}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->recordExamples(Landroid/os/Bundle;)V
     const/4 v1, -1
     invoke-virtual {p0, v1, v0}, Landroid/app/Instrumentation;->finish(ILandroid/os/Bundle;)V
     return-void
@@ -981,6 +1126,7 @@
     const-string v3, "scenarios"
     iget v4, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->completed:I
     invoke-virtual {v0, v3, v4}, Landroid/os/Bundle;->putInt(Ljava/lang/String;I)V
+    invoke-direct {p0, v0}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->recordExamples(Landroid/os/Bundle;)V
     invoke-direct {p0}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->cleanupActivity()V
     const-string v3, "observer_cleanup"
     iget-object v4, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->cleanupState:Ljava/lang/String;
