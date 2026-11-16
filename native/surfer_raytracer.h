@@ -14,6 +14,15 @@
 #define SURFER_ROOT_EPSILON 1e-7
 #define SURFER_MAX_LIGHTS 8
 
+typedef enum {
+    SURFER_OK = 0,
+    SURFER_MISS = 1,
+    SURFER_INVALID_INPUT = 2,
+    SURFER_OUT_OF_MEMORY = 3
+} surfer_status;
+
+const char *surfer_status_name(surfer_status status);
+
 typedef struct {
     double x;
     double y;
@@ -73,6 +82,11 @@ typedef struct {
     surfer_sparse_polynomial gradient_z;
 } surfer_prepared_surface;
 
+/* Validate borrowed storage and source-family degree without computing or
+ * semantically verifying derivatives. Zero-count polynomials are valid.
+ */
+surfer_status surfer_validate_prepared_surface(const surfer_prepared_surface *surface);
+
 typedef struct {
     float red;
     float green;
@@ -104,7 +118,7 @@ typedef struct {
 } surfer_scene;
 
 typedef struct {
-    bool hit;
+    surfer_status status;
     double ray_parameter;
     surfer_vec3 point;
     surfer_vec3 surface_normal;
@@ -112,13 +126,13 @@ typedef struct {
 } surfer_trace_result;
 
 /* Preserve the parameter t of origin + t * direction. */
-bool surfer_clip_unit_sphere(surfer_ray ray, surfer_interval *interval);
+surfer_status surfer_clip_unit_sphere(surfer_ray ray, surfer_interval *interval);
 
 /* Build and solve the ray polynomial with the same production split as jsurf:
  * degree-zero/one families use the closed-form linear path; degree >= 2 uses
  * the Descartes subdivision path with SURFER_ROOT_EPSILON.
  */
-bool surfer_first_surface_root(
+surfer_status surfer_first_surface_root(
     const surfer_prepared_surface *surface,
     surfer_ray surface_ray,
     double lower,
@@ -133,7 +147,7 @@ surfer_trace_result surfer_trace_prepared_ray(
  * returned in the renderer's mathematical row order; Android's existing shell
  * flips rows. zoom=1 reproduces the configured camera height.
  */
-bool surfer_render_orthographic(
+surfer_status surfer_render_orthographic(
     const surfer_scene *scene,
     size_t width,
     size_t height,
@@ -141,9 +155,35 @@ bool surfer_render_orthographic(
     double yaw,
     double pitch,
     double zoom,
-    uint32_t *argb_pixels);
+    uint32_t *argb_pixels,
+    size_t pixel_capacity);
 
 surfer_scene surfer_default_scene(const surfer_prepared_surface *surface);
-uint32_t surfer_color_to_argb(surfer_color color);
+surfer_status surfer_color_to_argb(surfer_color color, uint32_t *argb);
+
+/* Output values are written only on OK, except a valid trace MISS carries the
+ * background. Render validates input before writing any pixels. Runtime failure
+ * invalidates the complete frame even when some output pixels were written.
+ * Surface arrays are borrowed and immutable for the synchronous call only.
+ */
+
+#ifdef SURFER_TEST_ALLOCATION_FAILURES
+/* Caller-owned fault injection; no global state or production ABI. SIZE_MAX
+ * disables injection. Each nonzero allocation/reallocation attempt is counted.
+ */
+typedef struct {
+    size_t fail_at;
+    size_t attempts;
+    uint32_t paths;
+} surfer_allocation_probe;
+
+surfer_status surfer_test_first_surface_root(
+    const surfer_prepared_surface *surface, surfer_ray ray,
+    double lower, double upper, double *root, surfer_allocation_probe *probe);
+surfer_status surfer_test_render_orthographic(
+    const surfer_scene *scene, size_t width, size_t height,
+    double camera_height, double yaw, double pitch, double zoom,
+    uint32_t *argb_pixels, size_t pixel_capacity, surfer_allocation_probe *probe);
+#endif
 
 #endif

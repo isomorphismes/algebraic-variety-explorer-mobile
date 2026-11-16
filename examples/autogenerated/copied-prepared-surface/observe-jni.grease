@@ -1,0 +1,24 @@
+#!/usr/bin/env grease
+if (len(ARGV) !== 3) { echo 'usage: grease observe-jni.grease ADB SERIAL EVIDENCE' >&2; exit 2 }
+var adb = ARGV[0]
+var serial = ARGV[1]
+var evidence = ARGV[2]
+if (adb[0] !== '/' or evidence[0] !== '/') { echo 'FAIL absolute paths required' >&2; exit 2 }
+var remote = '/data/local/tmp/ave-copied-prepared-surface'
+"$adb" -s "$serial" shell rm -rf "$remote"
+"$adb" -s "$serial" shell mkdir "$remote"
+"$adb" -s "$serial" push "$evidence/receiver-runner.dex" "$remote/receiver-runner.dex"
+"$adb" -s "$serial" push "$evidence/qualification/libave_prepared_surface_test.so" "$remote/libave_prepared_surface_test.so"
+"$adb" -s "$serial" shell chmod 444 "$remote/receiver-runner.dex" "$remote/libave_prepared_surface_test.so"
+"$adb" -s "$serial" pull "$remote/receiver-runner.dex" "$evidence/runner-received.dex"
+"$adb" -s "$serial" pull "$remote/libave_prepared_surface_test.so" "$evidence/library-received.so"
+cmp "$evidence/receiver-runner.dex" "$evidence/runner-received.dex"
+cmp "$evidence/qualification/libave_prepared_surface_test.so" "$evidence/library-received.so"
+"$adb" -s "$serial" shell "CLASSPATH=$remote/receiver-runner.dex app_process /system/bin CopiedSurfaceRunner $remote/libave_prepared_surface_test.so" \
+  > "$evidence/art-jni.txt" 2>&1
+cat "$evidence/art-jni.txt"
+rg -x -F 'PASS Explorer copied PreparedSurface JNI on ART' "$evidence/art-jni.txt"
+"$adb" -s "$serial" shell getprop ro.build.version.sdk > "$evidence/art-sdk.txt"
+"$adb" -s "$serial" shell getprop ro.product.cpu.abi > "$evidence/art-abi.txt"
+printf 'receiver_JNI_ART\tPASS\nIdric_array_producer\tNOT_RUN\nAPK\tNOT_RUN\nphysical_device\tNOT_RUN\n' > "$evidence/art-result.tsv"
+printf '\033[32mPASS\033[0m copied PreparedSurface JNI receiver on ART; generated producer separate\n'

@@ -14,7 +14,8 @@ static void require_true(bool condition, const char *message)
 
 static void require_near(double actual, double expected, double tolerance, const char *message)
 {
-    if (fabs(actual - expected) > tolerance) {
+    if (!isfinite(actual) || !isfinite(expected) || !isfinite(tolerance) ||
+        tolerance < 0.0 || fabs(actual - expected) > tolerance) {
         fprintf(stderr, "FAIL: %s: actual=%.17g expected=%.17g\n", message, actual, expected);
         exit(1);
     }
@@ -69,7 +70,7 @@ static void test_clip_to_sphere_preserves_ray_parameter(void)
 {
     surfer_interval interval;
     const surfer_ray ray = {{0.0, 0.0, 0.0}, {0.0, 0.0, -2.0}};
-    require_true(surfer_clip_unit_sphere(ray, &interval), "unit-sphere clip exists");
+    require_true(surfer_clip_unit_sphere(ray, &interval) == SURFER_OK, "unit-sphere clip exists");
     require_near(interval.lower, -0.5, 1e-15, "clip lower keeps original t");
     require_near(interval.upper, 0.5, 1e-15, "clip upper keeps original t");
 }
@@ -79,7 +80,7 @@ static void test_descartes_finds_first_sphere_root(void)
     const surfer_ray center = {{0.0, 0.0, 0.0}, {0.0, 0.0, -1.0}};
     double root = 0.0;
     require_true(
-        surfer_first_surface_root(&sphere, center, -1.0, 1.0, &root),
+        surfer_first_surface_root(&sphere, center, -1.0, 1.0, &root) == SURFER_OK,
         "sphere center ray has a root");
     require_near(root, -0.8, SURFER_ROOT_EPSILON, "first visible sphere root");
 }
@@ -89,7 +90,7 @@ static void test_descartes_keeps_exact_even_multiplicity_root(void)
     const surfer_ray tangent = {{0.5, 0.0, 0.0}, {0.0, 0.0, -1.0}};
     double root = 99.0;
     require_true(
-        surfer_first_surface_root(&tangent_surface, tangent, -0.6, 0.6, &root),
+        surfer_first_surface_root(&tangent_surface, tangent, -0.6, 0.6, &root) == SURFER_OK,
         "dyadic tangent root is retained");
     require_near(root, 0.0, 1e-15, "tangent root is zero");
 }
@@ -99,7 +100,7 @@ static void test_surface_root_reports_miss(void)
     const surfer_ray miss = {{0.9, 0.0, 0.0}, {0.0, 0.0, -1.0}};
     double root = 0.0;
     require_true(
-        !surfer_first_surface_root(&sphere, miss, -0.5, 0.5, &root),
+        surfer_first_surface_root(&sphere, miss, -0.5, 0.5, &root) == SURFER_MISS,
         "ray outside sphere surface misses");
 }
 
@@ -108,7 +109,7 @@ static void test_linear_family_uses_closed_form(void)
     const surfer_ray ray = {{0.0, 0.0, 0.0}, {0.0, 0.0, -1.0}};
     double root = 0.0;
     require_true(
-        surfer_first_surface_root(&plane, ray, -1.0, 1.0, &root),
+        surfer_first_surface_root(&plane, ray, -1.0, 1.0, &root) == SURFER_OK,
         "linear family has root");
     require_near(root, -0.25, 1e-15, "linear root");
 }
@@ -125,7 +126,7 @@ static void test_ray_bundle_hit_uses_camera_point_and_normal(void)
         identity
     };
     const surfer_trace_result trace = surfer_trace_prepared_ray(&scene, rays);
-    require_true(trace.hit, "center ray hits sphere");
+    require_true(trace.status == SURFER_OK, "center ray hits sphere");
     require_near(trace.point.z, -0.2, SURFER_ROOT_EPSILON, "camera-space hit follows Java ray parameter");
     require_near(trace.surface_normal.x, 0.0, 1e-7, "normal x");
     require_near(trace.surface_normal.y, 0.0, 1e-7, "normal y");
@@ -151,10 +152,11 @@ static void test_render_has_surface_and_background(void)
     uint32_t pixels[WIDTH * HEIGHT];
     const surfer_scene scene = surfer_default_scene(&sphere);
     require_true(
-        surfer_render_orthographic(&scene, WIDTH, HEIGHT, 2.15, 0.0, 0.0, 1.0, pixels),
+        surfer_render_orthographic(&scene, WIDTH, HEIGHT, 2.15, 0.0, 0.0, 1.0, pixels, WIDTH * HEIGHT) == SURFER_OK,
         "orthographic render succeeds");
 
-    const uint32_t background = surfer_color_to_argb(scene.background);
+    uint32_t background = 0;
+    require_true(surfer_color_to_argb(scene.background, &background) == SURFER_OK, "finite background conversion");
     const size_t foreground = count_foreground_pixels(
         pixels, WIDTH * HEIGHT, background);
     require_true(foreground > 500, "render contains sphere foreground");
@@ -168,14 +170,15 @@ static void test_rotated_sphere_keeps_silhouette(void)
     uint32_t identity_pixels[WIDTH * HEIGHT];
     uint32_t rotated_pixels[WIDTH * HEIGHT];
     const surfer_scene scene = surfer_default_scene(&sphere);
-    const uint32_t background = surfer_color_to_argb(scene.background);
+    uint32_t background = 0;
+    require_true(surfer_color_to_argb(scene.background, &background) == SURFER_OK, "finite background conversion");
     require_true(
         surfer_render_orthographic(
-            &scene, WIDTH, HEIGHT, 2.15, 0.0, 0.0, 1.0, identity_pixels),
+            &scene, WIDTH, HEIGHT, 2.15, 0.0, 0.0, 1.0, identity_pixels, WIDTH * HEIGHT) == SURFER_OK,
         "identity sphere render succeeds");
     require_true(
         surfer_render_orthographic(
-            &scene, WIDTH, HEIGHT, 2.15, 0.63, -0.41, 1.0, rotated_pixels),
+            &scene, WIDTH, HEIGHT, 2.15, 0.63, -0.41, 1.0, rotated_pixels, WIDTH * HEIGHT) == SURFER_OK,
         "rotated sphere render succeeds");
     require_true(
         count_foreground_pixels(identity_pixels, WIDTH * HEIGHT, background) ==

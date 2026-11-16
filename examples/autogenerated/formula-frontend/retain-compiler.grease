@@ -25,7 +25,17 @@ tar --exclude-vcs -czf "$output/grease-runtime.tar.gz" \
   .tools/runtime/grease/source .tools/runtime/.build/grease/python2 \
   .tools/runtime/.build/grease/bin
 tar -czf "$output/ick-host-stage.tar.gz" -C "$ick_stage" .
-sha256sum "$output/compiler.tar.gz" > "$output/compiler.sha256"
-sha256sum "$output/grease-runtime.tar.gz" > "$output/grease-runtime.sha256"
-sha256sum "$output/ick-host-stage.tar.gz" > "$output/ick-host-stage.sha256"
+cd "$output"
+sha256sum compiler.tar.gz > compiler.sha256
+sha256sum grease-runtime.tar.gz > grease-runtime.sha256
+sha256sum ick-host-stage.tar.gz > ick-host-stage.sha256
+# Keep each downloadable artifact below the provider's 512 MiB limit.
+split -b 256m -d -a 2 ick-host-stage.tar.gz ick-host-stage.part-
+test ! -e ick-host-stage.part-03
+printf '' > ick-host-stage.parts.sha256
+for part in 00 01 02 {
+  if test -e "ick-host-stage.part-$part" {
+    sha256sum "ick-host-stage.part-$part" >> ick-host-stage.parts.sha256
+  }
+}
 printf '\033[32mPASS\033[0m exact build-host compiler/driver retained for diagnostic replay\n'

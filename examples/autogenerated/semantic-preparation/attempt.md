@@ -95,9 +95,15 @@ the explicit family-degree overflow refusals; the wrapped Java overflow result
 is not claimed equivalent. Cases include family-degree retention after the
 surface becomes linear, large exact exponent coefficients, signed zero,
 scalar-operation reclassification, parameter substitution and derivative order.
-Both independent smali classes assembled; actual ART execution remains PENDING.
+Both independent smali classes assembled. At application source
+`0f980e5a00761aac145d756ec81ca4da819f863f`, run43794450670 then executed
+the actual producer and original jsurf observer on API34 ART. All26 cases
+passed, including the23 original-structure/value comparisons. Both actual
+compiled source mutations failed with designated status77 and the required
+semantic-preparation marker. Evidence artifact14194257586 has ZIP SHA256
+`9c77e0b94630a73f0f0f7063459ac7048c015d773a0c9059fe8deb1984f808fd`.
 
 The scripts require positive ART behavior and designated status77 rejection of
 both compiled mutants. Original-oracle expectation failure is distinguished by
 status78. No expansion, C/JNI transfer, renderer, APK or physical-device result
-is inferred from compilation, assembly or independent decoding.
+is inferred from compilation, assembly, decoding or this managed-stage ART pass.

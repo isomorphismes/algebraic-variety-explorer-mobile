@@ -102,6 +102,13 @@ refusals. The Kahan corpus has four same-monomial contributions sorted as
 `[-1e16,1,1,1e16]`, which distinguish compensated summation from zeroed
 compensation. The original Java program remains a separate reference DEX.
 
-PENDING: full maintained-helper execution, original-oracle semantic comparison
-and actual positive/mutant ART behavior. No host numerical run of this full
-producer, JNI transfer, APK or physical-device acceptance is claimed.
+At application source `5d43e830c3180db68b6ce4e3bb40e187606fdb68`,
+run43795348438 completed the full maintained helper and actual API34 ART
+comparison. All seven presets, the user's quartic, cancellation/rounding/Kahan
+cases, bound radius and explicit refusal cases passed. The fixed plane report
+matched both original and candidate. Both compiled Kahan/family mutations
+failed with designated status77 and the expected assertion marker.
+Evidence artifact14194851821 has ZIP SHA256
+`edfe268493a2ad0a03dc286386bea9fe3e0dff937fe97ba6214ef01b92dc6cb0`.
+No C/native transfer, APK or physical-device acceptance follows from this
+managed-stage ART pass.

@@ -306,6 +306,10 @@ static void draw_frame(struct android_app *app, ave_engine *engine)
     const size_t side = square < AVE_MAX_RENDER_SIDE ?
         (size_t)square : AVE_MAX_RENDER_SIDE;
     if (engine->cached_side != side || engine->cached_pixels == NULL) {
+        if (side > SIZE_MAX / side || side * side > SIZE_MAX / sizeof(uint32_t)) {
+            AVE_LOG_ERROR("SURFER render buffer size is invalid");
+            return;
+        }
         free(engine->cached_pixels);
         engine->cached_pixels = (uint32_t *)malloc(side * side * sizeof(uint32_t));
         engine->cached_side = engine->cached_pixels == NULL ? 0 : side;
@@ -321,12 +325,18 @@ static void draw_frame(struct android_app *app, ave_engine *engine)
         const surfer_prepared_surface *surface = engine->custom ?
             &engine->formula.surface : &engine->preset.surface;
         const surfer_scene scene = surfer_default_scene(surface);
-        if (!surfer_render_orthographic(&scene, side, side, 2.15,
-                engine->yaw, engine->pitch, engine->zoom, pixels)) {
-            AVE_LOG_ERROR("SURFER renderer rejected request");
+        const surfer_status status = surfer_render_orthographic(&scene, side, side, 2.15,
+                engine->yaw, engine->pitch, engine->zoom, pixels, side * side);
+        if (status != SURFER_OK) {
+            AVE_LOG_ERROR("SURFER renderer failed: %s", surfer_status_name(status));
             return;
         }
-        const uint32_t background = surfer_color_to_argb(scene.background);
+        uint32_t background = 0;
+        const surfer_status color_status = surfer_color_to_argb(scene.background, &background);
+        if (color_status != SURFER_OK) {
+            AVE_LOG_ERROR("SURFER background conversion failed: %s", surfer_status_name(color_status));
+            return;
+        }
         size_t foreground = 0;
         for (size_t k = 0; k < side * side; ++k)
             if (pixels[k] != background) ++foreground;

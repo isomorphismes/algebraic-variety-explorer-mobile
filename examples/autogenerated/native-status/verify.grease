@@ -1,0 +1,105 @@
+#!/usr/bin/env grease
+if (len(ARGV) !== 4) {
+  echo 'usage: grease verify.grease EXPLORER ICK_SOURCE QUALIFIED_ICK FRESH_OUTPUT' >&2
+  exit 2
+}
+var repository = ARGV[0]
+var ick_source = ARGV[1]
+var compiler = ARGV[2]
+var output = ARGV[3]
+for path in (ARGV) {
+  if (path[0] !== '/') { echo 'FAIL absolute path required' >&2; exit 2 }
+}
+if test -e "$output" { echo 'FAIL refusing reused native-status evidence' >&2; exit 1 }
+test -x "$compiler"
+test $(git -C "$ick_source" rev-parse HEAD) = fbe86e23d55cfec2000c08e61deea2a407fd7175
+command -v rg
+var manifest = "$repository/ci/native-status-toolchain.tsv"
+rg -x -F b'build_id\ttarget\ttoolchain\tick_revision\tick_status\tick_evidence' "$manifest"
+rg -x -F b'native-status-numerical\tx86_64-pc-linux-gnu\tick\tfbe86e23d55cfec2000c08e61deea2a407fd7175\tqualified\treceipt:ai-ci-ick-host-32cb45b3' "$manifest"
+rg -x -F b'native-status-sanitizers\tx86_64-pc-linux-gnu\tick\tfbe86e23d55cfec2000c08e61deea2a407fd7175\tqualified\treceipt:ai-ci-ick-host-32cb45b3' "$manifest"
+rg -x -F b'native-status-mutant\tx86_64-pc-linux-gnu\tick\tfbe86e23d55cfec2000c08e61deea2a407fd7175\tqualified\treceipt:ai-ci-ick-host-32cb45b3' "$manifest"
+rg -x -F b'native-status-reference\tx86_64-pc-linux-gnu\tick\tfbe86e23d55cfec2000c08e61deea2a407fd7175\tqualified\treceipt:ai-ci-ick-host-32cb45b3' "$manifest"
+rg -x -F b'native-status-success\tx86_64-pc-linux-gnu\tick\tfbe86e23d55cfec2000c08e61deea2a407fd7175\tqualified\treceipt:ai-ci-ick-host-32cb45b3' "$manifest"
+test $(wc -l < "$manifest") = 6
+var cc1 = $("$compiler" -print-prog-name=cc1)
+test -x "$cc1"
+mkdir -p "$output/reference/native/android"
+"$compiler" --version > "$output/compiler-version.txt"
+"$compiler" -dumpmachine > "$output/compiler-target.txt"
+rg -x -F 'x86_64-pc-linux-gnu' "$output/compiler-target.txt"
+sha256sum "$compiler" "$cc1" > "$output/compiler-artifacts.sha256"
+cp "$manifest" "$output/build-toolchain.tsv"
+printf 'source\t%s\nreference\td4bc9b3c84d8adeb4c82d1354c84833aace5aec9\ntoolchain\tick\nfallback\tnone\n' \
+  $(git -C "$repository" rev-parse HEAD) > "$output/inputs.tsv"
+git -C "$repository" show d4bc9b3c84d8adeb4c82d1354c84833aace5aec9:native/surfer_raytracer.c > "$output/reference/native/surfer_raytracer.c"
+git -C "$repository" show d4bc9b3c84d8adeb4c82d1354c84833aace5aec9:native/surfer_raytracer.h > "$output/reference/native/surfer_raytracer.h"
+git -C "$repository" show d4bc9b3c84d8adeb4c82d1354c84833aace5aec9:native/android/presets.c > "$output/reference/native/android/presets.c"
+git -C "$repository" show d4bc9b3c84d8adeb4c82d1354c84833aace5aec9:native/android/presets.h > "$output/reference/native/android/presets.h"
+sha256sum "$repository/native/surfer_raytracer.c" "$repository/native/surfer_raytracer.h" \
+  "$repository/native/surfer_raytracer_test.c" "$repository/native/surfer_status_test.c" \
+  "$repository/native/surfer_success_oracle.c" > "$output/sources.sha256"
+
+printf '\033[36mACTION\033[0m execute existing numerical checks through qualified ICK\n'
+"$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O2 \
+  -fno-fast-math -ffp-contract=off \
+  "$repository/native/surfer_raytracer.c" "$repository/native/surfer_raytracer_test.c" \
+  -lm -o "$output/numerical-test"
+"$output/numerical-test" > "$output/numerical.txt" 2>&1
+cat "$output/numerical.txt"
+rg -x -F 'SURFER prepared-surface C ray tracer: PASS' "$output/numerical.txt"
+"$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O1 -g \
+  -fno-fast-math -ffp-contract=off -fsanitize=address,undefined -fno-omit-frame-pointer \
+  "$repository/native/surfer_raytracer.c" "$repository/native/surfer_raytracer_test.c" \
+  -lm -o "$output/numerical-sanitized-test"
+env ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 \
+  "$output/numerical-sanitized-test" > "$output/numerical-sanitized.txt" 2>&1
+cat "$output/numerical-sanitized.txt"
+rg -x -F 'SURFER prepared-surface C ray tracer: PASS' "$output/numerical-sanitized.txt"
+
+printf '\033[36mACTION\033[0m execute allocation faults and input/status checks under sanitizers\n'
+"$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O1 -g \
+  -fno-fast-math -ffp-contract=off -fsanitize=address,undefined \
+  -fno-omit-frame-pointer "$repository/native/surfer_status_test.c" -lm -o "$output/status-test"
+env ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 \
+  "$output/status-test" > "$output/status.txt" 2>&1
+cat "$output/status.txt"
+rg -x -F 'SURFER native status, validation and allocation propagation: PASS' "$output/status.txt"
+
+printf '\033[36mACTION\033[0m reject an actual compiled blank-on-error renderer mutation\n'
+mkdir -p "$output/mutant"
+cp "$repository/native/surfer_raytracer.h" "$repository/native/surfer_status_test.c" "$output/mutant/"
+sed 's/                return trace.status;/                argb_pixels[y * width + x] = color_to_argb_validated(scene->background); continue;/' \
+  "$repository/native/surfer_raytracer.c" > "$output/mutant/surfer_raytracer.c"
+if cmp -s "$repository/native/surfer_raytracer.c" "$output/mutant/surfer_raytracer.c" {
+  echo 'FAIL unchanged blank-on-error mutation' >&2; exit 1
+}
+"$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O1 -g \
+  -fno-fast-math -ffp-contract=off -fsanitize=address,undefined \
+  -fno-omit-frame-pointer "$output/mutant/surfer_status_test.c" -lm -o "$output/mutant/status-test"
+try {
+  env ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 \
+    "$output/mutant/status-test" > "$output/mutant/result.txt" 2>&1
+}
+var mutant_status = _error.code
+cat "$output/mutant/result.txt"
+if (mutant_status !== 1) { echo 'FAIL missing designated blank-on-error mutation rejection' >&2; exit 1 }
+rg -F 'FAIL injected frame failure is not blank success: success (SURFER_OK); expected out of memory (SURFER_OUT_OF_MEMORY)' "$output/mutant/result.txt"
+
+printf '\033[36mACTION\033[0m compare successful numerical bytes against the unchanged base core\n'
+"$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O2 \
+  -fno-fast-math -ffp-contract=off \
+  -I "$output/reference/native" -I "$output/reference/native/android" \
+  "$output/reference/native/surfer_raytracer.c" "$output/reference/native/android/presets.c" \
+  "$repository/native/surfer_success_oracle.c" -lm -o "$output/reference-success"
+"$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O2 \
+  -fno-fast-math -ffp-contract=off -DSURFER_STATUS_API \
+  -I "$repository/native" -I "$repository/native/android" \
+  "$repository/native/surfer_raytracer.c" "$repository/native/android/presets.c" \
+  "$repository/native/surfer_success_oracle.c" -lm -o "$output/current-success"
+"$output/reference-success" > "$output/reference-success.bin"
+"$output/current-success" > "$output/current-success.bin"
+cmp "$output/reference-success.bin" "$output/current-success.bin"
+sha256sum "$output/reference-success.bin" "$output/current-success.bin" > "$output/success-bytes.sha256"
+printf 'native_status\tPASS\nchecked_inputs_and_sizes\tPASS\neach_observed_allocation_failure\tPASS\ncompiled_blank_on_error_mutant_rejected\tPASS\nsanitisers_and_leaks\tPASS\nexisting_successful_numerical_bytes\tPASS\nAndroid\tNOT_RUN\nphysical_C67\tNOT_RUN\nphysical_A1\tNOT_RUN\n' > "$output/result.tsv"
+printf '\033[32mPASS\033[0m native status/validation/fault propagation and unchanged successful numerical bytes\n'
