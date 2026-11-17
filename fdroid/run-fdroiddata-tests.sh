@@ -3,9 +3,9 @@ set -euo pipefail
 
 readonly REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly OUTPUT_DIR_INPUT="${FDROID_OUTPUT_DIR:-$REPO_ROOT/build/fdroiddata}"
-readonly IMAGE="${FDROID_BUILDSERVER_IMAGE:-registry.gitlab.com/fdroid/fdroidserver:buildserver-trixie@sha256:9cb68105642ca4e7b295f0ceab10f069f5b3247dc18fa7c36046e9d81aa469a8}"
+readonly IMAGE="${FDROID_BUILDSERVER_IMAGE:-registry.gitlab.com/fdroid/fdroidserver:buildserver-trixie@sha256:1ea8bef1820bff06c2974e31b4fc4c79c364cd24231b86e71fa4b926797e0dac}"
 readonly SOURCE_REVISION="${SOURCE_REVISION:-$(git -C "$REPO_ROOT" rev-parse HEAD)}"
-readonly SOURCE_REPO="${SOURCE_REPO:-https://github.com/isomorphisms/algebraic-variety-explorer-mobile.git}"
+readonly SOURCE_REPO="${SOURCE_REPO:-https://github.com/isomorphismes/algebraic-variety-explorer-mobile.git}"
 
 command -v docker >/dev/null 2>&1 || {
     printf 'fdroiddata: docker is required\n' >&2

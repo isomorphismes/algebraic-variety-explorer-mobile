@@ -1,0 +1,20 @@
+module SaveStateLifecycle
+
+data ActivityReference : Type where [external]
+data BundleReference : Type where [external]
+%foreign "dex:virtual:Landroid/app/Activity;:setTitle:(Ljava/lang/CharSequence;)V"
+set_title : ActivityReference → Text → PrimIO ()
+%foreign "dex:virtual:Landroid/os/Bundle;:putString:(Ljava/lang/String;Ljava/lang/String;)V"
+save_formula : BundleReference → Text → Text → PrimIO ()
+
+%cg dex extends Landroid/app/Activity;
+%cg dex override onSaveInstanceState (Landroid/os/Bundle;)V receive_save_state
+
+%export "dex:receive_save_state"
+receive_save_state : ActivityReference → BundleReference → IO ()
+receive_save_state activity bundle = do
+  primIO (save_formula bundle "formula" "x^2+y^2+z^2-0.64")
+  primIO (set_title activity "Saved state")
+
+main : IO ()
+main = pure ()

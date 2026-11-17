@@ -1,0 +1,144 @@
+module PreparedSurfaceTransfer
+
+import CoefficientValue
+import PreparedFormula
+import OrderedExpansion
+import Data.Text
+
+-- Boundary B′: semantic preparation stays above this compact copied ABI.
+data CoefficientBuffer : Type where [external]
+data ExponentBuffer : Type where [external]
+data CoefficientArray : Type where [external]
+data ExponentArray : Type where [external]
+
+%foreign "dex:static:Ljava/nio/DoubleBuffer;:allocate:(I)Ljava/nio/DoubleBuffer;"
+allocate_coefficients : Int32 → PrimIO CoefficientBuffer
+%foreign "dex:virtual:Ljava/nio/DoubleBuffer;:put:(ID)Ljava/nio/DoubleBuffer;"
+write_coefficient : CoefficientBuffer → Int32 → Coefficient → PrimIO CoefficientBuffer
+%foreign "dex:virtual:Ljava/nio/DoubleBuffer;:array:()[D"
+coefficient_array : CoefficientBuffer → PrimIO CoefficientArray
+
+%foreign "dex:static:Ljava/nio/IntBuffer;:allocate:(I)Ljava/nio/IntBuffer;"
+allocate_exponents : Int32 → PrimIO ExponentBuffer
+%foreign "dex:virtual:Ljava/nio/IntBuffer;:put:(II)Ljava/nio/IntBuffer;"
+write_exponent : ExponentBuffer → Int32 → Int32 → PrimIO ExponentBuffer
+%foreign "dex:virtual:Ljava/nio/IntBuffer;:array:()[I"
+exponent_array : ExponentBuffer → PrimIO ExponentArray
+
+%foreign "C:ave_copy_prepared_surface,libave"
+copy_native : Int32 → Int32 → Int32 → Int32 → Int32 → Int32 → Int32 →
+  CoefficientArray → ExponentArray → PrimIO Int64
+
+%foreign "C:ave_replace_prepared_surface,libave"
+replace_native : Int64 → Int32 → Int32 → Int32 → Int32 → Int32 → Int32 → Int32 →
+  CoefficientArray → ExponentArray → PrimIO Int64
+
+%foreign "C:ave_release_prepared_surface,libave"
+release_native : Int64 → PrimIO Int32
+
+export
+data NativeSurface = CopiedNativeSurface Int64
+
+export
+native_surface_handle : NativeSurface → Int64
+native_surface_handle (CopiedNativeSurface handle) = handle
+
+record TransferLayout where
+  constructor CheckedLayout
+  surface_end : Int32
+  gradient_x_end : Int32
+  gradient_y_end : Int32
+  gradient_z_end : Int32
+
+count_terms : List ExpandedTerm → Integer
+count_terms [] = 0
+count_terms (_ :: remaining) = 1 + count_terms remaining
+
+checked_layout : ExpandedSurface → Either Text TransferLayout
+checked_layout surface =
+  let surface_end = count_terms surface.surface.terms
+      gradient_x_end = surface_end + count_terms surface.gradient_x.terms
+      gradient_y_end = gradient_x_end + count_terms surface.gradient_y.terms
+      gradient_z_end = gradient_y_end + count_terms surface.gradient_z.terms
+  in if gradient_z_end > 715827882
+     then Left "prepared surface exceeds primitive-array length range"
+     else Right (CheckedLayout (cast surface_end) (cast gradient_x_end)
+       (cast gradient_y_end) (cast gradient_z_end))
+
+fill_polynomial : CoefficientBuffer → ExponentBuffer → Int32 → List ExpandedTerm → IO Int32
+fill_polynomial coefficients exponents index [] = pure index
+fill_polynomial coefficients exponents index (term :: remaining) = do
+  _ ← primIO (write_coefficient coefficients index term.coefficient)
+  let xyz_index = index + index + index
+  _ ← primIO (write_exponent exponents xyz_index term.x_exponent)
+  _ ← primIO (write_exponent exponents (xyz_index + 1) term.y_exponent)
+  _ ← primIO (write_exponent exponents (xyz_index + 2) term.z_exponent)
+  fill_polynomial coefficients exponents (index + 1) remaining
+
+native_result : Int64 → Either Text NativeSurface
+native_result handle =
+  if handle > 0 then Right (CopiedNativeSurface handle) else
+  if handle ≟ (-2) then Left "prepared surface failed native validation" else
+  if handle ≟ (-3) then Left "native prepared-surface allocation failed" else
+  Left "native prepared-surface call returned an invalid result"
+
+transfer_expanded : Maybe NativeSurface → ExpandedSurface → IO (Either Text NativeSurface)
+transfer_expanded previous surface = case checked_layout surface of
+  Left reason ⇒ pure (Left reason)
+  Right layout ⇒ do
+    let count = layout.gradient_z_end
+    coefficients ← primIO (allocate_coefficients count)
+    exponents ← primIO (allocate_exponents (count + count + count))
+    surface_end ← fill_polynomial coefficients exponents 0 surface.surface.terms
+    gradient_x_end ← fill_polynomial coefficients exponents surface_end surface.gradient_x.terms
+    gradient_y_end ← fill_polynomial coefficients exponents gradient_x_end surface.gradient_y.terms
+    gradient_z_end ← fill_polynomial coefficients exponents gradient_y_end surface.gradient_z.terms
+    let layout_matches = surface_end ≟ layout.surface_end && gradient_x_end ≟ layout.gradient_x_end &&
+          gradient_y_end ≟ layout.gradient_y_end && gradient_z_end ≟ layout.gradient_z_end
+    case layout_matches of
+      False ⇒ pure (Left "prepared surface layout is inconsistent")
+      True ⇒ do
+        coefficient_values ← primIO (coefficient_array coefficients)
+        exponent_values ← primIO (exponent_array exponents)
+        handle ← case previous of
+          Nothing ⇒ primIO (copy_native 1 surface.family_degree 0
+            layout.surface_end layout.gradient_x_end layout.gradient_y_end layout.gradient_z_end
+            coefficient_values exponent_values)
+          Just retained ⇒ primIO (replace_native (native_surface_handle retained) 1 surface.family_degree 0
+            layout.surface_end layout.gradient_x_end layout.gradient_y_end layout.gradient_z_end
+            coefficient_values exponent_values)
+        pure (native_result handle)
+
+export
+copy_expanded_surface : ExpandedSurface → IO (Either Text NativeSurface)
+copy_expanded_surface = transfer_expanded Nothing
+
+export
+replace_expanded_surface : NativeSurface → ExpandedSurface → IO (Either Text NativeSurface)
+replace_expanded_surface previous = transfer_expanded (Just previous)
+
+export
+release_native_surface : NativeSurface → IO (Either Text ())
+release_native_surface surface = do
+  status ← primIO (release_native (native_surface_handle surface))
+  pure (if status ≟ 0 then Right () else
+    if status ≟ 2 then Left "prepared surface handle is invalid or already released" else
+    Left "native prepared-surface release failed")
+
+export
+prepare_native_surface : ExpansionLimits → (Text → Maybe Coefficient) → Text →
+  IO (Either Text NativeSurface)
+prepare_native_surface limits bindings source = case prepare_formula bindings source of
+  Left reason ⇒ pure (Left reason)
+  Right prepared ⇒ case expand_prepared_formula limits prepared of
+    Left reason ⇒ pure (Left ("expansion error: " ++ expansion_error reason))
+    Right expanded ⇒ copy_expanded_surface expanded
+
+export
+replace_native_formula : NativeSurface → ExpansionLimits → (Text → Maybe Coefficient) → Text →
+  IO (Either Text NativeSurface)
+replace_native_formula previous limits bindings source = case prepare_formula bindings source of
+  Left reason ⇒ pure (Left reason)
+  Right prepared ⇒ case expand_prepared_formula limits prepared of
+    Left reason ⇒ pure (Left ("expansion error: " ++ expansion_error reason))
+    Right expanded ⇒ replace_expanded_surface previous expanded

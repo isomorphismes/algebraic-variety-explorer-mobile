@@ -1,0 +1,28 @@
+module SpanExports
+
+import AlgebraicExpression
+import PolynomialQualification
+import PreparedFormula
+import CoefficientValue
+import Data.Text
+import SpanReports
+
+export
+%export "dex:spanned_tokens"
+spanned_tokens : Text → Text
+spanned_tokens = SpanReports.spanned_tokens
+
+export
+%export "dex:detailed_syntax"
+detailed_syntax : Text → Text
+detailed_syntax = SpanReports.detailed_syntax
+
+export
+%export "dex:located_preparation"
+located_preparation : Text → Text
+located_preparation source = case prepare_formula_located (\name ⇒ Nothing) source of
+  Left failure ⇒ failure
+  Right _ ⇒ "prepared"
+
+main : IO ()
+main = pure ()

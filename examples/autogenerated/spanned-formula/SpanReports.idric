@@ -1,0 +1,51 @@
+module SpanReports
+
+import AlgebraicExpression
+import PolynomialQualification
+import Data.Text
+
+category_name : ParseErrorCategory → Text
+category_name (UnexpectedCharacter _) = "unexpected-character"
+category_name ScientificExponentDigitsRequired = "scientific-digits"
+category_name DecimalPointDigitsRequired = "fraction-digits"
+category_name DecimalLeadingZero = "leading-zero"
+category_name TokenBudgetExhausted = "token-budget"
+category_name NestingBudgetExhausted = "nesting-budget"
+category_name PrimaryExpected = "primary"
+category_name FunctionCloseExpected = "function-close"
+category_name GroupCloseExpected = "group-close"
+category_name TrailingToken = "trailing-token"
+
+token_name : Token → Text
+token_name Plus = "plus"
+token_name Minus = "minus"
+token_name Multiply = "multiply"
+token_name Divide = "divide"
+token_name Power = "power"
+token_name Open = "open"
+token_name Close = "close"
+token_name (Decimal text) = "decimal[" ++ text ++ "]"
+token_name (Floating text) = "float[" ++ text ++ "]"
+token_name (Identifier text) = "name[" ++ text ++ "]"
+
+span_bounds : SourceSpan → Text
+span_bounds location = show location.start_character ++ ".." ++ show location.end_character
+
+span_tokens : List SpannedToken → Text
+span_tokens [] = ""
+span_tokens [located] = token_name located.token ++ "@" ++ span_bounds located.source_span
+span_tokens (located :: remaining) =
+  token_name located.token ++ "@" ++ span_bounds located.source_span ++ "|" ++ span_tokens remaining
+
+export
+spanned_tokens : Text → Text
+spanned_tokens source = case lex_formula_spanned source of
+  Left failure ⇒ "error:" ++ category_name failure.category ++ "@" ++ span_bounds failure.error_span
+  Right tokens ⇒ span_tokens tokens
+
+export
+detailed_syntax : Text → Text
+detailed_syntax source = case parse_formula_detailed source of
+  Left failure ⇒ category_name failure.category ++ "@" ++ span_bounds failure.error_span ++ ":" ++ parse_error_message failure
+  Right expression ⇒ "accepted:" ++ expression_shape expression
+

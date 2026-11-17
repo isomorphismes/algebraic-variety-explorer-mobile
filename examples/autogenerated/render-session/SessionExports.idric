@@ -1,0 +1,105 @@
+module SessionExports
+
+import RenderSession
+import RequestedBitmap
+import RenderedBitmap
+import PreparedSurfaceTransfer
+import OrderedExpansion
+import CoefficientValue
+import Data.Text
+
+%foreign "dex:static:LRenderSessionObserver;:observeProtocol:(JJJ)V"
+observe_protocol : Int64 → Int64 → Int64 → PrimIO ()
+
+%foreign "dex:static:LRenderBitmapObserver;:observe:(Landroid/graphics/Bitmap;)V"
+observe_session_bitmap : RenderedBitmap → PrimIO ()
+
+protocol_in_session : RenderSession → IO Text
+protocol_in_session session = do
+  first ← begin_render_epoch session
+  case first of
+    Left reason ⇒ pure reason
+    Right previous ⇒ do
+      second ← begin_render_epoch session
+      case second of
+        Left reason ⇒ pure reason
+        Right current ⇒ do
+          primIO (observe_protocol (render_session_handle session)
+            (render_epoch_handle previous) (render_epoch_handle current))
+          old_current ← render_epoch_is_current previous
+          new_current ← render_epoch_is_current current
+          cancelled ← cancel_render_session session
+          after_cancel ← render_epoch_is_current current
+          pure (if old_current || not new_current || after_cancel || same_render_epoch previous current
+            then "session epoch checks failed"
+            else case cancelled of
+              Left reason ⇒ reason
+              Right () ⇒ "session protocol accepted")
+
+%export "dex:actual_session_protocol"
+actual_session_protocol : IO Text
+actual_session_protocol = do
+  created ← create_render_session
+  case created of
+    Left reason ⇒ pure reason
+    Right session ⇒ do
+      result ← protocol_in_session session
+      released ← release_render_session session
+      pure (case released of
+        Left reason ⇒ "session release error: " ++ reason
+        Right () ⇒ result)
+
+%export "dex:actual_session_prepare"
+actual_session_prepare : Text → IO Int64
+actual_session_prepare source = do
+  prepared ← prepare_native_surface (BoundedExpansion 4096 262144) (\name ⇒ Nothing) source
+  pure (case prepared of
+    Left _ ⇒ 0
+    Right surface ⇒ native_surface_handle surface)
+
+settings_for_epoch : Int32 → RenderSettings
+settings_for_epoch mode = RenderWith (if mode ≟ 5 then 0 else 37) 31
+  (if mode ≟ 4 then Final else Interactive)
+  (if mode ≟ 6 then 0.0 else 2.15) 0.37 (-0.19) 1.1
+
+bitmap_in_epoch : RenderSession → RenderEpoch → Text → Int32 → IO Text
+bitmap_in_epoch session epoch source mode = do
+  _ ← if mode ≟ 3 then release_render_session session else pure (Right ())
+  prepared ← prepare_native_surface (BoundedExpansion 4096 262144) (\name ⇒ Nothing) source
+  case prepared of
+    Left reason ⇒ pure ("preparation error: " ++ reason)
+    Right surface ⇒ do
+      _ ← if mode ≟ 1 then cancel_render_session session else pure (Right ())
+      _ ← if mode ≟ 2 then begin_render_epoch session else pure (Right epoch)
+      _ ← if mode ≟ 7 then release_native_surface surface else pure (Right ())
+      rendered ← render_epoch_bitmap epoch surface (settings_for_epoch mode)
+      released ← if mode ≟ 7 then pure (Right ()) else release_native_surface surface
+      case released of
+        Left reason ⇒ pure ("surface release error: " ++ reason)
+        Right () ⇒ case rendered of
+          Left reason ⇒ pure reason
+          Right bitmap ⇒ do
+            primIO (observe_session_bitmap bitmap)
+            pure "session bitmap rendered and observed"
+
+%export "dex:actual_session_bitmap"
+actual_session_bitmap : Text → Int32 → IO Text
+actual_session_bitmap source mode = do
+  created ← create_render_session
+  case created of
+    Left reason ⇒ pure reason
+    Right session ⇒ do
+      begun ← begin_render_epoch session
+      case begun of
+        Left reason ⇒ do
+          _ ← release_render_session session
+          pure reason
+        Right epoch ⇒ do
+          result ← bitmap_in_epoch session epoch source mode
+          released ← if mode ≟ 3 then pure (Right ()) else release_render_session session
+          pure (case released of
+            Left reason ⇒ "session release error: " ++ reason
+            Right () ⇒ result)
+
+main : IO ()
+main = pure ()

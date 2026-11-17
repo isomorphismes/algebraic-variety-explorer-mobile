@@ -1,0 +1,61 @@
+#!/usr/bin/env grease
+set -eu -o pipefail
+if (len(ARGV) !== 5) { echo 'usage: grease observe.grease ADB SERIAL EVIDENCE RECEIVER_EVIDENCE ORIGINAL_ORACLE' >&2; exit 2 }
+var adb = ARGV[0]
+var serial = ARGV[1]
+var evidence = ARGV[2]
+var receiver = ARGV[3]
+var oracle = ARGV[4]
+for path in "$adb" "$evidence" "$receiver" "$oracle" {
+  if (path[0] !== '/') { echo 'FAIL absolute paths required' >&2; exit 2 }
+}
+var library = "$receiver/qualification/libave_prepared_surface_test.so"
+test -s "$library"
+"$adb" -s "$serial" get-state > "$evidence/adb-state.txt"
+rg -x -F device "$evidence/adb-state.txt"
+"$adb" -s "$serial" shell getprop ro.build.version.sdk > "$evidence/art-sdk.txt"
+"$adb" -s "$serial" shell getprop ro.product.cpu.abi > "$evidence/art-abi.txt"
+"$adb" -s "$serial" shell getprop ro.kernel.qemu > "$evidence/art-qemu.txt"
+test $(tr -d '\r\n' < "$evidence/art-sdk.txt") = 34
+test $(tr -d '\r\n' < "$evidence/art-abi.txt") = x86_64
+test $(tr -d '\r\n' < "$evidence/art-qemu.txt") = 1
+var remote = '/data/local/tmp/ave-actual-prepared-transfer'
+"$adb" -s "$serial" shell rm -rf "$remote"
+"$adb" -s "$serial" shell mkdir "$remote"
+"$adb" -s "$serial" push "$evidence/runner.dex" "$remote/runner.dex"
+"$adb" -s "$serial" push "$library" "$remote/libave_prepared_surface_test.so"
+"$adb" -s "$serial" push "$oracle" "$remote/original-oracle.dex"
+"$adb" -s "$serial" shell chmod 444 "$remote/runner.dex" "$remote/libave_prepared_surface_test.so" "$remote/original-oracle.dex"
+"$adb" -s "$serial" pull "$remote/runner.dex" "$evidence/runner-received.dex"
+"$adb" -s "$serial" pull "$remote/libave_prepared_surface_test.so" "$evidence/library-received.so"
+"$adb" -s "$serial" pull "$remote/original-oracle.dex" "$evidence/original-oracle-received.dex"
+cmp "$evidence/runner.dex" "$evidence/runner-received.dex"
+cmp "$library" "$evidence/library-received.so"
+cmp "$oracle" "$evidence/original-oracle-received.dex"
+for name in positive coefficient-mutant axis-mutant binding-mutant {
+  "$adb" -s "$serial" push "$evidence/$name/candidate.dex" "$remote/$name.dex"
+  "$adb" -s "$serial" shell chmod 444 "$remote/$name.dex"
+  "$adb" -s "$serial" pull "$remote/$name.dex" "$evidence/$name-received.dex"
+  cmp "$evidence/$name/candidate.dex" "$evidence/$name-received.dex"
+  try {
+    "$adb" -s "$serial" shell "CLASSPATH=$remote/$name.dex:$remote/original-oracle.dex:$remote/runner.dex app_process -Xcheck:jni /system/bin PreparedTransferRunner $remote/libave_prepared_surface_test.so" \
+      > "$evidence/art-$name.txt" 2>&1
+  }
+  var status = _error.code
+  cat "$evidence/art-$name.txt"
+  printf '%s\n' "$status" > "$evidence/art-$name.exit"
+  if (name === 'positive') {
+    if (status !== 0) { echo 'FAIL actual prepared-transfer ART execution' >&2; exit 1 }
+    rg -x -F 'PASS Explorer actual prepared transfer on ART' "$evidence/art-$name.txt"
+  } else {
+    if (status !== 80) { echo "FAIL missing designated transfer mutant rejection: $name" >&2; exit 1 }
+    rg -x -F 'FAIL Explorer prepared transfer' "$evidence/art-$name.txt"
+    if (name === 'binding-mutant') {
+      rg -x -F 'x^2+y^2+z^2-radius^2' "$evidence/art-$name.txt"
+      rg -F 'family=2;surface=0,0,0:c010000000000000|' "$evidence/art-$name.txt"
+      rg -F 'family=2;surface=0,0,0:c022000000000000|' "$evidence/art-$name.txt"
+    }
+  }
+}
+printf 'actual_Idric_array_producer_JNI_ART\tPASS\noriginal_four_polynomial_bits\tPASS\nsource_validation_without_JNI\tPASS\nsource_replacement_cycles\tPASS\nJNI_temporary_allocation_failures\tPASS\nnative_store_allocation_failures\tPASS\nfinal_native_live_counts_zero\tPASS\ncompiled_coefficient_mutant_rejected\tPASS\ncompiled_axis_mutant_rejected\tPASS\ncompiled_binding_mutant_rejected\tPASS\npositive_parameter_binding\tPASS\nunknown_parameter_refused_before_JNI\tPASS\nActivity\tNOT_RUN\nAPK\tNOT_RUN\nphysical_C67\tNOT_RUN\nphysical_A1\tNOT_RUN\n' > "$evidence/art-result.tsv"
+printf '\033[32mPASS\033[0m actual Idriç prepared transfer, native snapshots and compiled source mutations on ART\n'

@@ -1,0 +1,57 @@
+module SpanCheck
+
+import AlgebraicExpression
+import PolynomialQualification
+import SpanReports
+import Data.Text
+import System
+
+check : Text → Text → Text → IO ()
+check name actual expected =
+  if actual ≟ expected then putStrLn ("PASS " ++ name) else do
+    putStrLn ("FAIL " ++ name ++ ": " ++ actual)
+    exitFailure
+
+syntax : Text → Text → IO ()
+syntax source expected = check source (detailed_syntax source) expected
+
+main : IO ()
+main = do
+  check "whitespace and exact numeric lexemes" (spanned_tokens " \tsin(.25)+1.20e-3*x_2\n")
+    "name[sin]@2..5|open@5..6|float[.25]@6..9|close@9..10|plus@10..11|float[1.20e-3]@11..18|multiply@18..19|name[x_2]@19..22"
+  check "inherited leading-zero float admission" (spanned_tokens "0 01.0 01e2 1. .5")
+    "decimal[0]@0..1|float[01.0]@2..6|float[01e2]@7..11|float[1.]@12..14|float[.5]@15..17"
+  check "operator spans" (spanned_tokens "x+1*(y-2)/z^3")
+    "name[x]@0..1|plus@1..2|decimal[1]@2..3|multiply@3..4|open@4..5|name[y]@5..6|minus@6..7|decimal[2]@7..8|close@8..9|divide@9..10|name[z]@10..11|power@11..12|decimal[3]@12..13"
+  syntax "" "primary@0..0:expected number, name or '('"
+  syntax "x+  " "primary@4..4:expected number, name or '('"
+  syntax " x y" "trailing-token@3..4:unexpected token after expression"
+  syntax "01" "leading-zero@0..2:leading zero in decimal literal"
+  syntax "1e+" "scientific-digits@3..3:expected digits in scientific exponent"
+  syntax "1e+x" "scientific-digits@3..4:expected digits in scientific exponent"
+  syntax " .x" "fraction-digits@2..3:expected digits after decimal point"
+  syntax "." "fraction-digits@1..1:expected digits after decimal point"
+  syntax "x$" "unexpected-character@1..2:unexpected character: $"
+  syntax "x+🙂" "unexpected-character@2..3:unexpected character: 🙂"
+  syntax "(x" "group-close@2..2:expected ')'"
+  syntax "sin(x" "function-close@5..5:expected ')' after function argument"
+  syntax "sin(x y)" "function-close@6..7:expected ')' after function argument"
+  syntax "(x y)" "group-close@3..4:expected ')'"
+  syntax "x)" "trailing-token@1..2:unexpected token after expression"
+  syntax "x^-2" "primary@2..3:expected number, name or '('"
+  syntax "sin()" "primary@4..5:expected number, name or '('"
+  syntax "--x" "primary@1..2:expected number, name or '('"
+  syntax "1..2" "trailing-token@2..4:unexpected token after expression"
+  syntax "( x \n" "group-close@5..5:expected ')'"
+  syntax "-x^2^3" "accepted:neg(pow(name[x],pow(decimal[2],decimal[3])))"
+  check "legacy parser text" (formula_shape "x+") "error: expected number, name or '('"
+  check "legacy semantic text" (formula_qualification "x+") "syntax error: expected number, name or '('"
+  check "typed error reaches semantic qualification"
+    (case qualify_formula "1e+" of
+      Left (FormulaSyntaxFailure (LocatedError ScientificExponentDigitsRequired (Characters 3 3))) ⇒ "typed"
+      _ ⇒ "missing") "typed"
+  check "Activity syntax formatter keeps exact location"
+    (case parse_formula_detailed " x+$" of
+      Left failure ⇒ "syntax error: " ++ parse_error_report failure
+      Right _ ⇒ "missing") "syntax error: unexpected character: $ at characters 3..4"
+  putStrLn "PASS Explorer spanned formula admission"

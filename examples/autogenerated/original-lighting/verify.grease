@@ -1,0 +1,151 @@
+#!/usr/bin/env grease
+set -eu -o pipefail
+if (len(ARGV) !== 5) { echo 'usage: grease verify.grease EXPLORER ICK_SOURCE QUALIFIED_ICK ORIGINAL_LIGHTING_REFERENCE FRESH_OUTPUT' >&2; exit 2 }
+var repository = ARGV[0]
+var ick_source = ARGV[1]
+var compiler = ARGV[2]
+var reference = ARGV[3]
+var output = ARGV[4]
+for path in (ARGV) { if (path[0] !== '/') { echo 'FAIL absolute paths required' >&2; exit 2 } }
+if test -e "$output" { echo 'FAIL refusing reused lighting evidence' >&2; exit 1 }
+test $(git -C "$ick_source" rev-parse HEAD) = fbe86e23d55cfec2000c08e61deea2a407fd7175
+test -x "$compiler"
+command -v rg > /dev/null
+rg -x -F b'actual_RenderingTask_shade\tPASS' "$reference/result.tsv"
+rg -x -F b'actual_collected_ambient_and_products\tPASS' "$reference/result.tsv"
+rg -x -F b'actual_full_canvas_default_lit_frames\tPASS' "$reference/result.tsv"
+rg -x -F b'actual_selected_ray_components\tPASS' "$reference/result.tsv"
+rg -x -F b'repeat_bytes\tPASS' "$reference/result.tsv"
+var manifest = "$repository/ci/native-lighting-toolchain.tsv"
+rg -x -F b'build_id\ttarget\ttoolchain\tick_revision\tick_status\tick_evidence' "$manifest"
+for stage in numerical frames frame-mutant degree-mutant rays clip-mutant ray-sanitizers power-mutant ambient-mutant normal-mutant side-mutant success sanitizers frame-sanitizers {
+  printf 'native-lighting-%s\tx86_64-pc-linux-gnu\tick\tfbe86e23d55cfec2000c08e61deea2a407fd7175\tqualified\treceipt:ai-ci-ick-host-32cb45b3\n' "$stage" | rg -x -F -f - "$manifest"
+}
+test $(wc -l < "$manifest") = 15
+mkdir -p "$output/mutants"
+"$compiler" --version > "$output/ick-version.txt"
+"$compiler" -dumpmachine > "$output/ick-target.txt"
+rg -x -F x86_64-pc-linux-gnu "$output/ick-target.txt"
+var cc1 = $("$compiler" -print-prog-name=cc1)
+test -x "$cc1"
+sha256sum "$compiler" "$cc1" > "$output/toolchain.sha256"
+sha256sum "$repository/native/surfer_raytracer.c" "$repository/native/surfer_raytracer.h" \
+  "$repository/native/surfer_original_specialization.inc" "$repository/native/surfer_original_camera.inc" \
+  "$repository/native/surfer_vecmath.c" "$repository/native/surfer_vecmath.h" "$repository/native/surfer_lighting_test.c" "$repository/native/surfer_original_frame_test.c" \
+  "$repository/native/surfer_original_ray_test.c" \
+  "$reference/lighting.tsv" "$reference/pixels.tsv" "$reference/rays.tsv" > "$output/inputs.sha256"
+cp "$reference/result.tsv" "$output/original-reference-profile.tsv"
+cp "$manifest" "$output/toolchain.tsv"
+git -C "$repository" rev-parse HEAD > "$output/source-revision.txt"
+proc compile_lighting(directory, destination) {
+  "$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O2 \
+    -fno-fast-math -ffp-contract=off "$directory/surfer_lighting_test.c" "$directory/surfer_vecmath.c" -lm -o "$destination"
+}
+compile_lighting "$repository/native" "$output/test"
+"$output/test" "$reference/lighting.tsv" > "$output/numerical.txt" 2>&1
+cat "$output/numerical.txt"
+rg -x -F 'PASS original ambient light products normal material and binary64 specular bytes' "$output/numerical.txt"
+proc compile_frames(directory, destination) {
+  "$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O2 \
+    -fno-fast-math -ffp-contract=off "$directory/surfer_original_frame_test.c" "$directory/surfer_vecmath.c" -lm -o "$destination"
+}
+compile_frames "$repository/native" "$output/frames"
+"$output/frames" "$reference/pixels.tsv" > "$output/frames.txt" 2>&1
+rg '^(default-lit|PASS)' "$output/frames.txt"
+rg -x -F 'PASS original full-canvas default-lit prepared polynomial pixels' "$output/frames.txt"
+proc compile_rays(directory, destination) {
+  "$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O2 \
+    -fno-fast-math -ffp-contract=off "$directory/surfer_original_ray_test.c" "$directory/surfer_vecmath.c" -lm -o "$destination"
+}
+compile_rays "$repository/native" "$output/rays"
+"$output/rays" "$reference/rays.tsv" > "$output/rays.txt" 2>&1
+cat "$output/rays.txt"
+rg -x -F 'PASS original captured ray clip coefficients root gradient normal shade and pixel components' "$output/rays.txt"
+proc reject_mutant(name, expression) {
+  var destination = "$output/mutants/$name"
+  mkdir -p "$destination"
+  for file in surfer_raytracer.h surfer_original_specialization.inc \
+    surfer_original_camera.inc surfer_vecmath.c surfer_vecmath.h surfer_lighting_test.c {
+    cp "$repository/native/$file" "$destination/"
+  }
+  sed "$expression" "$repository/native/surfer_raytracer.c" > "$destination/surfer_raytracer.c"
+  try { cmp -s "$repository/native/surfer_raytracer.c" "$destination/surfer_raytracer.c" }
+  if (_error.code !== 1) { echo 'FAIL lighting mutation unchanged or comparison failed' >&2; exit 1 }
+  compile_lighting "$destination" "$destination/test"
+  try { "$destination/test" "$reference/lighting.tsv" > "$destination/result.txt" 2>&1 }
+  var status = _error.code
+  cat "$destination/result.txt"
+  if (status !== 1) { echo "FAIL missing designated lighting mutation rejection: $name" >&2; exit 1 }
+  rg '^FAIL original lighting:' "$destination/result.txt"
+}
+reject_mutant power 's/? (float)pow(fmax(0.0, dot_product(normal, half_vector)),/? (float)pow((float)fmax(0.0, dot_product(normal, half_vector)),/'
+reject_mutant ambient '/^static surfer_color shade_hit_with_original_material/,/^}/s/scene->front_material.ambient_intensity/material.ambient_intensity/'
+reject_mutant normal 's/const float length = (float)length_of_vector(camera_normal);/const double length = length_of_vector(camera_normal);/'
+reject_mutant side 's/if (dot_product(\*camera_normal, view) > 0.0)/if (dot_product(*camera_normal, view) >= 0.0)/'
+proc reject_frame_mutant(name, expression) {
+  var frame_mutant = "$output/mutants/$name"
+  mkdir -p "$frame_mutant"
+  for file in surfer_raytracer.h surfer_original_specialization.inc surfer_original_camera.inc \
+      surfer_vecmath.c surfer_vecmath.h surfer_original_frame_test.c {
+    cp "$repository/native/$file" "$frame_mutant/"
+  }
+  sed "$expression" "$repository/native/surfer_raytracer.c" > "$frame_mutant/surfer_raytracer.c"
+  try { cmp -s "$repository/native/surfer_raytracer.c" "$frame_mutant/surfer_raytracer.c" }
+  if (_error.code !== 1) { echo 'FAIL frame mutation unchanged' >&2; exit 1 }
+  compile_frames "$frame_mutant" "$frame_mutant/test"
+  try { "$frame_mutant/test" "$reference/pixels.tsv" > "$frame_mutant/result.txt" 2>&1 }
+  if (_error.code !== 1) { echo 'FAIL missing designated full-frame mutation rejection' >&2; exit 1 }
+  rg '^(pixel|FAIL)' "$frame_mutant/result.txt"
+  rg '^FAIL original lit frame:' "$frame_mutant/result.txt"
+}
+reject_frame_mutant frame 's/: shade_hit_with_original_material(scene, camera_point, view, camera_normal, material);/: (false ? shade_hit_with_original_material(scene, camera_point, view, camera_normal, material) : shade_hit_with_material(scene, camera_point, view, camera_normal, material));/'
+reject_frame_mutant degree 's/upper_bound <= 0.0 || source->length <= 1/upper_bound <= 0.0 || coefficient_count_without_trailing_zeroes(context, source) <= 1/'
+var clip_mutant = "$output/mutants/clip"
+mkdir -p "$clip_mutant"
+for file in surfer_raytracer.h surfer_original_specialization.inc surfer_original_camera.inc \
+    surfer_vecmath.c surfer_vecmath.h surfer_original_ray_test.c {
+  cp "$repository/native/$file" "$clip_mutant/"
+}
+sed 's/const surfer_vec3 direction = scale_vector(ray.direction, 1.0f \/ length);/const surfer_vec3 direction = ray.direction;/' \
+  "$repository/native/surfer_raytracer.c" > "$clip_mutant/surfer_raytracer.c"
+try { cmp -s "$repository/native/surfer_raytracer.c" "$clip_mutant/surfer_raytracer.c" }
+if (_error.code !== 1) { echo 'FAIL clip mutation unchanged' >&2; exit 1 }
+compile_rays "$clip_mutant" "$clip_mutant/test"
+try { "$clip_mutant/test" "$reference/rays.tsv" > "$clip_mutant/result.txt" 2>&1 }
+if (_error.code !== 1) { echo 'FAIL missing designated original clip mutation rejection' >&2; exit 1 }
+cat "$clip_mutant/result.txt"
+rg '^FAIL original selected ray:' "$clip_mutant/result.txt"
+"$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O2 \
+  -fno-fast-math -ffp-contract=off -DSURFER_STATUS_API -I "$repository/native" -I "$repository/native/android" \
+  "$repository/native/surfer_raytracer.c" "$repository/native/android/presets.c" \
+  "$repository/native/surfer_success_oracle.c" "$repository/native/surfer_vecmath.c" -lm -o "$output/legacy-success"
+"$output/legacy-success" > "$output/legacy-success.bin"
+test $(wc -c < "$output/legacy-success.bin") = 32179
+printf '%s  %s\n' 65f44c201676e330068804e4059a369cb6479efa1673660fd78a42681a1f55ca "$output/legacy-success.bin" | sha256sum -c -
+"$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O1 -g \
+  -fno-fast-math -ffp-contract=off -fsanitize=address,undefined -fno-omit-frame-pointer \
+  "$repository/native/surfer_lighting_test.c" "$repository/native/surfer_vecmath.c" -lm -o "$output/sanitized"
+env ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 \
+  "$output/sanitized" "$reference/lighting.tsv" > "$output/sanitizers.txt" 2>&1
+cat "$output/sanitizers.txt"
+rg -x -F 'PASS original ambient light products normal material and binary64 specular bytes' "$output/sanitizers.txt"
+"$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O1 -g \
+  -fno-fast-math -ffp-contract=off -fsanitize=address,undefined -fno-omit-frame-pointer \
+  "$repository/native/surfer_original_frame_test.c" "$repository/native/surfer_vecmath.c" -lm -o "$output/frames-sanitized"
+env ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 \
+  "$output/frames-sanitized" "$reference/pixels.tsv" > "$output/frames-sanitizers.txt" 2>&1
+rg '^(default-lit|PASS)' "$output/frames-sanitizers.txt"
+rg -x -F 'PASS original full-canvas default-lit prepared polynomial pixels' "$output/frames-sanitizers.txt"
+"$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O1 -g \
+  -fno-fast-math -ffp-contract=off -fsanitize=address,undefined -fno-omit-frame-pointer \
+  "$repository/native/surfer_original_ray_test.c" "$repository/native/surfer_vecmath.c" -lm -o "$output/rays-sanitized"
+env ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 \
+  "$output/rays-sanitized" "$reference/rays.tsv" > "$output/ray-sanitizers.txt" 2>&1
+cat "$output/ray-sanitizers.txt"
+rg -x -F 'PASS original captured ray clip coefficients root gradient normal shade and pixel components' "$output/ray-sanitizers.txt"
+sha256sum "$output/test" "$output/sanitized" "$output/frames" "$output/frames-sanitized" \
+  "$output/rays" "$output/rays-sanitized" "$output/legacy-success" > "$output/binaries.sha256"
+sha256sum "$reference/pixels.tsv" "$output/frames.txt" "$output/frames-sanitizers.txt" > "$output/decoded-argb.sha256"
+printf 'comparison\texact-decoded-ARGB\nchannel_tolerance\t0\nobserved_differences\t0\n' > "$output/pixel-differences.tsv"
+printf 'original_lighting_raw_bits\tPASS\nreference_profile\tsee-original-reference-profile.tsv\noriginal_bounded_default_lit_frames\tPASS\nactual_captured_ray_components\tPASS\nseven_compiled_mutants\tPASS\nlegacy_success_bytes\tPASS\nASAN_UBSAN_leaks\tPASS\nfull_image_roots_tiling\tNOT_ESTABLISHED\nAndroid\tNOT_RUN\nphysical_devices\tNOT_RUN\n' > "$output/result.tsv"
+printf '\033[32mPASS\033[0m original lighting bytes; complete image acceptance separate\n'

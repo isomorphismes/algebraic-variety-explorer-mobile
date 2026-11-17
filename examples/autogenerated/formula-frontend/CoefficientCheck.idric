@@ -1,0 +1,21 @@
+module CoefficientCheck
+
+-- Retained standalone formatting/cast experiment. The maintained coefficient
+-- qualification compiles CoefficientValue through coefficient-values instead.
+
+import Data.Text
+import System
+
+-- Explicit inherited binary64 boundary: matches the original jsurf Double
+-- coefficients. Float16 defaulting would change the program being translated.
+coefficient : Double
+coefficient = 0.4
+
+%export "dex:coefficient_check"
+main : IO ()
+main = do
+  arguments ← getArgs
+  let supplied = case arguments of
+        _ :: value :: _ ⇒ value
+        _ ⇒ "0.1"
+  putStrLn (show (coefficient + cast supplied))

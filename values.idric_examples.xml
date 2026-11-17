@@ -1,0 +1,13 @@
+<resources>
+    <!-- Same order as the source-owned SurfaceExamples list. Only labels are
+         resources; formulas and selection semantics remain in Idriç. -->
+    <string-array name="surface_example_names">
+        <item>Sphere</item>
+        <item>Torus</item>
+        <item>Cayley cubic</item>
+        <item>Whitney umbrella</item>
+        <item>Roman surface</item>
+        <item>Heart</item>
+        <item>Madore E6 cubic</item>
+    </string-array>
+</resources>

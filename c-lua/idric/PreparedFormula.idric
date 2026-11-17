@@ -1,0 +1,332 @@
+module PreparedFormula
+
+import PolynomialQualification
+import AlgebraicExpression
+import CoefficientValue
+import CoefficientArithmetic
+import Data.Text
+
+-- Christian Stussak's Simplificator/Differentiator contract, Apache-2.0.
+-- This is semantic preparation before expansion, not the numerical C ABI.
+public export
+data CoefficientCalculation
+  = AddPreparedCoefficients | SubtractPreparedCoefficients
+  | MultiplyPreparedCoefficients | DividePreparedCoefficients
+  | RaisePreparedCoefficient
+
+public export
+data PreparedScalar
+  = EvaluatedCoefficient Coefficient
+  | UnassignedCoefficient Text
+  | CoefficientCalculationValue CoefficientCalculation PreparedScalar PreparedScalar
+  | CoefficientFunctionValue CoefficientFunction PreparedScalar
+
+public export
+data PreparedExpression
+  = PreparedScalarValue PreparedScalar
+  | PreparedCoordinate Coordinate
+  | PreparedSum PreparedExpression PreparedExpression
+  | PreparedDifference PreparedExpression PreparedExpression
+  | PreparedProduct PreparedExpression PreparedExpression
+  | PreparedQuotient PreparedExpression PreparedScalar
+  | PreparedPower PreparedExpression Int32
+  | PreparedNegative PreparedExpression
+
+public export
+record PreparedFormula where
+  constructor SemanticPreparation
+  family_degree : Int32
+  surface : PreparedExpression
+  gradient_x : PreparedExpression
+  gradient_y : PreparedExpression
+  gradient_z : PreparedExpression
+  notices : List QualificationNotice
+
+public export
+data PreparationFailure
+  = InvalidExponentProvenance Text
+  | FamilyDegreeOutsideOriginalRange Integer
+  | SimplificationBudgetExhausted
+
+export
+preparation_error : PreparationFailure → Text
+preparation_error (InvalidExponentProvenance source) =
+  "invalid original exponent provenance: " ++ source
+preparation_error (FamilyDegreeOutsideOriginalRange amount) =
+  "family degree exceeds original signed32 range: " ++ cast amount
+preparation_error SimplificationBudgetExhausted = "formula simplification budget exhausted"
+
+decimal_characters : List Char → Bool
+decimal_characters [] = True
+decimal_characters (digit :: remaining) =
+  digit >= '0' && digit <= '9' && decimal_characters remaining
+
+decimal_magnitude : Text → Either PreparationFailure Integer
+decimal_magnitude source =
+  if source ≟ "" || not (decimal_characters (unpack source))
+  then Left (InvalidExponentProvenance source)
+  else Right (cast source)
+
+exponent_value : DecimalExponent → Either PreparationFailure Int32
+exponent_value (InRangeDecimalExponent source) = do
+  magnitude ← decimal_magnitude source
+  if magnitude <= 2147483647 then Right (cast magnitude) else Left (InvalidExponentProvenance source)
+exponent_value (InheritedOverflowExponent source) = do
+  magnitude ← decimal_magnitude source
+  if magnitude > 2147483647 then Right 0 else Left (InvalidExponentProvenance source)
+
+checked_degree : Integer → Either PreparationFailure Integer
+checked_degree amount =
+  if amount >= 0 && amount <= 2147483647 then Right amount
+  else Left (FamilyDegreeOutsideOriginalRange amount)
+
+polynomial_degree : PolynomialExpression → Either PreparationFailure Integer
+polynomial_degree (CoordinatePolynomial _) = Right 1
+polynomial_degree (ScalarPolynomial _) = Right 0
+polynomial_degree (PolynomialSum left right) = do
+  first ← polynomial_degree left
+  second ← polynomial_degree right
+  Right (max first second)
+polynomial_degree (PolynomialDifference left right) = do
+  first ← polynomial_degree left
+  second ← polynomial_degree right
+  Right (max first second)
+polynomial_degree (PolynomialProduct left right) = do
+  first ← polynomial_degree left
+  second ← polynomial_degree right
+  checked_degree (first + second)
+polynomial_degree (PolynomialQuotient dividend _) = polynomial_degree dividend
+polynomial_degree (PolynomialPower base exponent) = do
+  degree ← polynomial_degree base
+  power ← exponent_value exponent
+  checked_degree (degree * cast power)
+polynomial_degree (PolynomialNegative expression) = polynomial_degree expression
+polynomial_degree (PolynomialGroup expression) = polynomial_degree expression
+
+lower_scalar : ScalarExpression → PreparedScalar
+lower_scalar (DecimalCoefficient source) = EvaluatedCoefficient (parse_binary64 source)
+lower_scalar (FloatingCoefficient source) = EvaluatedCoefficient (parse_binary64 source)
+lower_scalar (NamedCoefficient name) = UnassignedCoefficient name
+lower_scalar (ScalarSum left right) =
+  CoefficientCalculationValue AddPreparedCoefficients (lower_scalar left) (lower_scalar right)
+lower_scalar (ScalarDifference left right) =
+  CoefficientCalculationValue SubtractPreparedCoefficients (lower_scalar left) (lower_scalar right)
+lower_scalar (ScalarProduct left right) =
+  CoefficientCalculationValue MultiplyPreparedCoefficients (lower_scalar left) (lower_scalar right)
+lower_scalar (ScalarQuotient left right) =
+  CoefficientCalculationValue DividePreparedCoefficients (lower_scalar left) (lower_scalar right)
+lower_scalar (ScalarPower left right) =
+  CoefficientCalculationValue RaisePreparedCoefficient (lower_scalar left) (lower_scalar right)
+lower_scalar (ScalarFunction function argument) =
+  CoefficientFunctionValue function (lower_scalar argument)
+lower_scalar (ScalarGroup expression) = lower_scalar expression
+
+lower_polynomial : PolynomialExpression → Either PreparationFailure PreparedExpression
+lower_polynomial (CoordinatePolynomial coordinate) = Right (PreparedCoordinate coordinate)
+lower_polynomial (ScalarPolynomial scalar) = Right (PreparedScalarValue (lower_scalar scalar))
+lower_polynomial (PolynomialSum left right) = do
+  first ← lower_polynomial left
+  second ← lower_polynomial right
+  Right (PreparedSum first second)
+lower_polynomial (PolynomialDifference left right) = do
+  first ← lower_polynomial left
+  second ← lower_polynomial right
+  Right (PreparedDifference first second)
+lower_polynomial (PolynomialProduct left right) = do
+  first ← lower_polynomial left
+  second ← lower_polynomial right
+  Right (PreparedProduct first second)
+lower_polynomial (PolynomialQuotient dividend divisor) = do
+  first ← lower_polynomial dividend
+  Right (PreparedQuotient first (lower_scalar divisor))
+lower_polynomial (PolynomialPower base exponent) = do
+  expression ← lower_polynomial base
+  value ← exponent_value exponent
+  Right (PreparedPower expression value)
+lower_polynomial (PolynomialNegative expression) = do
+  value ← lower_polynomial expression
+  Right (PreparedNegative value)
+lower_polynomial (PolynomialGroup expression) = lower_polynomial expression
+
+calculate_coefficients : CoefficientCalculation → Coefficient → Coefficient → Coefficient
+calculate_coefficients AddPreparedCoefficients first second = first + second
+calculate_coefficients SubtractPreparedCoefficients first second = subtract_coefficients first second
+calculate_coefficients MultiplyPreparedCoefficients first second = multiply_coefficients first second
+calculate_coefficients DividePreparedCoefficients first second = divide_coefficients first second
+calculate_coefficients RaisePreparedCoefficient first second = power_coefficient first second
+
+-- Expand evaluates retained scalar operation objects through ValueCalculator.
+-- Do not confuse that later evaluation with the original simplifier's one pass.
+export
+evaluate_prepared_scalar : PreparedScalar → Either Text Coefficient
+evaluate_prepared_scalar (EvaluatedCoefficient value) = Right value
+evaluate_prepared_scalar (UnassignedCoefficient name) =
+  Left ("no value has been assigned to parameter '" ++ name ++ "'")
+evaluate_prepared_scalar (CoefficientCalculationValue operation left right) = do
+  first ← evaluate_prepared_scalar left
+  second ← evaluate_prepared_scalar right
+  Right (calculate_coefficients operation first second)
+evaluate_prepared_scalar (CoefficientFunctionValue function argument) = do
+  value ← evaluate_prepared_scalar argument
+  Right (apply_coefficient_function function value)
+
+simplify_scalar : (Text → Maybe Coefficient) → PreparedScalar → PreparedScalar
+simplify_scalar bindings (EvaluatedCoefficient value) = EvaluatedCoefficient value
+simplify_scalar bindings (UnassignedCoefficient name) = case bindings name of
+  Just value ⇒ EvaluatedCoefficient value
+  Nothing ⇒ UnassignedCoefficient name
+simplify_scalar bindings (CoefficientCalculationValue operation left right) =
+  let first = simplify_scalar bindings left
+      second = simplify_scalar bindings right
+  in case (first, second) of
+    (EvaluatedCoefficient left_value, EvaluatedCoefficient right_value) ⇒
+      EvaluatedCoefficient (calculate_coefficients operation left_value right_value)
+    _ ⇒ CoefficientCalculationValue operation first second
+simplify_scalar bindings (CoefficientFunctionValue function argument) =
+  case simplify_scalar bindings argument of
+    EvaluatedCoefficient value ⇒ EvaluatedCoefficient (apply_coefficient_function function value)
+    symbolic ⇒ CoefficientFunctionValue function symbolic
+
+is_coefficient : Coefficient → PreparedExpression → Bool
+is_coefficient expected (PreparedScalarValue (EvaluatedCoefficient actual)) = actual ≟ expected
+is_coefficient _ _ = False
+
+reclassify_binary : CoefficientCalculation → PreparedExpression → PreparedExpression →
+                    PreparedExpression → PreparedExpression
+reclassify_binary operation (PreparedScalarValue left) (PreparedScalarValue right) _ =
+  PreparedScalarValue (CoefficientCalculationValue operation left right)
+reclassify_binary _ _ _ polynomial = polynomial
+
+exponent_coefficient : Int32 → Coefficient
+exponent_coefficient exponent = cast exponent
+
+expression_nodes : PreparedExpression → Number
+expression_nodes (PreparedScalarValue _) = 1
+expression_nodes (PreparedCoordinate _) = 1
+expression_nodes (PreparedSum left right) = S (expression_nodes left + expression_nodes right)
+expression_nodes (PreparedDifference left right) = S (expression_nodes left + expression_nodes right)
+expression_nodes (PreparedProduct left right) = S (expression_nodes left + expression_nodes right)
+expression_nodes (PreparedQuotient dividend _) = S (expression_nodes dividend)
+expression_nodes (PreparedPower base _) = S (expression_nodes base)
+expression_nodes (PreparedNegative expression) = S (expression_nodes expression)
+
+-- Every descent consumes fuel. The special zero-left subtraction revisits a
+-- simplified right child through a new negation; its node count is still
+-- smaller than the original subtraction (which also contained the left child).
+simplify_with_fuel : Number → (Text → Maybe Coefficient) → PreparedExpression →
+                     Either PreparationFailure PreparedExpression
+simplify_with_fuel Z _ _ = Left SimplificationBudgetExhausted
+simplify_with_fuel (S budget) bindings (PreparedScalarValue scalar) =
+  Right (PreparedScalarValue (simplify_scalar bindings scalar))
+simplify_with_fuel (S budget) bindings (PreparedCoordinate coordinate) = Right (PreparedCoordinate coordinate)
+simplify_with_fuel (S budget) bindings (PreparedSum left right) = do
+  first ← simplify_with_fuel budget bindings left
+  second ← simplify_with_fuel budget bindings right
+  Right (if is_coefficient 0 first then second else
+    if is_coefficient 0 second then first else
+    reclassify_binary AddPreparedCoefficients first second (PreparedSum first second))
+simplify_with_fuel (S budget) bindings (PreparedDifference left right) = do
+  first ← simplify_with_fuel budget bindings left
+  second ← simplify_with_fuel budget bindings right
+  if is_coefficient 0 first then simplify_with_fuel budget bindings (PreparedNegative second) else
+    Right (if is_coefficient 0 second then first else
+      reclassify_binary SubtractPreparedCoefficients first second (PreparedDifference first second))
+simplify_with_fuel (S budget) bindings (PreparedProduct left right) = do
+  first ← simplify_with_fuel budget bindings left
+  second ← simplify_with_fuel budget bindings right
+  Right (if is_coefficient 0 first then first else
+    if is_coefficient 1 first then second else
+    if is_coefficient 0 second then second else
+    if is_coefficient 1 second then first else
+    reclassify_binary MultiplyPreparedCoefficients first second (PreparedProduct first second))
+simplify_with_fuel (S budget) bindings (PreparedQuotient dividend divisor) = do
+  first ← simplify_with_fuel budget bindings dividend
+  let second = simplify_scalar bindings divisor
+  Right (case (first, second) of
+    (PreparedScalarValue (EvaluatedCoefficient left), EvaluatedCoefficient right) ⇒
+      PreparedScalarValue (EvaluatedCoefficient (divide_coefficients left right))
+    (PreparedScalarValue left, right) ⇒
+      PreparedScalarValue (CoefficientCalculationValue DividePreparedCoefficients left right)
+    _ ⇒ PreparedQuotient first second)
+simplify_with_fuel (S budget) bindings (PreparedPower base exponent) = do
+  expression ← simplify_with_fuel budget bindings base
+  Right (if exponent ≟ 0 then PreparedScalarValue (EvaluatedCoefficient 1) else
+    if exponent ≟ 1 then expression else
+    case expression of
+      PreparedScalarValue (EvaluatedCoefficient value) ⇒
+        PreparedScalarValue (EvaluatedCoefficient (power_coefficient value (exponent_coefficient exponent)))
+      _ ⇒ PreparedPower expression exponent)
+simplify_with_fuel (S budget) bindings (PreparedNegative expression) = do
+  concrete ← simplify_with_fuel budget bindings expression
+  Right (case concrete of
+    PreparedScalarValue (EvaluatedCoefficient value) ⇒
+      PreparedScalarValue (EvaluatedCoefficient (negate value))
+    symbolic ⇒ PreparedNegative symbolic)
+
+simplify_expression : (Text → Maybe Coefficient) → PreparedExpression →
+                      Either PreparationFailure PreparedExpression
+simplify_expression bindings expression =
+  simplify_with_fuel (S (expression_nodes expression)) bindings expression
+
+same_coordinate : Coordinate → Coordinate → Bool
+same_coordinate CoordinateX CoordinateX = True
+same_coordinate CoordinateY CoordinateY = True
+same_coordinate CoordinateZ CoordinateZ = True
+same_coordinate _ _ = False
+
+differentiate : Coordinate → PreparedExpression → PreparedExpression
+differentiate coordinate (PreparedScalarValue _) = PreparedScalarValue (EvaluatedCoefficient 0)
+differentiate coordinate (PreparedCoordinate variable) =
+  PreparedScalarValue (EvaluatedCoefficient (if same_coordinate coordinate variable then 1 else 0))
+differentiate coordinate (PreparedSum left right) =
+  PreparedSum (differentiate coordinate left) (differentiate coordinate right)
+differentiate coordinate (PreparedDifference left right) =
+  PreparedDifference (differentiate coordinate left) (differentiate coordinate right)
+differentiate coordinate (PreparedProduct left right) =
+  PreparedSum (PreparedProduct (differentiate coordinate left) right)
+    (PreparedProduct left (differentiate coordinate right))
+differentiate coordinate (PreparedQuotient dividend divisor) =
+  PreparedQuotient (differentiate coordinate dividend) divisor
+differentiate coordinate (PreparedPower base exponent) =
+  if exponent ≟ 1 then PreparedScalarValue (EvaluatedCoefficient 1) else
+  let derivative = differentiate coordinate base
+      factor = PreparedScalarValue (EvaluatedCoefficient (exponent_coefficient exponent))
+  in if exponent ≟ 2
+     then PreparedProduct (PreparedProduct factor base) derivative
+     else PreparedProduct (PreparedProduct factor (PreparedPower base (exponent + (-1)))) derivative
+differentiate coordinate (PreparedNegative expression) =
+  PreparedNegative (differentiate coordinate expression)
+
+export
+prepare_qualified_formula : (Text → Maybe Coefficient) → QualifiedFormula →
+                            Either PreparationFailure PreparedFormula
+prepare_qualified_formula bindings qualified = do
+  (degree, original) ← case qualified.meaning of
+    ScalarMeaning scalar _ ⇒ Right (0, PreparedScalarValue (lower_scalar scalar))
+    PolynomialMeaning polynomial ⇒ do
+      degree ← polynomial_degree polynomial
+      original ← lower_polynomial polynomial
+      Right (degree, original)
+  concrete ← simplify_expression bindings original
+  Right (SemanticPreparation (cast degree) concrete
+    (differentiate CoordinateX concrete) (differentiate CoordinateY concrete)
+    (differentiate CoordinateZ concrete) qualified.notices)
+
+prepare_formula_with_error : (ParseError → Text) → (Text → Maybe Coefficient) →
+                             Text → Either Text PreparedFormula
+prepare_formula_with_error describe bindings source = case qualify_formula source of
+  Left (FormulaSyntaxFailure reason) ⇒ Left ("syntax error: " ++ describe reason)
+  Left (FormulaMeaningFailure reason) ⇒ Left ("meaning error: " ++ qualification_error reason)
+  Right qualified ⇒ case prepare_qualified_formula bindings qualified of
+    Left reason ⇒ Left ("preparation error: " ++ preparation_error reason)
+    Right prepared ⇒ Right prepared
+
+-- Compatibility reports retain the established text. Both wrappers use the
+-- same typed qualification/preparation path; the Activity keeps the location.
+export
+prepare_formula : (Text → Maybe Coefficient) → Text → Either Text PreparedFormula
+prepare_formula = prepare_formula_with_error parse_error_message
+
+export
+prepare_formula_located : (Text → Maybe Coefficient) → Text → Either Text PreparedFormula
+prepare_formula_located = prepare_formula_with_error parse_error_report

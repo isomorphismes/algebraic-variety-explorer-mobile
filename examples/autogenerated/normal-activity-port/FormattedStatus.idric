@@ -1,0 +1,18 @@
+module FormattedStatus
+
+-- Resources.getString(id, boxed width, boxed height) is the original status
+-- path. Its actual SDK signature requires a reference array, not a primitive
+-- pixel/coefficient array and not an ordinary source List.
+data ResourcesReference : Type where [external]
+data FormatArguments : Type where [external]
+
+%foreign "dex:virtual:Landroid/content/res/Resources;:getString:(I[Ljava/lang/Object;)Ljava/lang/String;"
+formatted_resource : ResourcesReference → Int32 → FormatArguments → PrimIO Text
+
+%export "dex:format_rendering_status"
+format_rendering_status : ResourcesReference → Int32 → FormatArguments → IO Text
+format_rendering_status resources identifier arguments =
+  primIO (formatted_resource resources identifier arguments)
+
+main : IO ()
+main = pure ()

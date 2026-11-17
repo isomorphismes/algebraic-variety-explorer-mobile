@@ -11,7 +11,7 @@ mkdir -p "$SCRATCH/payload/lib/arm64-v8a"
 printf 'not an ELF library\n' > "$SCRATCH/payload/lib/arm64-v8a/libunexpected.so"
 (
     cd "$SCRATCH/payload"
-    zip -q -r "$SCRATCH/forbidden-native.apk" lib
+    zip -q -X "$SCRATCH/forbidden-native.apk" lib/arm64-v8a/libunexpected.so
 )
 
 if bash "$REPO_ROOT/ci/verify-apk.sh" unsigned "$SCRATCH/forbidden-native.apk" \
@@ -19,7 +19,7 @@ if bash "$REPO_ROOT/ci/verify-apk.sh" unsigned "$SCRATCH/forbidden-native.apk" \
     printf 'self-test: APK verifier accepted an undeclared native payload\n' >&2
     exit 1
 fi
-grep -Fq 'unexpectedly contains native ABI libraries' "$SCRATCH/verifier-output" || {
+grep -Fq 'undeclared native ABI payload' "$SCRATCH/verifier-output" || {
     cat "$SCRATCH/verifier-output" >&2
     printf 'self-test: APK verifier failed for the wrong reason\n' >&2
     exit 1

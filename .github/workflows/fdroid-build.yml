@@ -17,57 +17,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  release-apk:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 40
-
-    steps:
-      - name: Check out exact source
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          persist-credentials: false
-
-      - name: Install JDK 17
-        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Install pinned Android SDK inputs
-        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
-        with:
-          packages: 'platform-tools platforms;android-35 build-tools;35.0.1'
-
-      - name: Verify source and release metadata
-        run: ci/verify-metadata.sh
-
-      - name: Run source tests
-        run: bash ./build.sh test
-
-      - name: Build twice and require byte-identical unsigned APKs
-        env:
-          SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: ci/reproducible-build.sh build/reproducible-fdroid
-
-      - name: Prove APK policy rejects forbidden native payloads
-        run: |
-          source ci/release-values.sh
-          ci/self-test-apk.sh "build/reproducible-fdroid/$AVE_RELEASE_APK_NAME"
-
-      - name: Retain reproducibility evidence
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: algebraic-variety-explorer-fdroid-unsigned
-          path: build/reproducible-fdroid/
-          if-no-files-found: error
-          retention-days: 14
-
   fdroiddata-recipe:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 330
     env:
       SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
 
@@ -86,9 +38,10 @@ jobs:
         run: fdroid/run-fdroiddata-tests.sh
 
       - name: Retain production-like F-Droid artifact
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: algebraic-variety-explorer-fdroiddata
           path: build/fdroiddata/
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14

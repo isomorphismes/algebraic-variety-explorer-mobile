@@ -1,0 +1,84 @@
+#!/usr/bin/env grease
+set -eu -o pipefail
+if (len(ARGV) !== 4) { echo 'usage: grease observe.grease ADB SERIAL EVIDENCE RECEIVER_EVIDENCE' >&2; exit 2 }
+var adb = ARGV[0]
+var serial = ARGV[1]
+var evidence = ARGV[2]
+var receiver = ARGV[3]
+for path in "$adb" "$evidence" "$receiver" { if (path[0] !== '/') { echo 'FAIL absolute paths required' >&2; exit 2 } }
+var library = "$receiver/qualification/libave_prepared_surface_test.so"
+test -s "$library"
+test -s "$evidence/runner.dex"
+var timeout = $(command -v timeout)
+test -x "$timeout"
+mkdir -p "$evidence/diagnostics"
+# The declared lane is an API34 x86_64 emulator. Verify before touching remote
+# files, so a physical device or another API cannot receive this test payload.
+var state = $("$timeout" 20 "$adb" -s "$serial" get-state | tr -d '\r')
+var sdk = $("$timeout" 20 "$adb" -s "$serial" shell getprop ro.build.version.sdk | tr -d '\r')
+var abi = $("$timeout" 20 "$adb" -s "$serial" shell getprop ro.product.cpu.abi | tr -d '\r')
+var qemu = $("$timeout" 20 "$adb" -s "$serial" shell getprop ro.kernel.qemu | tr -d '\r')
+var remote_timeout = $("$timeout" 20 "$adb" -s "$serial" shell 'command -v timeout' | tr -d '\r')
+printf 'state\t%s\nsdk\t%s\nabi\t%s\nqemu\t%s\nserial\t%s\n' "$state" "$sdk" "$abi" "$qemu" "$serial" > "$evidence/diagnostics/preflight.tsv"
+if (state !== 'device' or sdk !== '34' or abi !== 'x86_64' or qemu !== '1' or remote_timeout !== '/system/bin/timeout') {
+  echo 'FAIL session Bitmap observer requires the declared API34 x86_64 emulator' >&2; exit 1
+}
+proc snapshot(name, phase) {
+  try {
+    "$timeout" 30 "$adb" -s "$serial" logcat -b all -d -v threadtime \
+      > "$evidence/diagnostics/$name-$phase-logcat.txt" 2>&1
+  }
+  var log_status = _error.code
+  try {
+    "$timeout" 20 "$adb" -s "$serial" shell ps -A \
+      > "$evidence/diagnostics/$name-$phase-processes.txt" 2>&1
+  }
+  var process_status = _error.code
+  try {
+    "$timeout" 20 "$adb" -s "$serial" get-state \
+      > "$evidence/diagnostics/$name-$phase-state.txt" 2>&1
+  }
+  var state_status = _error.code
+  printf 'logcat\t%s\nprocesses\t%s\nstate\t%s\n' "$log_status" "$process_status" "$state_status" \
+    > "$evidence/diagnostics/$name-$phase-status.tsv"
+  if (log_status !== 0 or process_status !== 0 or state_status !== 0) {
+    echo 'FAIL incomplete session Bitmap process/logcat diagnostics' >&2; exit 1
+  }
+}
+var remote = '/data/local/tmp/ave-render-session'
+"$adb" -s "$serial" shell rm -rf "$remote"
+"$adb" -s "$serial" shell mkdir "$remote"
+"$adb" -s "$serial" push "$evidence/runner.dex" "$remote/runner.dex"
+"$adb" -s "$serial" push "$library" "$remote/libave_prepared_surface_test.so"
+"$adb" -s "$serial" shell chmod 444 "$remote/runner.dex" "$remote/libave_prepared_surface_test.so"
+"$adb" -s "$serial" pull "$remote/runner.dex" "$evidence/runner-received.dex"
+"$adb" -s "$serial" pull "$remote/libave_prepared_surface_test.so" "$evidence/library-received.so"
+cmp "$evidence/runner.dex" "$evidence/runner-received.dex"
+cmp "$library" "$evidence/library-received.so"
+for name in positive precheck-mutant postcheck-mutant {
+  "$adb" -s "$serial" push "$evidence/$name/candidate.dex" "$remote/$name.dex"
+  "$adb" -s "$serial" shell chmod 444 "$remote/$name.dex"
+  "$adb" -s "$serial" pull "$remote/$name.dex" "$evidence/$name-received.dex"
+  cmp "$evidence/$name/candidate.dex" "$evidence/$name-received.dex"
+  snapshot "$name" before
+  try {
+    "$timeout" --signal=TERM --kill-after=10s 180 "$adb" -s "$serial" shell "CLASSPATH=$remote/$name.dex:$remote/runner.dex $remote_timeout -s KILL 170 app_process -Xcheck:jni /system/bin SessionBitmapRunner $remote/libave_prepared_surface_test.so" \
+      > "$evidence/art-$name.txt" 2>&1
+  }
+  var status = _error.code
+  printf '%s\n' "$status" > "$evidence/art-$name.exit"
+  snapshot "$name" after
+  cat "$evidence/art-$name.txt"
+  if (name === 'positive') {
+    if (status !== 0) { echo 'FAIL actual generated Bitmap execution' >&2; exit 1 }
+    rg -x -F 'PASS Explorer actual render session Bitmap on ART' "$evidence/art-$name.txt"
+  } else {
+    if (status !== 83) { echo 'FAIL missing designated Bitmap source mutant rejection' >&2; exit 1 }
+    rg -x -F 'FAIL Explorer render session' "$evidence/art-$name.txt"
+  }
+}
+"$adb" -s "$serial" shell getprop ro.build.version.sdk > "$evidence/art-sdk.txt"
+"$adb" -s "$serial" shell getprop ro.product.cpu.abi > "$evidence/art-abi.txt"
+printf 'actual_Idric_session_Bitmap_JNI_ART\tPASS\neighteen_word_wire\tPASS\nstale_source_refused_before_render_JNI\tPASS\nfinal_gate_cancellation_no_publication\tPASS\npostpublication_cancellation_no_Bitmap\tPASS\nprior_Bitmap_preserved\tPASS\ncreate_begin_staging_OOM_cleanup\tPASS\nprecheck_mutant_rejected\tPASS\npostcheck_mutant_rejected\tPASS\nActivity\tNOT_RUN\nAPK\tNOT_RUN\nphysical_device\tNOT_RUN\n' > "$evidence/art-result.tsv"
+printf '\\033[32mPASS\\033[0m actual session Bitmap transfer on ART; Activity and device acceptance separate\n'
+

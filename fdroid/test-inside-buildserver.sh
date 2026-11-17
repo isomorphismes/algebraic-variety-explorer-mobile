@@ -5,7 +5,7 @@ readonly APP_ID=org.algebraicvarietyexplorer
 readonly REPO_ROOT=/workspace/algebraic-variety-explorer-mobile
 readonly FDROIDDATA_REVISION=4498e27635a1c3b737510342c1f2355c25ce0211
 readonly FDROIDSERVER_REVISION=6af4c4216e43d0fcb29e33919cd0fe8fef7e7400
-readonly SOURCE_REPO="${SOURCE_REPO:-https://github.com/isomorphisms/algebraic-variety-explorer-mobile.git}"
+readonly SOURCE_REPO="${SOURCE_REPO:-https://github.com/isomorphismes/algebraic-variety-explorer-mobile.git}"
 readonly SOURCE_REVISION="${SOURCE_REVISION:?SOURCE_REVISION is required}"
 source "$REPO_ROOT/ci/release-values.sh"
 
@@ -32,6 +32,7 @@ git clone --filter=blob:none https://gitlab.com/fdroid/fdroidserver.git "$SERVER
 git -C "$SERVER" checkout --detach "$FDROIDSERVER_REVISION"
 
 cp "$REPO_ROOT/org.algebraicvarietyexplorer.yml.template" "$DATA/metadata/$APP_ID.yml"
+cp "$REPO_ROOT"/fdroid/srclibs/*.yml "$DATA/srclibs/"
 sed -i "s|^Repo: .*|Repo: $SOURCE_REPO|" "$DATA/metadata/$APP_ID.yml"
 sed -i \
     "/^  - versionName: $AVE_VERSION_NAME$/,/^    commit: / s|^    commit: .*|    commit: $SOURCE_REVISION|" \
@@ -124,21 +125,28 @@ rm "$HOME_VAGRANT/fdroiddata"
 readonly APK="$DATA/tmp/${APP_ID}_${AVE_VERSION_CODE}.apk"
 test -s "$APK"
 fdroid scanner --verbose --exit-code "$APK"
-ANDROID_SDK_ROOT=/opt/android-sdk "$REPO_ROOT/ci/verify-apk.sh" unsigned "$APK"
+readonly BUILT_SOURCE="$HOME_VAGRANT/build/$APP_ID"
+readonly BUILT_GREASE="$BUILT_SOURCE/.build/fdroid-tools/runtime/.build/grease/bin/grease"
+test -x "$BUILT_GREASE"
+ANDROID_SDK_ROOT=/opt/android-sdk AVE_GREASE="$BUILT_GREASE" "$REPO_ROOT/ci/verify-apk.sh" unsigned "$APK"
+ANDROID_SDK_ROOT=/opt/android-sdk AVE_GREASE="$BUILT_GREASE" "$REPO_ROOT/ci/self-test-apk.sh" "$APK"
 androguard axml "$APK" -o "$WORK_ROOT/AndroidManifest.xml"
 if grep -Eq 'android:debuggable="true"|android:testOnly="true"|android:usesCleartextTraffic="true"' \
     "$WORK_ROOT/AndroidManifest.xml"; then
     printf 'fdroiddata: APK manifest contains a forbidden release/debug attribute\n' >&2
     exit 1
 fi
-if unzip -Z1 "$APK" | grep -Eq '^lib/[^/]+/'; then
-    printf 'fdroiddata: Java-only APK unexpectedly contains native libraries\n' >&2
-    exit 1
-fi
 cd "$DATA"
 tools/audit-gradle.py "$APP_ID"
 
 cp "$APK" "/output/${APP_ID}_${AVE_VERSION_CODE}.apk"
+mkdir -p /output/reproducible-source
+cp "$BUILT_SOURCE/.build/reproducible-source/"run-*.apk \
+    "$BUILT_SOURCE/.build/reproducible-source/result.tsv" \
+    "$BUILT_SOURCE/.build/reproducible-source/artifacts.sha256" /output/reproducible-source/
+cp -R "$BUILT_SOURCE/.build/reproducible-source/build-1/package/evidence" /output/reproducible-source/build-1-evidence
+cp -R "$BUILT_SOURCE/.build/reproducible-source/build-2/package/evidence" /output/reproducible-source/build-2-evidence
+cp "$BUILT_SOURCE/.build/fdroid-tools/result.tsv" /output/source-tools-result.tsv
 sha256sum "/output/${APP_ID}_${AVE_VERSION_CODE}.apk" \
     > "/output/${APP_ID}_${AVE_VERSION_CODE}.apk.sha256"
 printf 'fdroiddata: production-like build passed at %s / %s\n' \

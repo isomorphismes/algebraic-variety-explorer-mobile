@@ -1,0 +1,336 @@
+module OrderedExpansion
+
+import PolynomialQualification
+import CoefficientValue
+import CoefficientArithmetic
+import PreparedFormula
+import Data.Text
+
+-- Christian Stussak's Expand/XYZPolynomial contract, Apache-2.0.
+-- Managed semantic terms only; this is not the prepared-surface JNI ABI.
+public export
+record ExpandedTerm where
+  constructor OrderedTerm
+  coefficient : Coefficient
+  x_exponent : Int32
+  y_exponent : Int32
+  z_exponent : Int32
+
+public export
+record ExpandedPolynomial where
+  constructor OrderedPolynomial
+  terms : List ExpandedTerm
+
+public export
+record ExpansionLimits where
+  constructor BoundedExpansion
+  maximum_terms : Integer
+  maximum_products : Integer
+
+public export
+record ExpandedSurface where
+  constructor ExpandedPreparation
+  family_degree : Int32
+  surface : ExpandedPolynomial
+  gradient_x : ExpandedPolynomial
+  gradient_y : ExpandedPolynomial
+  gradient_z : ExpandedPolynomial
+  notices : List QualificationNotice
+
+public export
+data ExpansionFailure
+  = InvalidExpansionLimits
+  | TermBudgetExceeded
+  | ProductBudgetExceeded
+  | NonfiniteExpansionCoefficient
+  | ExponentOutsideOriginalByteRange
+  | ScalarExpansionFailure Text
+  | OrderingBudgetExhausted
+  | PowerBudgetExhausted
+
+export
+expansion_error : ExpansionFailure → Text
+expansion_error InvalidExpansionLimits = "expansion limits must permit at least one term and product"
+expansion_error TermBudgetExceeded = "polynomial expansion term budget exceeded"
+expansion_error ProductBudgetExceeded = "polynomial expansion product budget exceeded"
+expansion_error NonfiniteExpansionCoefficient = "nonfinite coefficient is outside checked ordered expansion"
+expansion_error ExponentOutsideOriginalByteRange = "polynomial exponent exceeds original nonnegative signed-byte range"
+expansion_error (ScalarExpansionFailure reason) = reason
+expansion_error OrderingBudgetExhausted = "ordered polynomial traversal budget exhausted"
+expansion_error PowerBudgetExhausted = "polynomial power traversal budget exhausted"
+
+-- Finite values subtract from themselves to zero; infinities and NaNs do not.
+-- This observation does not format/reparse or change the retained value.
+finite_coefficient : Coefficient → Bool
+finite_coefficient value = subtract_coefficients value value ≟ 0.0
+
+checked_term : Coefficient → Int32 → Int32 → Int32 → Either ExpansionFailure ExpandedTerm
+checked_term value x_power y_power z_power =
+  if not (finite_coefficient value) then Left NonfiniteExpansionCoefficient else
+  if x_power < 0 || y_power < 0 || z_power < 0 ||
+     x_power > 127 || y_power > 127 || z_power > 127 ||
+     x_power + y_power + z_power > 127
+  then Left ExponentOutsideOriginalByteRange
+  else Right (OrderedTerm value x_power y_power z_power)
+
+checked_polynomial : ExpansionLimits → List ExpandedTerm →
+                     Either ExpansionFailure ExpandedPolynomial
+checked_polynomial limits terms =
+  if cast (length terms) > limits.maximum_terms then Left TermBudgetExceeded
+  else Right (OrderedPolynomial terms)
+
+constant_polynomial : ExpansionLimits → Coefficient → Either ExpansionFailure ExpandedPolynomial
+constant_polynomial limits value = do
+  term ← checked_term value 0 0 0
+  checked_polynomial limits [term]
+
+coordinate_polynomial : ExpansionLimits → Coordinate → Either ExpansionFailure ExpandedPolynomial
+coordinate_polynomial limits coordinate = do
+  term ← case coordinate of
+    CoordinateX ⇒ checked_term 1.0 1 0 0
+    CoordinateY ⇒ checked_term 1.0 0 1 0
+    CoordinateZ ⇒ checked_term 1.0 0 0 1
+  checked_polynomial limits [term]
+
+monomial_order : ExpandedTerm → ExpandedTerm → Ordering
+monomial_order left right =
+  if left.x_exponent < right.x_exponent then LT else
+  if left.x_exponent > right.x_exponent then GT else
+  if left.y_exponent < right.y_exponent then LT else
+  if left.y_exponent > right.y_exponent then GT else
+  if left.z_exponent < right.z_exponent then LT else
+  if left.z_exponent > right.z_exponent then GT else EQ
+
+term_order : ExpandedTerm → ExpandedTerm → Ordering
+term_order left right = case monomial_order left right of
+  EQ ⇒ if left.coefficient < right.coefficient then LT else
+       if left.coefficient > right.coefficient then GT else EQ
+  order ⇒ order
+
+merge_addition : List ExpandedTerm → List ExpandedTerm →
+                 Either ExpansionFailure (List ExpandedTerm)
+merge_addition [] right = Right right
+merge_addition left [] = Right left
+merge_addition (first :: left) (second :: right) = case monomial_order first second of
+  LT ⇒ do
+    remaining ← merge_addition left (second :: right)
+    Right (first :: remaining)
+  GT ⇒ do
+    remaining ← merge_addition (first :: left) right
+    Right (second :: remaining)
+  EQ ⇒ do
+    sum ← checked_term (first.coefficient + second.coefficient)
+      first.x_exponent first.y_exponent first.z_exponent
+    remaining ← merge_addition left right
+    -- Original addition retains a cancelled zero term at its monomial.
+    Right (sum :: remaining)
+
+add_polynomials : ExpansionLimits → ExpandedPolynomial → ExpandedPolynomial →
+                  Either ExpansionFailure ExpandedPolynomial
+add_polynomials limits left right = do
+  terms ← merge_addition left.terms right.terms
+  checked_polynomial limits terms
+
+negate_terms : List ExpandedTerm → Either ExpansionFailure (List ExpandedTerm)
+negate_terms [] = Right []
+negate_terms (term :: remaining) = do
+  negative ← checked_term (negate term.coefficient) term.x_exponent term.y_exponent term.z_exponent
+  rest ← negate_terms remaining
+  Right (negative :: rest)
+
+negate_polynomial : ExpansionLimits → ExpandedPolynomial → Either ExpansionFailure ExpandedPolynomial
+negate_polynomial limits polynomial = do
+  terms ← negate_terms polynomial.terms
+  checked_polynomial limits terms
+
+scale_terms : Coefficient → List ExpandedTerm → Either ExpansionFailure (List ExpandedTerm)
+scale_terms scale [] = Right []
+scale_terms scale (term :: remaining) = do
+  -- XYZPolynomial.mult(double) places the scale on the left.
+  scaled ← checked_term (multiply_coefficients scale term.coefficient)
+    term.x_exponent term.y_exponent term.z_exponent
+  rest ← scale_terms scale remaining
+  Right (scaled :: rest)
+
+scale_polynomial : ExpansionLimits → Coefficient → ExpandedPolynomial →
+                   Either ExpansionFailure ExpandedPolynomial
+scale_polynomial limits scale polynomial = do
+  if finite_coefficient scale then Right () else Left NonfiniteExpansionCoefficient
+  terms ← scale_terms scale polynomial.terms
+  checked_polynomial limits terms
+
+consume_slots : Integer → List value → Maybe Integer
+consume_slots budget [] = Just budget
+consume_slots budget (_ :: remaining) =
+  if budget <= 0 then Nothing else consume_slots (budget + (-1)) remaining
+
+products_fit : Integer → List ExpandedTerm → List ExpandedTerm → Bool
+products_fit budget [] right = True
+products_fit budget (_ :: left) right = case consume_slots budget right of
+  Nothing ⇒ False
+  Just remaining ⇒ products_fit remaining left right
+
+multiply_term : ExpandedTerm → ExpandedTerm → Either ExpansionFailure ExpandedTerm
+multiply_term left right = checked_term (multiply_coefficients left.coefficient right.coefficient)
+  (left.x_exponent + right.x_exponent)
+  (left.y_exponent + right.y_exponent)
+  (left.z_exponent + right.z_exponent)
+
+multiply_row : ExpandedTerm → List ExpandedTerm → Either ExpansionFailure (List ExpandedTerm)
+multiply_row left [] = Right []
+multiply_row left (right :: remaining) = do
+  product ← multiply_term left right
+  rest ← multiply_row left remaining
+  Right (product :: rest)
+
+product_terms : List ExpandedTerm → List ExpandedTerm →
+                Either ExpansionFailure (List ExpandedTerm)
+product_terms [] right = Right []
+product_terms (left :: remaining) right = do
+  row ← multiply_row left right
+  rest ← product_terms remaining right
+  Right (row ++ rest)
+
+-- Stable merging preserves original left-outer/right-inner product order when
+-- equal monomials also have equal coefficients, including signed zero.
+merge_ordered : Number → List ExpandedTerm → List ExpandedTerm →
+                Either ExpansionFailure (List ExpandedTerm)
+merge_ordered budget [] right = Right right
+merge_ordered budget left [] = Right left
+merge_ordered Z (_ :: _) (_ :: _) = Left OrderingBudgetExhausted
+merge_ordered (S budget) (first :: left) (second :: right) = case term_order first second of
+  GT ⇒ do
+    rest ← merge_ordered budget (first :: left) right
+    Right (second :: rest)
+  _ ⇒ do
+    rest ← merge_ordered budget left (second :: right)
+    Right (first :: rest)
+
+merge_pairs : List (List ExpandedTerm) → Either ExpansionFailure (List (List ExpandedTerm))
+merge_pairs [] = Right []
+merge_pairs [single] = Right [single]
+merge_pairs (first :: second :: remaining) = do
+  merged ← merge_ordered (length first + length second) first second
+  rest ← merge_pairs remaining
+  Right (merged :: rest)
+
+merge_rounds : Number → List (List ExpandedTerm) → Either ExpansionFailure (List ExpandedTerm)
+merge_rounds budget [] = Right []
+merge_rounds budget [single] = Right single
+merge_rounds Z (_ :: _ :: _) = Left OrderingBudgetExhausted
+merge_rounds (S budget) runs = do
+  merged ← merge_pairs runs
+  merge_rounds budget merged
+
+sort_terms : List ExpandedTerm → Either ExpansionFailure (List ExpandedTerm)
+sort_terms terms = merge_rounds (length terms) (map (\term ⇒ [term]) terms)
+
+record CoefficientRun where
+  constructor CollectedRun
+  sum : Coefficient
+  remaining : List ExpandedTerm
+
+collect_run : ExpandedTerm → Coefficient → Coefficient → List ExpandedTerm →
+              Either ExpansionFailure CoefficientRun
+collect_run first sum correction [] = Right (CollectedRun sum [])
+collect_run first sum correction (next :: remaining) = case monomial_order first next of
+  EQ ⇒ do
+    let adjusted = subtract_coefficients next.coefficient correction
+        updated_sum = sum + adjusted
+        next_correction = subtract_coefficients (subtract_coefficients updated_sum sum) adjusted
+    if finite_coefficient adjusted && finite_coefficient updated_sum && finite_coefficient next_correction
+      then collect_run first updated_sum next_correction remaining
+      else Left NonfiniteExpansionCoefficient
+  _ ⇒ Right (CollectedRun sum (next :: remaining))
+
+collect_groups : Number → List ExpandedTerm → Either ExpansionFailure (List ExpandedTerm)
+collect_groups budget [] = Right []
+collect_groups Z (_ :: _) = Left OrderingBudgetExhausted
+collect_groups (S budget) (first :: remaining) = do
+  -- Kahan starts at the first coefficient, not at zero.
+  group ← collect_run first first.coefficient 0.0 remaining
+  rest ← collect_groups budget group.remaining
+  if group.sum ≟ 0.0 then Right rest else do
+    term ← checked_term group.sum first.x_exponent first.y_exponent first.z_exponent
+    Right (term :: rest)
+
+multiply_polynomials : ExpansionLimits → ExpandedPolynomial → ExpandedPolynomial →
+                       Either ExpansionFailure ExpandedPolynomial
+multiply_polynomials limits left right = do
+  if products_fit limits.maximum_products left.terms right.terms
+    then Right () else Left ProductBudgetExceeded
+  products ← product_terms left.terms right.terms
+  ordered ← sort_terms products
+  collected ← collect_groups (length ordered) ordered
+  case collected of
+    [] ⇒ constant_polynomial limits 0.0
+    _ ⇒ checked_polynomial limits collected
+
+power_loop : Number → ExpansionLimits → Int32 → ExpandedPolynomial → ExpandedPolynomial →
+             Either ExpansionFailure ExpandedPolynomial
+power_loop Z limits exponent result factor =
+  if exponent <= 0 then Right result else Left PowerBudgetExhausted
+power_loop (S budget) limits exponent result factor =
+  if exponent <= 0 then Right result else do
+    let odd = mod exponent 2 ≟ 1
+    next_result ← if odd then multiply_polynomials limits result factor else Right result
+    let remaining = if odd then exponent + (-1) else exponent
+    -- A final discarded square must not reject a finite retained polynomial.
+    -- Every factor consumed by a later multiplication remains fully checked.
+    if remaining <= 0 then Right next_result else do
+      next_factor ← multiply_polynomials limits factor factor
+      power_loop budget limits (div remaining 2) next_result next_factor
+
+power_polynomial : ExpansionLimits → ExpandedPolynomial → Int32 →
+                   Either ExpansionFailure ExpandedPolynomial
+power_polynomial limits base exponent =
+  if exponent < 0 then Left ExponentOutsideOriginalByteRange else
+  if exponent ≟ 0 then constant_polynomial limits 1.0 else
+  if exponent ≟ 1 then Right base else
+  power_loop 32 limits (exponent + (-1)) base base
+
+expand_expression : ExpansionLimits → PreparedExpression →
+                    Either ExpansionFailure ExpandedPolynomial
+expand_expression limits (PreparedScalarValue scalar) = do
+  value ← case evaluate_prepared_scalar scalar of
+    Left reason ⇒ Left (ScalarExpansionFailure reason)
+    Right value ⇒ Right value
+  constant_polynomial limits value
+expand_expression limits (PreparedCoordinate coordinate) = coordinate_polynomial limits coordinate
+expand_expression limits (PreparedSum left right) = do
+  first ← expand_expression limits left
+  second ← expand_expression limits right
+  add_polynomials limits first second
+expand_expression limits (PreparedDifference left right) = do
+  first ← expand_expression limits left
+  second ← expand_expression limits right
+  negative ← negate_polynomial limits second
+  add_polynomials limits first negative
+expand_expression limits (PreparedProduct left right) = do
+  first ← expand_expression limits left
+  second ← expand_expression limits right
+  multiply_polynomials limits first second
+expand_expression limits (PreparedQuotient dividend divisor) = do
+  polynomial ← expand_expression limits dividend
+  value ← case evaluate_prepared_scalar divisor of
+    Left reason ⇒ Left (ScalarExpansionFailure reason)
+    Right value ⇒ Right value
+  scale_polynomial limits (divide_coefficients 1.0 value) polynomial
+expand_expression limits (PreparedPower base exponent) = do
+  polynomial ← expand_expression limits base
+  power_polynomial limits polynomial exponent
+expand_expression limits (PreparedNegative expression) = do
+  polynomial ← expand_expression limits expression
+  negate_polynomial limits polynomial
+
+export
+expand_prepared_formula : ExpansionLimits → PreparedFormula →
+                          Either ExpansionFailure ExpandedSurface
+expand_prepared_formula limits prepared = do
+  if limits.maximum_terms <= 0 || limits.maximum_products <= 0
+    then Left InvalidExpansionLimits else Right ()
+  surface ← expand_expression limits prepared.surface
+  gradient_x ← expand_expression limits prepared.gradient_x
+  gradient_y ← expand_expression limits prepared.gradient_y
+  gradient_z ← expand_expression limits prepared.gradient_z
+  Right (ExpandedPreparation prepared.family_degree surface gradient_x gradient_y gradient_z prepared.notices)

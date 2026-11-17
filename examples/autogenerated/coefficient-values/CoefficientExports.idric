@@ -1,0 +1,28 @@
+module CoefficientExports
+
+import AlgebraicExpression
+import PolynomialQualification
+import CoefficientValue
+import Data.Text
+
+-- Independent observation of the actual prepared coefficient value. This
+-- avoids inventing a generic Show Double contract for the managed runtime.
+%foreign "dex:static:Ljava/lang/Double;:doubleToLongBits:(D)J"
+canonical_bits : Coefficient → Int64
+
+%foreign "dex:static:Ljava/lang/Long;:toHexString:(J)Ljava/lang/String;"
+hexadecimal_bits : Int64 → Text
+
+%export "dex:coefficient_bits"
+coefficient_bits : Text → Text
+coefficient_bits source = case qualify_formula source of
+  Left (FormulaSyntaxFailure reason) ⇒ "error: " ++ parse_error_message reason
+  Left (FormulaMeaningFailure reason) ⇒ "error: " ++ qualification_error reason
+  Right qualified ⇒ case qualified.meaning of
+    PolynomialMeaning _ ⇒ "error: coefficient must be scalar"
+    ScalarMeaning expression _ ⇒ case evaluate_coefficient (\name ⇒ Nothing) expression of
+      Left reason ⇒ "error: " ++ reason
+      Right value ⇒ hexadecimal_bits (canonical_bits value)
+
+main : IO ()
+main = pure ()

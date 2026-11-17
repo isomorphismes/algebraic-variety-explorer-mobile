@@ -1,0 +1,203 @@
+module AVERenderController
+
+import Data.IORef
+import AVEActivityState
+import AVEPlatform
+import AVEInteraction
+import AVEStatus
+import AVEExceptions
+import RenderSession
+import RequestedBitmap
+import RenderedBitmap
+import PreparedSurfaceTransfer
+import PreparedFormula
+import OrderedExpansion
+import CoefficientValue
+
+%default covering
+
+-- The commit guard is allocated before native acquisition, then handed to the
+-- UI with the result. Only the UI reads/writes it; it is not concurrent state.
+data WorkerOutcome = FailedRequest Text | CompletedRequest AcceptedFrame (IORef Bool)
+
+show_failure : ActivityState → Text → IO ()
+show_failure state reason = do
+  message ← error_status state.controls.resources state.controls.identifiers.invalid_formula reason
+  primIO (set_text state.controls.status message)
+
+prepare_request : RenderRequest → IO (Either Text (NativeSurface, Int32))
+prepare_request request = case prepare_formula_located (\name ⇒ Nothing) request.formula of
+  Left reason ⇒ pure (Left reason)
+  Right prepared ⇒ case expand_prepared_formula request.preparation_limits prepared of
+    Left reason ⇒ pure (Left ("expansion error: " ++ expansion_error reason))
+    Right expanded ⇒ do
+      copied ← copy_expanded_surface expanded
+      pure (map (\surface ⇒ (surface, expanded.family_degree)) copied)
+
+release_frame : AcceptedFrame → IO ()
+release_frame frame = do _ ← release_native_surface frame.surface; pure ()
+
+mutual
+  start_request : ActivityReference → IORef ActivityState → RenderRequest → IO ()
+  start_request activity cell request = do
+    state ← readIORef cell
+    if state.closed then pure () else do
+      writeIORef cell ({ active_request := Just request, active_future := Nothing,
+        pending_request := Nothing } state)
+      message ← rendering_status state.controls.resources state.controls.identifiers.rendering_status
+        request.settings.width request.settings.height
+      primIO (set_text state.controls.status message)
+      action ← primIO (capture_runnable (run_request activity request))
+      future ← primIO (submit_worker state.render_worker action)
+      current ← readIORef cell
+      writeIORef cell ({ active_future := Just future } current)
+
+  finish_request : ActivityReference → IORef ActivityState → RenderRequest → IO ()
+  finish_request activity cell completed = do
+    state ← readIORef cell
+    case state.active_request of
+      Nothing ⇒ pure ()
+      Just active ⇒ if not (same_render_epoch active.epoch completed.epoch) then pure () else do
+        let pending = if state.closed then Nothing else state.pending_request
+        writeIORef cell ({ active_request := Nothing, active_future := Nothing,
+          pending_request := Nothing } state)
+        case pending of
+          Nothing ⇒ pure ()
+          Just next ⇒ start_request activity cell next
+
+  deliver_result : ActivityReference → RenderRequest → WorkerOutcome → IO ()
+  deliver_result activity request outcome =
+    always deliver (case outcome of
+      FailedRequest _ ⇒ pure ()
+      CompletedRequest frame committed ⇒ do
+        accepted ← readIORef committed
+        if accepted then pure () else release_frame frame)
+    where
+      apply_result : IORef ActivityState → IO ()
+      apply_result cell = do
+        state ← readIORef cell
+        current ← render_epoch_is_current request.epoch
+        case (state.closed || not current, outcome) of
+          (True, FailedRequest _) ⇒ pure ()
+          (True, CompletedRequest _ _) ⇒ pure ()
+          (False, FailedRequest reason) ⇒ show_failure state reason
+          (False, CompletedRequest frame committed) ⇒ do
+            protect (do
+              message ← complete_status state.controls.resources state.controls.identifiers.complete_status
+                frame.degree frame.elapsed_milliseconds
+              primIO (set_bitmap state.controls.image frame.bitmap)
+              primIO (set_text state.controls.status message)
+              latest ← readIORef cell
+              writeIORef cell ({ accepted := Just frame } latest)
+              writeIORef committed True
+              case state.accepted of
+                Nothing ⇒ pure ()
+                Just previous ⇒ release_frame previous)
+              (\error ⇒ do
+                accepted ← readIORef committed
+                if accepted then pure () else case state.accepted of
+                  Nothing ⇒ pure ()
+                  Just previous ⇒ protect (primIO (set_bitmap state.controls.image previous.bitmap))
+                    (\rollback ⇒ primIO (add_suppressed error rollback))
+                reason ← useful_message error
+                show_failure state reason)
+
+      deliver : IO ()
+      deliver = do
+        Just cell ← activity_state activity | Nothing ⇒ pure ()
+        always (apply_result cell) (finish_request activity cell request)
+
+  run_request : ActivityReference → RenderRequest → IO ()
+  run_request activity request = do
+    -- Worker-local bookkeeping only; this worker never touches the UI IORef.
+    owned ← newIORef Nothing
+    -- Reuse the existing empty marker: constructing Nothing after posting
+    -- could fail after the UI already acquired the provisional surface.
+    vacant ← readIORef owned
+    -- Handoff-only cleanup guard: from here on it is accessed only by the UI.
+    committed ← newIORef False
+    result ← newIORef (FailedRequest "render request cancelled")
+    always (do
+      protect (do
+        started ← primIO elapsed_time
+        current ← render_epoch_is_current request.epoch
+        if not current then pure () else do
+          prepared ← prepare_request request
+          case prepared of
+            Left reason ⇒ writeIORef result (FailedRequest reason)
+            Right (surface, degree) ⇒ do
+              writeIORef owned (Just surface)
+              rendered ← render_epoch_bitmap request.epoch surface request.settings
+              case rendered of
+                Left reason ⇒ writeIORef result (FailedRequest reason)
+                Right bitmap ⇒ do
+                  finished ← primIO elapsed_time
+                  writeIORef result (CompletedRequest
+                    (DisplayedFrame request.formula surface bitmap degree (finished - started)) committed))
+        (\error ⇒ do reason ← useful_message error; writeIORef result (FailedRequest reason))
+      outcome ← readIORef result
+      case outcome of
+        FailedRequest _ ⇒ do
+          retained ← readIORef owned
+          case retained of
+            Nothing ⇒ pure ()
+            Just surface ⇒ do _ ← release_native_surface surface; writeIORef owned vacant
+        _ ⇒ pure ()
+      delivery ← primIO (capture_runnable (deliver_result activity request outcome))
+      primIO (post_ui activity delivery)
+      writeIORef owned vacant)
+      (do retained ← readIORef owned
+          case retained of
+            Nothing ⇒ pure ()
+            Just surface ⇒ do _ ← release_native_surface surface; pure ())
+
+export
+request_render : ActivityReference → RenderQuality → IO ()
+request_render activity quality = do
+  Just cell ← activity_state activity | Nothing ⇒ pure ()
+  state ← readIORef cell
+  if state.closed then pure () else do
+    editable ← primIO (editor_contents state.controls.editor)
+    raw ← primIO (object_text (editable_object editable))
+    width ← primIO (view_width (image_view state.controls.image))
+    height ← primIO (view_height (image_view state.controls.image))
+    let formula = trim_formula raw
+    case render_size quality width height of
+      Nothing ⇒ pure ()
+      Just size ⇒ if formula ≟ "" then pure () else do
+        advanced ← begin_render_epoch state.session
+        case advanced of
+          Left reason ⇒ show_failure state reason
+          Right epoch ⇒ do
+            let camera = state.interaction.camera
+            let settings = RenderWith size.pixel_width size.pixel_height quality 2.15
+                  camera.yaw camera.pitch camera.zoom
+            -- Blank admission uses trimmed text; syntax locations retain the
+            -- exact editor input, including its leading whitespace.
+            let request = ImmutableRequest epoch raw settings state.preparation_limits
+            done ← case state.active_future of
+              Nothing ⇒ pure True
+              Just future ⇒ do finished ← primIO (worker_done future); pure (finished ≟ 1)
+            if done then start_request activity cell request else do
+              latest ← readIORef cell
+              writeIORef cell ({ pending_request := Just request } latest)
+
+export
+close_controller : ActivityReference → IO ()
+close_controller activity = do
+  Just cell ← activity_state activity | Nothing ⇒ mark_activity_closed activity
+  state ← readIORef cell
+  if state.closed then pure () else
+    -- Mark first, before platform shutdown can reenter callbacks. Each acquired
+    -- owner is attempted even if an earlier cleanup throws; the phase always
+    -- ends Closed, so a late completion releases its provisional surface.
+    always (do
+      writeIORef cell ({ closed := True, pending_request := Nothing } state)
+      always (do _ ← cancel_render_session state.session; pure ())
+        (always (do _ ← release_render_session state.session; pure ())
+          (always (do _ ← primIO (close_worker state.render_worker); pure ())
+            (always (do _ ← primIO (close_worker state.file_worker); pure ())
+              (case state.accepted of
+                Nothing ⇒ pure ()
+                Just frame ⇒ release_frame frame)))))
+      (mark_activity_closed activity)

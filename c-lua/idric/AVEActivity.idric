@@ -1,0 +1,353 @@
+module AVEActivity
+
+import Data.IORef
+import AVEPlatform
+import AVEActivityState
+import AVEInteraction
+import AVEExamples
+import AVEExceptions
+import AVERenderController
+import AVEPngExport
+import RenderSession
+import RenderedBitmap
+import PreparedSurfaceTransfer
+import OrderedExpansion
+
+%default covering
+
+%cg dex extends Landroid/app/Activity;
+%cg dex managed-field LIdric/Generated; state AVEActivityState.read_activity_phase AVEActivityState.write_activity_phase
+%cg dex override onCreate (Landroid/os/Bundle;)V create_activity
+%cg dex override before-parent onDestroy ()V destroy_activity
+%cg dex override onPause ()V pause_activity
+%cg dex override onSaveInstanceState (Landroid/os/Bundle;)V save_activity_state
+%cg dex override onActivityResult (IILandroid/content/Intent;)V receive_picker
+%cg dex callback receiver Landroid/view/View$OnClickListener; onClick (Landroid/view/View;)V receive_click
+%cg dex callback receiver Landroid/widget/TextView$OnEditorActionListener; onEditorAction (Landroid/widget/TextView;ILandroid/view/KeyEvent;)Z receive_editor_action
+%cg dex callback receiver Landroid/view/View$OnTouchListener; onTouch (Landroid/view/View;Landroid/view/MotionEvent;)Z receive_touch
+%cg dex callback receiver Landroid/view/View$OnApplyWindowInsetsListener; onApplyWindowInsets (Landroid/view/View;Landroid/view/WindowInsets;)Landroid/view/WindowInsets; receive_insets
+%cg dex callback receiver Landroid/view/View$OnLayoutChangeListener; onLayoutChange (Landroid/view/View;IIIIIIII)V receive_layout
+%cg dex callback receiver Landroid/view/ScaleGestureDetector$OnScaleGestureListener; onScale (Landroid/view/ScaleGestureDetector;)Z receive_scale
+%cg dex callback receiver Landroid/view/ScaleGestureDetector$OnScaleGestureListener; onScaleBegin (Landroid/view/ScaleGestureDetector;)Z receive_scale_begin
+%cg dex callback receiver Landroid/view/ScaleGestureDetector$OnScaleGestureListener; onScaleEnd (Landroid/view/ScaleGestureDetector;)V receive_scale_end
+%cg dex callback receiver Landroid/content/DialogInterface$OnClickListener; onClick (Landroid/content/DialogInterface;I)V receive_dialog_choice
+
+identifier : ResourcesReference → Text → Text → Text → IO Int32
+identifier resources package kind name = primIO (resource_identifier resources name kind package)
+
+show_startup : ActivityReference → Text → IO ()
+show_startup activity diagnostic = do
+  root ← startup_text activity diagnostic
+  left ← primIO (padding_left root)
+  top ← primIO (padding_top root)
+  right ← primIO (padding_right root)
+  bottom ← primIO (padding_bottom root)
+  let report_phase = Diagnostic left top right bottom
+  phase ← activity_phase activity
+  case phase of
+    Just cell ⇒ writeIORef cell report_phase
+    Nothing ⇒ do cell ← newIORef report_phase; primIO (write_activity_phase activity cell)
+  primIO (set_insets_listener root (insets_listener activity))
+  primIO (request_insets root)
+
+hide_editor : ActivityReference → ActivityState → IO ()
+hide_editor activity state = do
+  service ← primIO (system_service activity "input_method")
+  case reference_is_null service ≟ 0 of
+    True ⇒ do
+      token ← primIO (window_token (edit_view state.controls.editor))
+      _ ← primIO (hide_keyboard (as_keyboard service) token 0)
+      pure ()
+    False ⇒ pure ()
+  primIO (clear_focus (edit_view state.controls.editor))
+
+notify_camera : ActivityReference → Bool → IO ()
+notify_camera activity finished = do
+  Just cell ← activity_state activity | Nothing ⇒ pure ()
+  state ← readIORef cell
+  if state.closed then pure () else do
+    now ← primIO uptime
+    let (interaction, change) = notify_view_changed True finished now state.interaction
+    writeIORef cell ({ interaction := interaction } state)
+    case change of
+      Nothing ⇒ pure ()
+      Just change ⇒ request_render activity change.quality
+
+bind_controls : ActivityReference → IO Controls
+bind_controls activity = do
+  resources ← primIO (activity_resources activity)
+  package ← primIO (activity_package activity)
+  layout ← identifier resources package "layout" "activity_idric"
+  primIO (set_content_layout activity layout)
+  root_id ← identifier resources package "id" "root"
+  image_id ← identifier resources package "id" "surface_view"
+  editor_id ← identifier resources package "id" "formula"
+  status_id ← identifier resources package "id" "status"
+  root ← primIO (find_view activity root_id)
+  image ← primIO (find_view activity image_id)
+  editor ← primIO (find_view activity editor_id)
+  status ← primIO (find_view activity status_id)
+  render ← identifier resources package "id" "render"
+  examples ← identifier resources package "id" "examples"
+  save ← identifier resources package "id" "save"
+  about ← identifier resources package "id" "about"
+  rendering ← identifier resources package "string" "rendering_status"
+  complete ← identifier resources package "string" "complete_status"
+  invalid ← identifier resources package "string" "invalid_formula"
+  examples_title ← identifier resources package "string" "examples"
+  example_names ← identifier resources package "array" "surface_example_names"
+  about_title ← identifier resources package "string" "about_title"
+  about_body ← identifier resources package "string" "about_body"
+  ok ← identifier resources "android" "string" "ok"
+  saved ← identifier resources package "string" "save_success"
+  failed ← identifier resources package "string" "save_failed"
+  nothing ← identifier resources package "string" "nothing_to_save"
+  detector ← primIO (create_scale_detector (activity_context activity) (scale_listener activity))
+  left ← primIO (padding_left root)
+  top ← primIO (padding_top root)
+  right ← primIO (padding_right root)
+  bottom ← primIO (padding_bottom root)
+  pure (BoundControls root (as_image_view image) (as_edit_text editor) (as_text_view status)
+    resources (ControlIds render examples save about rendering complete invalid examples_title
+      example_names about_title about_body ok saved failed nothing) detector left top right bottom)
+
+install_controls : ActivityReference → ActivityState → IO ()
+install_controls activity state = do
+  let controls = state.controls
+  for_ [controls.identifiers.render, controls.identifiers.examples,
+        controls.identifiers.save, controls.identifiers.about] (\identifier ⇒ do
+    view ← primIO (find_view activity identifier)
+    primIO (set_click_listener view (click_listener activity)))
+  primIO (set_editor_listener (edit_text_view controls.editor) (editor_listener activity))
+  primIO (set_clickable (image_view controls.image) 1)
+  primIO (set_touch_listener (image_view controls.image) (touch_listener activity))
+  primIO (add_layout_listener (image_view controls.image) (layout_listener activity))
+  primIO (set_insets_listener controls.root (insets_listener activity))
+  primIO (request_insets controls.root)
+
+initialize_activity : ActivityReference → BundleReference → IO ()
+initialize_activity activity saved = do
+  phase ← newIORef Starting
+  primIO (write_activity_phase activity phase)
+  controls ← bind_controls activity
+  committed ← newIORef False
+  session_result ← create_render_session
+  case session_result of
+    Left reason ⇒ do writeIORef phase Closed; show_startup activity reason
+    Right session ⇒ always (acquire_render phase committed controls session)
+      (do ready ← readIORef committed
+          if ready then pure () else do
+            writeIORef phase Closed
+            always (do _ ← cancel_render_session session; pure ())
+              (do _ ← release_render_session session; pure ()))
+  where
+    mutual
+      acquire_render : IORef ActivityPhase → IORef Bool → Controls → RenderSession → IO ()
+      acquire_render phase committed controls session = do
+        render_worker ← primIO single_worker
+        always (acquire_file phase committed controls session render_worker)
+          (do ready ← readIORef committed
+              if ready then pure () else do _ ← primIO (close_worker render_worker); pure ())
+
+      acquire_file : IORef ActivityPhase → IORef Bool → Controls → RenderSession → ExecutorReference → IO ()
+      acquire_file phase committed controls session render_worker = do
+        file_worker ← primIO single_worker
+        always (activate phase committed controls session render_worker file_worker)
+          (do ready ← readIORef committed
+              if ready then pure () else do _ ← primIO (close_worker file_worker); pure ())
+
+      activate : IORef ActivityPhase → IORef Bool → Controls → RenderSession →
+        ExecutorReference → ExecutorReference → IO ()
+      activate phase committed controls session render_worker file_worker = do
+        let camera = initial_interaction
+        let limits = BoundedExpansion 2147483647 2147483647
+        cell ← newIORef (LiveActivity controls camera session render_worker file_worker limits
+          Nothing Nothing Nothing Nothing Nothing False)
+        writeIORef phase (Ready cell)
+        formula ← if reference_is_null (bundle_object saved) ≟ 1 then pure initial_formula
+          else primIO (bundle_text saved "formula" initial_formula)
+        primIO (set_text (edit_text_view controls.editor) formula)
+        if reference_is_null (bundle_object saved) ≟ 1 then pure () else do
+          yaw ← primIO (bundle_double saved "yaw" 0.55)
+          pitch ← primIO (bundle_double saved "pitch" (-0.35))
+          zoom ← primIO (bundle_double saved "zoom" 1.0)
+          state ← readIORef cell
+          let restored : Orientation = CameraOrientation yaw pitch zoom
+          writeIORef cell ({ interaction := { camera := restored } state.interaction } state)
+        state ← readIORef cell
+        install_controls activity state
+        first_frame ← primIO (capture_runnable (request_render activity Final))
+        _ ← primIO (post_view (image_view controls.image) first_frame)
+        writeIORef committed True
+
+%export "dex:create_activity"
+create_activity : ActivityReference → BundleReference → IO ()
+create_activity activity saved = protect (initialize_activity activity saved)
+  (\error ⇒ do report ← primIO (stack_trace error); show_startup activity report)
+
+%export "dex:destroy_activity"
+destroy_activity : ActivityReference → IO ()
+destroy_activity = close_controller
+
+%export "dex:pause_activity"
+pause_activity : ActivityReference → IO ()
+pause_activity activity = pure ()
+
+%export "dex:save_activity_state"
+save_activity_state : ActivityReference → BundleReference → IO ()
+save_activity_state activity bundle = do
+  Just cell ← activity_state activity | Nothing ⇒ pure ()
+  state ← readIORef cell
+  text ← primIO (editor_contents state.controls.editor)
+  formula ← primIO (object_text (editable_object text))
+  primIO (put_bundle_text bundle "formula" formula)
+  primIO (put_bundle_double bundle "yaw" state.interaction.camera.yaw)
+  primIO (put_bundle_double bundle "pitch" state.interaction.camera.pitch)
+  primIO (put_bundle_double bundle "zoom" state.interaction.camera.zoom)
+
+%export "dex:receive_editor_action"
+receive_editor_action : ActivityReference → TextViewReference → Int32 → KeyEventReference → IO Bool
+receive_editor_action activity view action event = do
+  enter ← if reference_is_null (key_event_object event) ≟ 1 then pure False else do
+    code ← primIO (key_code event)
+    pressed ← primIO (key_action event)
+    pure (code ≟ 66 && pressed ≟ 0)
+  case action ≟ 6 || enter of
+    True ⇒ do
+      Just cell ← activity_state activity | Nothing ⇒ pure False
+      state ← readIORef cell
+      hide_editor activity state
+      request_render activity Final
+      pure True
+    False ⇒ pure False
+
+%export "dex:receive_click"
+receive_click : ActivityReference → ViewReference → IO ()
+receive_click activity view = do
+  Just cell ← activity_state activity | Nothing ⇒ pure ()
+  state ← readIORef cell
+  if state.closed then pure () else do
+    selected ← primIO (view_identity view)
+    case (selected ≟ state.controls.identifiers.render, selected ≟ state.controls.identifiers.save,
+          selected ≟ state.controls.identifiers.examples, selected ≟ state.controls.identifiers.about) of
+      (True, _, _, _) ⇒ do
+        hide_editor activity state
+        request_render activity Final
+      (_, True, _, _) ⇒ choose_png_destination activity
+      (_, _, True, _) ⇒ do
+        builder ← primIO (create_dialog (activity_context activity))
+        _ ← primIO (dialog_title builder state.controls.identifiers.examples_title)
+        _ ← primIO (dialog_items builder state.controls.identifiers.example_names (dialog_listener activity))
+        _ ← primIO (show_dialog builder)
+        pure ()
+      (_, _, _, True) ⇒ do
+        builder ← primIO (create_dialog (activity_context activity))
+        _ ← primIO (dialog_title builder state.controls.identifiers.about_title)
+        _ ← primIO (dialog_message builder state.controls.identifiers.about_body)
+        _ ← primIO (dialog_positive builder state.controls.identifiers.positive_ok (dialog_listener activity))
+        _ ← primIO (show_dialog builder)
+        pure ()
+      _ ⇒ pure ()
+
+%export "dex:receive_dialog_choice"
+receive_dialog_choice : ActivityReference → DialogReference → Int32 → IO ()
+receive_dialog_choice activity dialog selected =
+  if reference_is_null (dialog_object dialog) ≟ 1 then pure () else
+    case selected_example selected of
+      Nothing ⇒ pure ()
+      Just example ⇒ do
+        Just cell ← activity_state activity | Nothing ⇒ pure ()
+        state ← readIORef cell
+        if state.closed then pure () else do
+          primIO (set_text (edit_text_view state.controls.editor) example.formula)
+          writeIORef cell ({ interaction := reset_view state.interaction } state)
+          notify_camera activity True
+
+%export "dex:receive_insets"
+receive_insets : ActivityReference → ViewReference → InsetsReference → IO InsetsReference
+receive_insets activity view insets = do
+  Just phase ← activity_phase activity | Nothing ⇒ pure insets
+  current ← readIORef phase
+  padding ← the (IO (Maybe (Int32, Int32, Int32, Int32))) $ case current of
+    Ready cell ⇒ do
+      state ← readIORef cell
+      pure (Just (state.controls.base_left, state.controls.base_top,
+        state.controls.base_right, state.controls.base_bottom))
+    Diagnostic left top right bottom ⇒ pure (Just (left, top, right, bottom))
+    _ ⇒ pure Nothing
+  Just (base_left, base_top, base_right, base_bottom) ← pure padding | Nothing ⇒ pure insets
+  left ← primIO (inset_left insets)
+  top ← primIO (inset_top insets)
+  right ← primIO (inset_right insets)
+  bottom ← primIO (inset_bottom insets)
+  primIO (set_padding view (base_left + left) (base_top + top)
+    (base_right + right) (base_bottom + bottom))
+  pure insets
+
+%export "dex:receive_layout"
+receive_layout : ActivityReference → ViewReference → Int32 → Int32 → Int32 → Int32 →
+  Int32 → Int32 → Int32 → Int32 → IO ()
+receive_layout activity view left top right bottom old_left old_top old_right old_bottom = do
+  Just cell ← activity_state activity | Nothing ⇒ pure ()
+  state ← readIORef cell
+  let width = right - left
+  let height = bottom - top
+  if state.closed || width ≤ 0 || height ≤ 0 then pure () else
+    if width ≟ old_right - old_left && height ≟ old_bottom - old_top then pure ()
+      else request_render activity Final
+
+%export "dex:receive_touch"
+receive_touch : ActivityReference → ViewReference → MotionEventReference → IO Bool
+receive_touch activity view event = do
+  Just cell ← activity_state activity | Nothing ⇒ pure True
+  before ← readIORef cell
+  _ ← primIO (scale_touch_event before.controls.scale_detector event)
+  -- Feeding the detector synchronously reenters onScale/onScaleEnd.
+  state ← readIORef cell
+  action ← primIO (motion_action event)
+  x ← primIO (motion_x event)
+  y ← primIO (motion_y event)
+  case action of
+    0 ⇒ do
+      writeIORef cell ({ interaction := touch_down x y state.interaction } state)
+      pure True
+    2 ⇒ do
+      pointers ← primIO (pointer_count event)
+      scaling ← primIO (scale_in_progress state.controls.scale_detector)
+      width ← primIO (view_width view)
+      height ← primIO (view_height view)
+      let (interaction, rotated) = touch_move pointers (scaling ≟ 1) width height x y state.interaction
+      writeIORef cell ({ interaction := interaction } state)
+      if rotated then notify_camera activity False else pure ()
+      pure True
+    _ ⇒ do
+      case action of
+        1 ⇒ do _ ← primIO (perform_click view); notify_camera activity True
+        3 ⇒ notify_camera activity True
+        _ ⇒ pure ()
+      pure True
+
+%export "dex:receive_scale"
+receive_scale : ActivityReference → ScaleDetectorReference → IO Bool
+receive_scale activity detector = do
+  Just cell ← activity_state activity | Nothing ⇒ pure False
+  state ← readIORef cell
+  factor ← primIO (scale_factor detector)
+  writeIORef cell ({ interaction := scale_view factor state.interaction } state)
+  notify_camera activity False
+  pure True
+
+%export "dex:receive_scale_begin"
+receive_scale_begin : ActivityReference → ScaleDetectorReference → IO Bool
+receive_scale_begin activity detector = pure True
+
+%export "dex:receive_scale_end"
+receive_scale_end : ActivityReference → ScaleDetectorReference → IO ()
+receive_scale_end activity detector = notify_camera activity True
+
+%export "dex:receive_picker"
+receive_picker : ActivityReference → Int32 → Int32 → IntentReference → IO ()
+receive_picker = receive_png_destination
+
+main : IO ()
+main = pure ()

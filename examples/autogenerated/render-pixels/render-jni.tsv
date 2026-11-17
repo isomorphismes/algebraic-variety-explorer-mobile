@@ -1,0 +1,5 @@
+library_property ave.prepared.library
+C:ave_copy_prepared_surface,libave copyPreparedSurface (IIIIIII[D[I)J current-thread synchronous borrowed-local nonnull-inputs copy-input-arrays propagate-exceptions
+C:ave_replace_prepared_surface,libave replacePreparedSurface (JIIIIIII[D[I)J current-thread synchronous borrowed-local nonnull-inputs copy-input-arrays propagate-exceptions
+C:ave_release_prepared_surface,libave releasePreparedSurface (J)I current-thread synchronous borrowed-local nonnull-strings propagate-exceptions
+C:ave_render_prepared_surface,libave renderPreparedSurface (JIIIDDDD[I)I current-thread synchronous borrowed-local nonnull-output publish-output-on-success propagate-exceptions

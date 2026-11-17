@@ -124,7 +124,7 @@ def main():
         raise ValueError("Java example identities/order changed")
 
     if not pathlib.Path(".build/test/classes").is_dir():
-        raise ValueError("run bash build.sh test before Java/jsurf parity diagnostic")
+        raise ValueError("run the original-jvm-reference Grease test action before Java/jsurf parity diagnostic")
     EVIDENCE.mkdir(parents=True, exist_ok=True)
     results = []
     references = []

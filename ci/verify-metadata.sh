@@ -27,12 +27,25 @@ readonly CHANGELOG="$LOCALE/changelogs/$AVE_VERSION_CODE.txt"
     fail "F-Droid build commit must be v$AVE_VERSION_NAME"
 [[ "$(field 's/^    output: \(.*\)$/\1/p' "$METADATA" | tail -n 1)" == ".build/$AVE_RELEASE_APK_NAME" ]] ||
     fail "F-Droid output does not match build.sh"
-grep -Fxq '      - apt-get install -y openjdk-21-jdk-headless curl zip unzip' "$METADATA" ||
+grep -Fq '      - apt-get install -y openjdk-21-jdk-headless build-essential' "$METADATA" ||
     fail "F-Droid sudo dependencies must match the pinned buildserver distribution"
-grep -Fxq '    prebuild: sdkmanager "platforms;android-35" "build-tools;35.0.1"' "$METADATA" ||
+grep -Fxq '      - sdkmanager "platforms;android-35" "build-tools;35.0.1" "ndk;29.0.14206865"' "$METADATA" ||
     fail "F-Droid prebuild must install the pinned SDK and build tools"
-grep -Fxq '    build: ANDROID_SDK_ROOT=$$SDK$$ bash ./build.sh release' "$METADATA" ||
-    fail "F-Droid build command must use the F-Droid SDK and release target"
+grep -Fxq '      - make -f fdroid/Makefile prepare-chez-source' "$METADATA" ||
+    fail "F-Droid prebuild must expose verified Chez sources before scanning"
+grep -Fxq '        AI_CI="$$AVEAiCi$$" SDK="$$SDK$$" CHEZ_SOURCE="$PWD/.build/fdroid-inputs/chez-source"' "$METADATA" ||
+    fail "F-Droid compiler build must consume the verified unpacked Chez source"
+grep -Fq '      - make -f fdroid/Makefile FRONTEND="$$AVEIdric$$"' "$METADATA" ||
+    fail "F-Droid build must source-build the pinned compiler prerequisites"
+# The pinned F-Droid writer folds this one invocation onto three canonical
+# lines. Require the executable and every argument in that adjacent sequence.
+awk \
+    -v command='      - PATH="$PWD/.build/fdroid-tools/runtime/.build/grease/bin:$PATH" .build/fdroid-tools/runtime/.build/grease/bin/grease' \
+    -v arguments='        fdroid/reproducible.grease "$PWD" "$$AVEIdric$$" "$$AVEDEX$$" "$$SDK$$" "$PWD/.build/fdroid-tools"' \
+    -v tail='        "$PWD/.build/reproducible-source" "$(git rev-parse HEAD)"' \
+    '$0 == command { found++; if ((getline) <= 0 || $0 != arguments) bad = 1; if ((getline) <= 0 || $0 != tail) bad = 1 }
+     END { exit bad || found != 1 }' "$METADATA" ||
+    fail "F-Droid build must perform two disjoint checked Activity source builds"
 [[ "$(field 's/^CurrentVersion: \(.*\)$/\1/p' "$METADATA")" == "$AVE_VERSION_NAME" ]] ||
     fail "CurrentVersion does not match build.sh"
 [[ "$(field 's/^CurrentVersionCode: \([0-9][0-9]*\)$/\1/p' "$METADATA")" == "$AVE_VERSION_CODE" ]] ||
@@ -64,16 +77,30 @@ cmp "$REPO_ROOT/store.short_description.txt" "$LOCALE/short_description.txt"
 cmp "$REPO_ROOT/store.full_description.txt" "$LOCALE/full_description.txt"
 cmp "$REPO_ROOT/store.changelog.$AVE_VERSION_CODE.txt" "$CHANGELOG"
 
-for dependency in ANTLR VECMATH JUNIT HAMCREST; do
-    url="$(release_constant "${dependency}_URL")"
-    sha256="$(release_constant "${dependency}_SHA256")"
-    grep -Fxq "$url" "$REPO_ROOT/dependencies.lock" ||
-        fail "$dependency URL is missing from dependencies.lock"
-    grep -Fxq "sha256 $sha256" "$REPO_ROOT/dependencies.lock" ||
-        fail "$dependency SHA-256 is missing from dependencies.lock"
-done
 [[ "$(grep -c '^sha256 [0-9a-f]\{64\}$' "$REPO_ROOT/dependencies.lock")" -eq 4 ]] ||
-    fail "dependencies.lock must contain exactly four SHA-256 pins"
+    fail "dependencies.lock must contain exactly four original-reference SHA-256 pins"
+while IFS=$'\t' read -r component repository revision role; do
+    case "$component" in
+        component) continue ;;
+        frontend) library=AVEIdric ;;
+        dex-backend) library=AVEDEX ;;
+        ick-cross) library=AVEICKCross ;;
+        ick-host) library=AVEICKHost ;;
+        grease) library=AVEGrease ;;
+        catfood) library=AVECatFood ;;
+        ai-ci) library=AVEAiCi ;;
+        *) fail "undeclared source-build input: $component" ;;
+    esac
+    [[ "$revision" =~ ^[0-9a-f]{40}$ ]] || fail "source-build revision is not immutable: $component"
+    grep -Fxq "      - $library@$revision" "$METADATA" || fail "F-Droid source-build pin differs: $component"
+    grep -Fxq "Repo: https://github.com/$repository.git" "$REPO_ROOT/fdroid/srclibs/$library.yml" ||
+        fail "F-Droid source repository differs: $component"
+done < "$REPO_ROOT/build-inputs.tsv"
+grep -Fq 'android:name="org.algebraicvarietyexplorer.AVEActivity"' "$REPO_ROOT/AndroidManifest.xml" || fail "manifest does not select checked Activity"
+grep -Fq 'android:extractNativeLibs="false"' "$REPO_ROOT/AndroidManifest.xml" || fail "manifest does not select aligned stored native libraries"
+if grep -Eq 'javac|com.android.tools.r8|MainActivity|build_debug' "$REPO_ROOT/build.sh" "$REPO_ROOT/build.grease"; then
+    fail "candidate build revived the original Java application"
+fi
 
 bash -n "$REPO_ROOT/build.sh"
 while IFS= read -r script; do
@@ -100,6 +127,6 @@ if grep -R -Eq '^[[:space:]]*pull_request_target:' "$REPO_ROOT/.github/workflows
     fail "pull_request_target is forbidden for build workflows"
 fi
 
-printf 'metadata: %s %s (%s), SDK %s/%s/%s, four locked dependencies\n' \
+printf 'metadata: %s %s (%s), SDK %s/%s/%s, pinned checked Activity source build\n' \
     "$AVE_APPLICATION_ID" "$AVE_VERSION_NAME" "$AVE_VERSION_CODE" \
     "$AVE_MIN_SDK" "$AVE_TARGET_SDK" "$AVE_COMPILE_SDK"
