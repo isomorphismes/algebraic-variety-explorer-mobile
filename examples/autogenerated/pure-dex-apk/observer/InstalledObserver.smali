@@ -1,6 +1,7 @@
 .class public final Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;
 .super Landroid/app/Instrumentation;
 .implements Ljava/lang/Runnable;
+.implements Landroid/app/Application$ActivityLifecycleCallbacks;
 
 .field private activity:Landroid/app/Activity;
 .field private editor:Landroid/widget/EditText;
@@ -27,6 +28,10 @@
 .field private examplesInputInjected:Z
 .field private examplesFormulaApplied:Z
 .field private examplesDialogDismissed:Z
+# Instrumentation-owned, main-thread lifecycle observations.
+.field private recreatedActivity:Landroid/app/Activity;
+.field private recreatedResumed:Z
+.field private previousDestroyed:Z
 
 .method public constructor <init>()V
     .registers 1
@@ -48,6 +53,67 @@
     iput-boolean v0, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->negativeControl:Z
   :start
     invoke-virtual {p0}, Landroid/app/Instrumentation;->start()V
+    return-void
+.end method
+
+
+# Framework lifecycle events are emitted by Application, not by a test-made
+# Activity object or a direct checked-DEX export. This interface exists at API14.
+.method public onActivityCreated(Landroid/app/Activity;Landroid/os/Bundle;)V
+    .registers 5
+    iget-object v0, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->activity:Landroid/app/Activity;
+    if-eq p1, v0, :done
+    invoke-virtual {p1}, Landroid/app/Activity;->getComponentName()Landroid/content/ComponentName;
+    move-result-object v0
+    invoke-virtual {v0}, Landroid/content/ComponentName;->getClassName()Ljava/lang/String;
+    move-result-object v0
+    const-string v1, "org.algebraicvarietyexplorer.AVEActivity"
+    invoke-virtual {v1, v0}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
+    move-result v0
+    if-eqz v0, :done
+    iput-object p1, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->recreatedActivity:Landroid/app/Activity;
+  :done
+    return-void
+.end method
+
+.method public onActivityStarted(Landroid/app/Activity;)V
+    .registers 2
+    return-void
+.end method
+
+.method public onActivityResumed(Landroid/app/Activity;)V
+    .registers 3
+    iget-object v0, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->recreatedActivity:Landroid/app/Activity;
+    if-eqz v0, :done
+    if-ne p1, v0, :done
+    const/4 v0, 1
+    iput-boolean v0, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->recreatedResumed:Z
+  :done
+    return-void
+.end method
+
+.method public onActivityPaused(Landroid/app/Activity;)V
+    .registers 2
+    return-void
+.end method
+
+.method public onActivityStopped(Landroid/app/Activity;)V
+    .registers 2
+    return-void
+.end method
+
+.method public onActivitySaveInstanceState(Landroid/app/Activity;Landroid/os/Bundle;)V
+    .registers 3
+    return-void
+.end method
+
+.method public onActivityDestroyed(Landroid/app/Activity;)V
+    .registers 3
+    iget-object v0, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->activity:Landroid/app/Activity;
+    if-ne p1, v0, :done
+    const/4 v0, 1
+    iput-boolean v0, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->previousDestroyed:Z
+  :done
     return-void
 .end method
 
@@ -983,27 +1049,47 @@
     invoke-direct {p0, v2, v3}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->retained(Landroid/graphics/Bitmap;[I)V
     invoke-direct {p0}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->count()V
     invoke-direct {p0}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->positivePng()V
-    # Framework recreation, not manual lifecycle calls or direct exports.
-    const-string v4, "org.algebraicvarietyexplorer.AVEActivity"
-    const/4 v5, 0
-    const/4 v0, 0
-    invoke-virtual {p0, v4, v5, v0}, Landroid/app/Instrumentation;->addMonitor(Ljava/lang/String;Landroid/app/Instrumentation$ActivityResult;Z)Landroid/app/Instrumentation$ActivityMonitor;
-    move-result-object v4
+    # The new instance is reported by the same framework Application that
+    # creates/resumes/destroys it. ActivityMonitor observes starts, and is not
+    # an independent recreation observer on the API23 floor.
     iget-object v5, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->activity:Landroid/app/Activity;
+    invoke-virtual {v5}, Landroid/app/Activity;->getApplication()Landroid/app/Application;
+    move-result-object v4
+    const/4 v0, 0
+    iput-object v0, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->recreatedActivity:Landroid/app/Activity;
+    iput-boolean v0, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->recreatedResumed:Z
+    iput-boolean v0, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->previousDestroyed:Z
+    invoke-virtual {v4, p0}, Landroid/app/Application;->registerActivityLifecycleCallbacks(Landroid/app/Application$ActivityLifecycleCallbacks;)V
     const/4 v0, 6
     invoke-direct {p0, v0}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->step(I)V
-    const-wide/32 v6, 90000
-    invoke-virtual {p0, v4, v6, v7}, Landroid/app/Instrumentation;->waitForMonitorWithTimeout(Landroid/app/Instrumentation$ActivityMonitor;J)Landroid/app/Activity;
-    move-result-object v0
-    const/4 v1, 0
-    if-eqz v0, :new_check
-    if-eq v0, v5, :new_check
-    const/4 v1, 1
-  :new_check
-    const-string v8, "framework recreation must supply a different Activity instance"
-    invoke-static {v1, v8}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->require(ZLjava/lang/String;)V
-    invoke-virtual {p0, v4}, Landroid/app/Instrumentation;->removeMonitor(Landroid/app/Instrumentation$ActivityMonitor;)V
-    iput-object v0, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->activity:Landroid/app/Activity;
+    const/4 v0, 0
+  :recreate_poll
+    # Idle synchronization also makes the main-thread callback observations
+    # visible on the instrumentation thread without inspecting private state.
+    invoke-virtual {p0}, Landroid/app/Instrumentation;->waitForIdleSync()V
+    iget-object v1, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->recreatedActivity:Landroid/app/Activity;
+    iget-boolean v8, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->recreatedResumed:Z
+    iget-boolean v9, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->previousDestroyed:Z
+    if-eqz v1, :recreate_wait
+    if-eq v1, v5, :recreate_wait
+    if-eqz v8, :recreate_wait
+    if-eqz v9, :recreate_wait
+    goto :recreate_observed
+  :recreate_wait
+    const/16 v6, 450
+    if-ge v0, v6, :recreate_timeout
+    const-wide/16 v6, 200
+    invoke-static {v6, v7}, Landroid/os/SystemClock;->sleep(J)V
+    add-int/lit8 v0, v0, 1
+    goto :recreate_poll
+  :recreate_timeout
+    invoke-virtual {v4, p0}, Landroid/app/Application;->unregisterActivityLifecycleCallbacks(Landroid/app/Application$ActivityLifecycleCallbacks;)V
+    const/4 v0, 0
+    const-string v8, "framework recreation must supply a distinct resumed Activity and destroy the predecessor"
+    invoke-static {v0, v8}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->require(ZLjava/lang/String;)V
+  :recreate_observed
+    invoke-virtual {v4, p0}, Landroid/app/Application;->unregisterActivityLifecycleCallbacks(Landroid/app/Application$ActivityLifecycleCallbacks;)V
+    iput-object v1, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->activity:Landroid/app/Activity;
     invoke-virtual {p0}, Landroid/app/Instrumentation;->waitForIdleSync()V
     const/4 v0, 0
     invoke-direct {p0, v0}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->step(I)V
@@ -1054,6 +1140,25 @@
     return-void
 .end method
 
+
+.method private recordLifecycle(Landroid/os/Bundle;)V
+    .registers 5
+    const-string v0, "recreation_new_instance_seen"
+    iget-object v1, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->recreatedActivity:Landroid/app/Activity;
+    const/4 v2, 0
+    if-eqz v1, :created_record
+    const/4 v2, 1
+  :created_record
+    invoke-virtual {p1, v0, v2}, Landroid/os/Bundle;->putBoolean(Ljava/lang/String;Z)V
+    const-string v0, "recreation_new_instance_resumed"
+    iget-boolean v1, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->recreatedResumed:Z
+    invoke-virtual {p1, v0, v1}, Landroid/os/Bundle;->putBoolean(Ljava/lang/String;Z)V
+    const-string v0, "recreation_previous_destroyed"
+    iget-boolean v1, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->previousDestroyed:Z
+    invoke-virtual {p1, v0, v1}, Landroid/os/Bundle;->putBoolean(Ljava/lang/String;Z)V
+    return-void
+.end method
+
 .method private recordExamples(Landroid/os/Bundle;)V
     .registers 4
     const-string v0, "examples_action"
@@ -1071,6 +1176,7 @@
     const-string v0, "examples_dialog_dismissed"
     iget-boolean v1, p0, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->examplesDialogDismissed:Z
     invoke-virtual {p1, v0, v1}, Landroid/os/Bundle;->putBoolean(Ljava/lang/String;Z)V
+    invoke-direct {p0, p1}, Lorg/algebraicvarietyexplorer/idricqualification/InstalledObserver;->recordLifecycle(Landroid/os/Bundle;)V
     return-void
 .end method
 
