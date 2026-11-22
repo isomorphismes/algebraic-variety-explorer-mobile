@@ -1,0 +1,64 @@
+#!/usr/bin/env grease
+# Package retained original jsurf classes as an independently executed oracle.
+# This never compiles the Idriç candidate or supplies its value implementation.
+if (len(ARGV) !== 4) {
+  echo 'usage: grease prepare-oracle.grease ORIGINAL_EVIDENCE ANDROID_SDK FRESH_OUTPUT BAKSMALI' >&2
+  exit 2
+}
+var original = ARGV[0]
+var sdk = ARGV[1]
+var output = ARGV[2]
+var baksmali = ARGV[3]
+for path in (ARGV) {
+  if (path[0] !== '/') { echo 'FAIL absolute path required' >&2; exit 2 }
+}
+if test -e "$output" { echo 'FAIL refusing reused original-oracle output' >&2; exit 1 }
+command -v java
+command -v jar
+command -v rg
+var d8 = "$sdk/build-tools/35.0.1/lib/d8.jar"
+var platform = "$sdk/platforms/android-35/android.jar"
+test -s "$d8"
+test -s "$platform"
+test -d "$original/oracle-classes/de/mfo/jsurf"
+test -s "$original/source-commit.txt"
+test -s "$original/sources.sha256"
+printf '%s  %s\n' 5b7cf53b7b30b034023f58030c8147c433f2bee0fe7dec8fae6bebf3708c5a63 "$original/antlr-runtime-3.4.jar" | sha256sum -c -
+printf '%s  %s\n' 3558e81ca74c60dc01baca7ef05f48594bbaed43af45d4f1b9196e479734e675 "$original/vecmath-1.5.2.jar" | sha256sum -c -
+printf '%s  %s\n' 37ae4a41a8886e15c20b8362fa4250f96bbdb55e1a608199ad8b5dff068b588f "$baksmali" | sha256sum -c -
+mkdir -p "$output/dex"
+cp "$original/source-commit.txt" "$output/original-source-commit.txt"
+cp "$original/sources.sha256" "$output/original-sources.sha256"
+java -version > "$output/java-version.txt" 2>&1
+jar --version > "$output/jar-version.txt" 2>&1
+java -cp "$d8" com.android.tools.r8.D8 --version > "$output/d8-version.txt" 2>&1
+cat "$output/d8-version.txt"
+printf 'build_tools\t35.0.1\nplatform\t35\nmin_api\t29\nrole\toriginal-jsurf-oracle-only\n' > "$output/inputs.tsv"
+# Exclude the unrelated JUnit/preview/application test classes. Keep the
+# unchanged original jsurf core and its two locked original dependencies.
+jar --create --file "$output/original-jsurf.jar" --date=2026-01-01T00:00:00Z \
+  -C "$original/oracle-classes" de/mfo/jsurf
+sha256sum "$d8" "$platform" "$output/original-jsurf.jar" \
+  "$original/antlr-runtime-3.4.jar" "$original/vecmath-1.5.2.jar" \
+  > "$output/input-artifacts.sha256"
+try {
+  java -cp "$d8" com.android.tools.r8.D8 --release --min-api 29 \
+    --lib "$platform" --output "$output/dex" "$output/original-jsurf.jar" \
+    "$original/antlr-runtime-3.4.jar" "$original/vecmath-1.5.2.jar" \
+    > "$output/d8.txt" 2>&1
+}
+var status = _error.code
+cat "$output/d8.txt"
+printf '%s\n' "$status" > "$output/d8.exit"
+if (status !== 0) { echo 'FAIL original jsurf oracle DEX packaging' >&2; exit 1 }
+test -s "$output/dex/classes.dex"
+test ! -e "$output/dex/classes2.dex"
+java -jar "$baksmali" disassemble "$output/dex/classes.dex" -o "$output/decoded"
+rg -x -F '.method public static parse(Ljava/lang/String;)Lde/mfo/jsurf/algebra/PolynomialOperation;' \
+  "$output/decoded/de/mfo/jsurf/parser/AlgebraicExpressionParser.smali"
+rg -x -F '.method public constructor <init>()V' \
+  "$output/decoded/de/mfo/jsurf/algebra/ValueCalculator.smali"
+rg -x -F '.method public abstract accept(Lde/mfo/jsurf/algebra/Visitor;Ljava/lang/Object;)Ljava/lang/Object;' \
+  "$output/decoded/de/mfo/jsurf/algebra/PolynomialOperation.smali"
+sha256sum "$output/dex/classes.dex" > "$output/oracle-dex.sha256"
+printf '\033[32mPASS\033[0m retained original jsurf packaged and independently decoded; ART separate\n'

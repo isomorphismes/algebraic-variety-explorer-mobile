@@ -1,0 +1,129 @@
+module AVEPngExport
+
+import Data.IORef
+import AVEPlatform
+import AVEActivityState
+import AVEExceptions
+import RenderedBitmap
+
+%default covering
+
+data ResolverReference : Type where [external]
+data OutputReference : Type where [external]
+data PngFormat : Type where [external]
+data IOExceptionReference : Type where [external]
+data ToastReference : Type where [external]
+
+%foreign "dex:virtual:Landroid/app/Activity;:getContentResolver:()Landroid/content/ContentResolver;"
+content_resolver : ActivityReference → PrimIO ResolverReference
+%foreign "dex:virtual:Landroid/content/ContentResolver;:openOutputStream:(Landroid/net/Uri;Ljava/lang/String;)Ljava/io/OutputStream;"
+open_png : ResolverReference → UriReference → Text → PrimIO OutputReference
+%foreign "dex:cast:Ljava/io/OutputStream;:Ljava/lang/Object;"
+output_object : OutputReference → ObjectReference
+%foreign "dex:virtual:Ljava/io/OutputStream;:close:()V"
+close_png : OutputReference → PrimIO ()
+%foreign "dex:static:Landroid/graphics/Bitmap$CompressFormat;:valueOf:(Ljava/lang/String;)Landroid/graphics/Bitmap$CompressFormat;"
+png_format : Text → PrimIO PngFormat
+%foreign "dex:virtual:Landroid/graphics/Bitmap;:compress:(Landroid/graphics/Bitmap$CompressFormat;ILjava/io/OutputStream;)Z"
+compress_png : RenderedBitmap → PngFormat → Int32 → OutputReference → PrimIO Int32
+%foreign "dex:construct:Ljava/io/IOException;:<init>:(Ljava/lang/String;)V"
+png_error : Text → PrimIO IOExceptionReference
+%foreign "dex:cast:Ljava/io/IOException;:Ljava/lang/Throwable;"
+io_throwable : IOExceptionReference → ThrowableReference
+
+%foreign "dex:construct:Landroid/content/Intent;:<init>:(Ljava/lang/String;)V"
+create_document : Text → PrimIO IntentReference
+%foreign "dex:virtual:Landroid/content/Intent;:addCategory:(Ljava/lang/String;)Landroid/content/Intent;"
+document_category : IntentReference → Text → PrimIO IntentReference
+%foreign "dex:virtual:Landroid/content/Intent;:setType:(Ljava/lang/String;)Landroid/content/Intent;"
+document_type : IntentReference → Text → PrimIO IntentReference
+%foreign "dex:virtual:Landroid/content/Intent;:putExtra:(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;"
+document_title : IntentReference → Text → Text → PrimIO IntentReference
+%foreign "dex:virtual:Landroid/app/Activity;:startActivityForResult:(Landroid/content/Intent;I)V"
+pick_destination : ActivityReference → IntentReference → Int32 → PrimIO ()
+%foreign "dex:virtual:Landroid/content/Intent;:getData:()Landroid/net/Uri;"
+chosen_uri : IntentReference → PrimIO UriReference
+%foreign "dex:static:Landroid/widget/Toast;:makeText:(Landroid/content/Context;II)Landroid/widget/Toast;"
+make_toast : ContextReference → Int32 → Int32 → PrimIO ToastReference
+%foreign "dex:virtual:Landroid/widget/Toast;:show:()V"
+show_toast : ToastReference → PrimIO ()
+
+toast : ActivityReference → Int32 → Int32 → IO ()
+toast activity identifier duration = do
+  message ← primIO (make_toast (activity_context activity) identifier duration)
+  primIO (show_toast message)
+
+save_png : ResolverReference → UriReference → RenderedBitmap → IO ()
+save_png resolver destination bitmap = do
+  -- Allocate bookkeeping before opening the stream, so allocation failure
+  -- cannot escape between acquisition and the close-protected action.
+  failed ← newIORef Nothing
+  output ← primIO (open_png resolver destination "w")
+  case reference_is_null (output_object output) ≟ 1 of
+    True ⇒ do
+      error ← primIO (png_error "PNG encoder failed")
+      raise (io_throwable error)
+    False ⇒ do
+      -- Worker-local state preserves the first exception and suppresses close.
+      always (protect (do
+          format ← primIO (png_format "PNG")
+          encoded ← primIO (compress_png bitmap format 100 output)
+          if encoded ≟ 1 then pure () else do
+            error ← primIO (png_error "PNG encoder failed")
+            raise (io_throwable error))
+          (\error ⇒ do writeIORef failed (Just error); raise error))
+        (do
+          -- A real finally also runs if the failure bookkeeping throws.
+          first ← readIORef failed
+          case first of
+            Nothing ⇒ primIO (close_png output)
+            Just error ⇒ protect (primIO (close_png output))
+              (\cleanup ⇒ primIO (add_suppressed error cleanup)))
+
+deliver_save : ActivityReference → Bool → IO ()
+deliver_save activity successful = do
+  Just cell ← activity_state activity | Nothing ⇒ pure ()
+  state ← readIORef cell
+  if state.closed then pure () else
+    toast activity (if successful then state.controls.identifiers.save_success
+      else state.controls.identifiers.save_failed) (if successful then 0 else 1)
+
+run_save : ActivityReference → ResolverReference → UriReference → RenderedBitmap → IO ()
+run_save activity resolver destination bitmap = do
+  successful ← newIORef True
+  protect (save_png resolver destination bitmap) (\error ⇒ writeIORef successful False)
+  result ← readIORef successful
+  delivery ← primIO (capture_runnable (deliver_save activity result))
+  primIO (post_ui activity delivery)
+
+export
+choose_png_destination : ActivityReference → IO ()
+choose_png_destination activity = do
+  Just cell ← activity_state activity | Nothing ⇒ pure ()
+  state ← readIORef cell
+  if state.closed then pure () else case state.accepted of
+    Nothing ⇒ toast activity state.controls.identifiers.nothing_to_save 0
+    Just frame ⇒ do
+      writeIORef cell ({ pending_bitmap_to_save := Just frame.bitmap } state)
+      intent ← primIO (create_document "android.intent.action.CREATE_DOCUMENT")
+      _ ← primIO (document_category intent "android.intent.category.OPENABLE")
+      _ ← primIO (document_type intent "image/png")
+      _ ← primIO (document_title intent "android.intent.extra.TITLE" "algebraic-variety.png")
+      primIO (pick_destination activity intent 1)
+
+export
+receive_png_destination : ActivityReference → Int32 → Int32 → IntentReference → IO ()
+receive_png_destination activity request result intent =
+  if request ≟ 1 && result ≟ (-1) && reference_is_null (intent_object intent) ≟ 0 then do
+    destination ← primIO (chosen_uri intent)
+    if reference_is_null (uri_object destination) ≟ 1 then pure () else do
+      Just cell ← activity_state activity | Nothing ⇒ pure ()
+      state ← readIORef cell
+      if state.closed then pure () else case state.pending_bitmap_to_save of
+        Nothing ⇒ pure ()
+        Just bitmap ⇒ do
+          resolver ← primIO (content_resolver activity)
+          action ← primIO (capture_runnable (run_save activity resolver destination bitmap))
+          _ ← primIO (submit_worker state.file_worker action)
+          pure ()
+  else pure ()

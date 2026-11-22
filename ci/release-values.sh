@@ -2,13 +2,13 @@
 set -euo pipefail
 
 readonly RELEASE_VALUES_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-readonly RELEASE_VALUES_BUILD="$RELEASE_VALUES_ROOT/build.sh"
+readonly RELEASE_VALUES_BUILD="$RELEASE_VALUES_ROOT/build-values.tsv"
 
 release_constant() {
     local name="$1"
     local value
 
-    value="$(sed -n "s/^readonly $name=\"\([^\"]*\)\"$/\1/p" "$RELEASE_VALUES_BUILD")"
+    value="$(awk -F '\t' -v name="$name" '$1 == name { print $2 }' "$RELEASE_VALUES_BUILD")"
     [[ -n "$value" ]] || {
         printf 'release-values: missing %s in %s\n' "$name" "$RELEASE_VALUES_BUILD" >&2
         return 1

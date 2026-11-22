@@ -1,173 +1,90 @@
 # Algebraic Variety Explorer
 
 An offline Android explorer for real algebraic surfaces, adapted from
-[IMAGINARY's SURFER](https://www.imaginary.org/program/surfer).
+[IMAGINARY’s SURFER](https://www.imaginary.org/program/surfer), whose original
+jsurf core was written by Christian Stussak.
 
-The app evaluates a polynomial in `x`, `y`, and `z`, then uses the original
-jsurf ray-tracing core to draw its real zero set inside a sphere.
+The application source is checked Idriç for formula semantics and the Android
+Activity, with C for the numerical ray tracer, copied surface storage and
+synchronous JNI pixel transport. The ordinary Android Activity provides the
+formula field, examples dialog, render button, image, drag/pinch input and
+system document picker for PNG export. The manifest selects
+`org.algebraicvarietyexplorer.AVEActivity`, emitted by the checked compiler.
+The original Java files are retained as comparison oracles and attribution
+source; they are excluded from the application source build.
 
-The Android adaptation and flat build were produced in conversation with
-ChatGPT 5.6. They have not received an independent code or mathematical review.
-This is experimental software, posted for people willing to test it rather than
-represented as a finished or verified tool. Known defects and proposed work
-belong in the
-[GitHub issues](https://github.com/isomorphisms/algebraic-variety-explorer-mobile/issues);
-an open issue is not silently being treated as finished functionality.
+This translation is experimental. Source compilation, native ABI builds,
+packaging, installed emulator behavior, original-renderer parity and physical
+device acceptance are separate results. An available source file or a green
+reference test does not establish all of them.
 
-## Madore's `E₆` cubic: video and source comparison
-
-The **Madore E6 cubic** example renders the exact real polynomial
-`x^2+x*z^2+y^3=0` with Christian Stussak's original SURFER/jsurf
-ray tracer. The formula comes from **David A. Madore's**
-[2006 *Cubic Surfaces DVD*](http://www.madore.org/cubic-dvd/),
-original scene `03s01a.pov`. We thank both authors, with their
-distinct public-domain and Apache-2.0 source terms preserved.
-
-See the [cross-render mathematical note](notes/e6-madore-compare.md),
-[rotating SURFER movie](renders/madore-e6/madore-e6-surfer.mp4),
-[inline GIF](renders/madore-e6/madore-e6-surfer.gif),
-and the corresponding [original POV-Ray rendering in
-`resolution`](https://github.com/isomorphisms/resolution/tree/main/renders/madore-e6).
-
-Reproduce and check the JSURF frames, MP4 and GIF:
-`bash tools/render-madore-e6.sh renders/madore-e6`.
-
-![Verified SURFER/jsurf E6 surface rotation, rendered from the exact polynomial](renders/madore-e6/madore-e6-surfer.gif)
-
-## Features
-
-- Original polynomial parser and CPU ray tracer from jsurf
-- Drag to rotate and pinch to zoom
-- Sphere, torus, Cayley cubic, Whitney umbrella, Roman surface, and heart examples
-- PNG export through Android's system file picker
-- No internet permission, ads, analytics, account, or native libraries
-
-Use `^` for powers and write multiplication explicitly with `*`. For example:
+Use `^` for powers and explicit multiplication, for example:
 
 ```text
 (x^2+y^2+z^2+0.4)^2-1.1*(x^2+y^2)
 ```
 
+The app has no internet permission, ads, analytics or account. Its APK contains
+one compiler-emitted DEX and `libave.so` for `arm64-v8a`, `armeabi-v7a` and
+`x86_64`.
+
 ## Build
 
-There is no Gradle project and no generated directory hierarchy in the source
-tree. The build is an explicit sequence of Android command-line operations:
-resource compilation, Java compilation, conversion to DEX, APK assembly,
-alignment, and optional signing.
+The maintained entry is `build.grease`; `build.sh` is a thin compatibility
+entry into it. No application Java compiler, D8/R8, Gradle, generated-C backend
+or handwritten candidate Smali is involved.
 
-Requirements:
+Provision the exact public source toolchains in `build-inputs.tsv` on a Linux
+x86_64 build host, together with Android SDK 35, build tools 35.0.1 and NDK
+29.0.14206865. Invoke Grease with the absolute path of `build.grease` and
+`--help` for the explicit input order. All paths are absolute, and the output
+directory must be fresh. The build compiles the checked Activity, compiles all
+three native payloads through owned ICK, links the resulting objects against
+Android API 23, and packages those exact bytes with the original resources.
+`build-values.tsv` owns package, version and SDK values.
 
-- Bash, curl, zip, and unzip
-- JDK 17
-- Android SDK platform 35
-- Android build tools 35.0.1
+The result is an aligned **unsigned** APK and separate source/build/packaging
+receipts. Signing uses an existing persistent certificate outside this build.
+Do not substitute a newly generated key for the installed package’s signer.
+Phone and tablet builds are not supported; they consume prebuilt artifacts.
 
-Set `ANDROID_SDK_ROOT` to the SDK directory, then run:
+See [the source build note](notes/java-free-build.md) and
+[the F-Droid recipe](fdroid.README.md). CI has one candidate workflow caller:
+`CI → native-android.yml → idric-formula.yml`. The nested workflows remain
+individually dispatchable for diagnosis.
 
-```sh
-./build.sh
-```
+## Source and reference ownership
 
-That produces a signed development APK under `.build`. The first build creates
-a persistent local `.debug.keystore`; do not use that key for a published
-release.
+- `c-lua/idric/AVEActivity.idric` and neighboring modules own the Android
+  screen, UI state, worker coordination, input and PNG export.
+- `c-lua/idric/AlgebraicExpression.idric`, `PreparedFormula.idric` and
+  `OrderedExpansion.idric` own original-order formula preparation.
+- `native/surfer_raytracer.c` and its original camera/specialization includes
+  own numerical rays, roots, shading and sampling.
+- `native/surfer_surface_store.c`, `surfer_render_session.c` and
+  `native/android/*_jni.c` own copied storage, cancellation and publication.
+- `examples/autogenerated/pure-dex-apk` packages and observes the actual APK.
+- `examples/autogenerated/original-jvm-reference/build.grease` runs only the
+  retained original JVM parser/renderer tests or previews, never an APK build.
 
-Other commands:
+The root `*.java` and `*.g` files retain the original parser and ray tracer
+for source comparison and independent numerical qualification. Original
+reference tools are explicitly named when invoked; their output cannot be
+used as the candidate application payload.
 
-```sh
-./build.sh release
-./build.sh diagnostic
-./build.sh test
-./build.sh preview
-./build.sh clean
-```
+## Madore’s E₆ cubic
 
-`release` produces an aligned but unsigned APK for F-Droid or external signing.
-`diagnostic` uses the separate package
-`org.algebraicvarietyexplorer.local`, allowing it to install beside any
-remaining copy of the real application. It is only an installation diagnostic
-and must not be uploaded as the release.
-The exact external Java dependencies and SHA-256 hashes are recorded in
-`dependencies.lock`. They are downloaded into the ignored `.dependencies`
-directory unless `ANTLR_JAR`, `VECMATH_JAR`, `JUNIT_JAR`, or `HAMCREST_JAR`
-points to a supplied copy.
-
-R8 keeps all project classes and members unchanged. Its only shrinking job is
-to remove unreachable desktop-only classes from the old ANTLR and Vecmath
-dependency jars before they reach Android.
-
-## Read the source in this order
-
-The Android adaptation is small. Start with these files:
-
-1. `MainActivity.java` — the whole screen-level sequence: connect the views,
-   configure input and buttons, request renders, and save PNG files.
-2. `SurfaceRenderController.java` — runs one render at a time and returns the
-   newest result to the screen.
-3. `RendererEngine.java` — translates the app's formula, camera, material,
-   lighting, and quality choices into calls to jsurf.
-4. `AlgebraicSurfaceView.java` — displays the bitmap and turns drag/pinch
-   gestures into rotation and zoom.
-5. `RenderRequest.java`, `RenderResult.java`, and `RenderQuality.java` — the
-   plain data passed through the rendering boundary.
-6. `PngExporter.java` — writes a rendered bitmap.
-7. `SurfaceExample.java` and `SurfaceExamples.java` — the example list.
-
-The execution path is:
-
-```text
-MainActivity
-    → SurfaceRenderController
-        → RendererEngine
-            → CPUAlgebraicSurfaceRenderer
-```
-
-Files whose package begins `de.mfo.jsurf` are the inherited 2008 ray tracer and
-algebra library. They retain the original style because rewriting working
-numerical code merely to make it look newer would make this first port harder
-to verify.
-
-`AlgebraicExpression.g` and `AlgebraicExpressionWalker.g` are the readable
-grammar sources. `AlgebraicExpressionLexer.java`,
-`AlgebraicExpressionParser.java`, and `AlgebraicExpressionWalker.java` are
-checked-in ANTLR-generated output. They are required by the current standalone
-build but are not the files to read or edit when changing the grammar.
-
-## Flat source layout
-
-All maintained files are at repository root. Java package declarations remain
-unchanged; Java does not require source files to be stored in matching package
-directories when they are passed to the compiler explicitly.
-
-- `*.java` contains application and jsurf source.
-- `*.test.java` contains JVM tests and the visual smoke test.
-- `drawable.*.xml`, `layout.*.xml`, and `values.*.xml` are Android resources.
-- `*.g` contains the original ANTLR grammar.
-- `store.*.txt` contains F-Droid listing text.
-
-Android's resource compiler requires `drawable`, `layout`, and `values`
-directories. `build.sh` reconstructs those directories temporarily under
-`.build` and leaves the repository flat.
-
-The two original packages each had a file called `Helper.java`. The
-package-private CPU renderer file is stored as `CpuHelper.java`; its contents
-and class name are unchanged. The three generated ANTLR Java files remain
-checked in and are compiled directly, so building does not require the ANTLR
-generator.
-
-## F-Droid submission
-
-See `fdroid.README.md` and `org.algebraicvarietyexplorer.yml.template`.
-
-The repository has separate gates for source/renderer tests, signed emulator
-smoke tests on the minimum and target Android API levels, byte-identical clean
-unsigned builds, APK policy inspection, and a production-like F-Droid recipe
-run. These checks provide build evidence; they do not replace final testing of
-the exact candidate on real hardware or F-Droid's own review.
+The Madore E6 example is the real polynomial `x^2+x*z^2+y^3=0`, from
+[David A. Madore’s 2006 *Cubic Surfaces DVD*](http://www.madore.org/cubic-dvd/),
+scene `03s01a.pov`. The existing film uses the original SURFER/jsurf reference.
+See the [comparison note](notes/e6-madore-compare.md) and
+[rotating movie](renders/madore-e6/madore-e6-surfer.mp4).
 
 ## Attribution and license
 
-The jsurf ray-tracing core was written by Christian Stussak for the
-Mathematisches Forschungsinstitut Oberwolfach as part of IMAGINARY's SURFER.
-The original core and this adaptation are distributed under the Apache License
-2.0. See `LICENSE` and `NOTICE`.
+Christian Stussak’s original jsurf core and this adaptation retain their
+Apache-2.0 notices. The separately compiled vecmath C module preserves Sun’s
+GPL-2.0 with Classpath exception notices. The APK includes the exact project
+license, NOTICE, third-party license account and vecmath license. See
+`LICENSE`, `NOTICE`, `THIRD_PARTY_LICENSES.md` and
+`native/licenses/vecmath-GPL-2-CE.txt`.

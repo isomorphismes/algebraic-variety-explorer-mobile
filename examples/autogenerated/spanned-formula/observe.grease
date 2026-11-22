@@ -1,0 +1,43 @@
+#!/usr/bin/env grease
+set -eu -o pipefail
+if (len(ARGV) !== 3) { echo 'usage: grease observe.grease ADB SERIAL QUALIFIED_EVIDENCE' >&2; exit 2 }
+var adb = ARGV[0]
+var serial = ARGV[1]
+var evidence = ARGV[2]
+if (adb[0] !== '/' or evidence[0] !== '/') { echo 'FAIL absolute paths required' >&2; exit 2 }
+var timeout = $(command -v timeout)
+test -x "$adb"
+test -x "$timeout"
+rg -x 'located_semantic_source_to_DEX[[:space:]]PASS' "$evidence/result.tsv"
+if test -e "$evidence/art-result.tsv" { echo 'FAIL refusing reused ART result' >&2; exit 1 }
+var api = $("$timeout" 20 "$adb" -s "$serial" shell getprop ro.build.version.sdk | tr -d '\r')
+var abi = $("$timeout" 20 "$adb" -s "$serial" shell getprop ro.product.cpu.abi | tr -d '\r')
+var qemu = $("$timeout" 20 "$adb" -s "$serial" shell getprop ro.kernel.qemu | tr -d '\r')
+if (api !== '34' or abi !== 'x86_64' or qemu !== '1') {
+  echo 'FAIL located source observer requires the declared API34 x86_64 emulator' >&2; exit 1
+}
+var remote = '/data/local/tmp/ave-spanned-formula'
+"$timeout" 20 "$adb" -s "$serial" shell mkdir "$remote"
+"$timeout" 20 "$adb" -s "$serial" push "$evidence/dex/candidate.dex" "$remote/candidate.dex"
+"$timeout" 20 "$adb" -s "$serial" push "$evidence/observer.dex" "$remote/observer.dex"
+"$timeout" 20 "$adb" -s "$serial" shell chmod 444 "$remote/candidate.dex" "$remote/observer.dex"
+"$timeout" 20 "$adb" -s "$serial" pull "$remote/candidate.dex" "$evidence/candidate-received.dex"
+"$timeout" 20 "$adb" -s "$serial" pull "$remote/observer.dex" "$evidence/observer-received.dex"
+cmp "$evidence/dex/candidate.dex" "$evidence/candidate-received.dex"
+cmp "$evidence/observer.dex" "$evidence/observer-received.dex"
+try {
+  "$timeout" --signal=TERM --kill-after=10s 90 "$adb" -s "$serial" shell \
+    "CLASSPATH=$remote/candidate.dex:$remote/observer.dex app_process /system/bin SpannedFormulaRunner" \
+    > "$evidence/art-observed.txt" 2>&1
+}
+var status = _error.code
+printf '%s\n' "$status" > "$evidence/art-observed.exit"
+cat "$evidence/art-observed.txt"
+if (status !== 0) { echo 'FAIL actual located source on ART' >&2; exit 1 }
+rg -x -F 'PASS Explorer spanned formula on ART' "$evidence/art-observed.txt"
+try { rg 'FAIL Explorer|Exception|Error:' "$evidence/art-observed.txt" }
+if (_error.code !== 1) { echo 'FAIL located source diagnostic or checker' >&2; exit 1 }
+printf 'API\t%s\nABI\t%s\nqemu\t%s\nspanned_tokens_typed_errors_11_observations_ART\tPASS\nactual_located_preparation_ART\tPASS\ninstalled_Activity_error\tNOT_RUN\nphysical_device\tNOT_RUN\n' \
+  "$api" "$abi" "$qemu" > "$evidence/art-result.tsv"
+sha256sum "$evidence/candidate-received.dex" "$evidence/observer-received.dex" >> "$evidence/artifacts.sha256"
+printf '\033[32mPASS\033[0m actual located formula admission and preparation on API34 ART\n'

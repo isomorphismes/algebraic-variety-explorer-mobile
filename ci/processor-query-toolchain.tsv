@@ -1,0 +1,10 @@
+build_id	target	toolchain	ick_revision	ick_status	ick_evidence
+processor-query-test	x86_64-pc-linux-gnu	ick	fbe86e23d55cfec2000c08e61deea2a407fd7175	qualified	receipt:ai-ci-ick-host-32cb45b3
+processor-query-count-mutant	x86_64-pc-linux-gnu	ick	fbe86e23d55cfec2000c08e61deea2a407fd7175	qualified	receipt:ai-ci-ick-host-32cb45b3
+processor-query-exception-mutant	x86_64-pc-linux-gnu	ick	fbe86e23d55cfec2000c08e61deea2a407fd7175	qualified	receipt:ai-ci-ick-host-32cb45b3
+processor-query-reference-mutant	x86_64-pc-linux-gnu	ick	fbe86e23d55cfec2000c08e61deea2a407fd7175	qualified	receipt:ai-ci-ick-host-32cb45b3
+processor-query-priority-mutant	x86_64-pc-linux-gnu	ick	fbe86e23d55cfec2000c08e61deea2a407fd7175	qualified	receipt:ai-ci-ick-host-32cb45b3
+processor-query-detach-mutant	x86_64-pc-linux-gnu	ick	fbe86e23d55cfec2000c08e61deea2a407fd7175	qualified	receipt:ai-ci-ick-host-32cb45b3
+processor-query-environment-mutant	x86_64-pc-linux-gnu	ick	fbe86e23d55cfec2000c08e61deea2a407fd7175	qualified	receipt:ai-ci-ick-host-32cb45b3
+processor-query-cleanup-mutant	x86_64-pc-linux-gnu	ick	fbe86e23d55cfec2000c08e61deea2a407fd7175	qualified	receipt:ai-ci-ick-host-32cb45b3
+processor-query-sanitizers	x86_64-pc-linux-gnu	ick	fbe86e23d55cfec2000c08e61deea2a407fd7175	qualified	receipt:ai-ci-ick-host-32cb45b3

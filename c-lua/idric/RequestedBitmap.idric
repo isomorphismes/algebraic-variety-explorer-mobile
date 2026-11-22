@@ -1,0 +1,69 @@
+module RequestedBitmap
+
+import RenderSession
+import RenderedBitmap
+import PreparedSurfaceTransfer
+import Data.Text
+
+data RequestPixelBuffer : Type where [external]
+data RequestPixelOutput : Type where [external]
+data RequestBitmapFormat : Type where [external]
+
+%foreign "dex:static:Ljava/nio/IntBuffer;:allocate:(I)Ljava/nio/IntBuffer;"
+allocate_request_pixels : Int32 → PrimIO RequestPixelBuffer
+
+%foreign "dex:virtual:Ljava/nio/IntBuffer;:array:()[I"
+request_pixel_array : RequestPixelBuffer → PrimIO RequestPixelOutput
+
+%foreign "C:ave_render_session_surface,libave"
+render_epoch_pixels : Int64 → Int64 → Int64 → Int32 → Int32 → Int32 →
+  Double → Double → Double → Double → RequestPixelOutput → PrimIO Int32
+
+%foreign "dex:static:Landroid/graphics/Bitmap$Config;:valueOf:(Ljava/lang/String;)Landroid/graphics/Bitmap$Config;"
+request_bitmap_format : Text → PrimIO RequestBitmapFormat
+
+%foreign "dex:static:Landroid/graphics/Bitmap;:createBitmap:([IIILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;"
+request_bitmap_from_pixels : RequestPixelOutput → Int32 → Int32 → RequestBitmapFormat → PrimIO RenderedBitmap
+
+checked_request_pixels : RenderSettings → Either Text Int32
+checked_request_pixels settings =
+  if settings.width < 2 || settings.height < 2 then Left "render dimensions must be at least two" else
+  let count : Integer = cast settings.width × cast settings.height
+  in if count > 2147483647 then Left "render dimensions exceed primitive-array length range"
+     else Right (cast count)
+
+request_quality : RenderQuality → Int32
+request_quality Interactive = 0
+request_quality Final = 1
+
+request_failure : Int32 → Maybe Text
+request_failure 0 = Nothing
+request_failure 2 = Just "native render rejected invalid input"
+request_failure 3 = Just "native render allocation failed"
+request_failure 4 = Just "render request cancelled"
+request_failure _ = Just "native render returned an invalid frame status"
+
+-- The caller owns this surface independently. A rejected/stale request neither
+-- replaces that surface nor mutates a previous Bitmap. Native publication and
+-- the later UI callback each have their own exact-currentness check.
+export
+render_epoch_bitmap : RenderEpoch → NativeSurface → RenderSettings → IO (Either Text RenderedBitmap)
+render_epoch_bitmap epoch surface settings = do
+  current ← render_epoch_is_current epoch
+  if not current then pure (Left "render request cancelled") else
+    case checked_request_pixels settings of
+      Left reason ⇒ pure (Left reason)
+      Right count ⇒ do
+        buffer ← primIO (allocate_request_pixels count)
+        pixels ← primIO (request_pixel_array buffer)
+        status ← primIO (render_epoch_pixels (render_epoch_session_handle epoch) (render_epoch_handle epoch)
+          (native_surface_handle surface) settings.width settings.height (request_quality settings.quality)
+          settings.camera_height settings.yaw settings.pitch settings.zoom pixels)
+        case request_failure status of
+          Just reason ⇒ pure (Left reason)
+          Nothing ⇒ do
+            still_current ← render_epoch_is_current epoch
+            if not still_current then pure (Left "render request cancelled") else do
+              format ← primIO (request_bitmap_format "ARGB_8888")
+              bitmap ← primIO (request_bitmap_from_pixels pixels settings.width settings.height format)
+              pure (Right bitmap)

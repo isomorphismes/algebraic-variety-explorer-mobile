@@ -1,0 +1,8 @@
+#!/usr/bin/env grease
+# Retained first-attempt syntax/argument counterexample; data, not a qualifier.
+# Parsing refuses the quoted glob. With that line removed, the call passes
+# the word "flags", so @flags refuses a String rather than accepting a List.
+proc compile_adapter(source, name, flags) { printf '%s\n' @flags }
+var flags = ['-DSURFER_APPLICATION_ACTIVITY_OWNER=1']
+compile_adapter prepared_surface_jni application flags
+sha256sum "/tmp/unused/default/"*.o

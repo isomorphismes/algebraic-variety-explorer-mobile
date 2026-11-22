@@ -1,0 +1,68 @@
+#!/usr/bin/env grease
+set -eu -o pipefail
+if (len(ARGV) !== 3) { echo 'usage: grease verify-host.grease EXPLORER QUALIFIED_ICK FRESH_OUTPUT' >&2; exit 2 }
+var repository = ARGV[0]
+var compiler = ARGV[1]
+var output = ARGV[2]
+for path in (ARGV) {
+  if (path[0] !== '/') { echo 'FAIL absolute paths required' >&2; exit 2 }
+}
+test -x "$compiler"
+command -v rg
+if test -e "$output" { echo 'FAIL refusing reused render-pixels evidence' >&2; exit 1 }
+mkdir -p "$output"
+"$compiler" --version > "$output/ick-version.txt"
+"$compiler" -dumpmachine > "$output/ick-target.txt"
+rg -x -F 'x86_64-pc-linux-gnu' "$output/ick-target.txt"
+var cc1 = $("$compiler" -print-prog-name=cc1)
+test -x "$cc1"
+sha256sum "$compiler" "$cc1" > "$output/compiler.sha256"
+sha256sum "$repository/native/surfer_frame_output.c" "$repository/native/surfer_frame_output.h" \
+  "$repository/native/surfer_original_specialization.inc" "$repository/native/surfer_original_camera.inc" "$repository/native/surfer_vecmath.h" "$repository/native/surfer_vecmath.c" \
+  "$repository/native/surfer_frame_output_test.c" "$repository/native/surfer_surface_store.c" \
+  "$repository/native/surfer_surface_store.h" "$repository/native/surfer_raytracer.c" \
+  "$repository/native/surfer_raytracer.h" > "$output/sources.sha256"
+proc compile_frame(source, destination) {
+  "$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O2 \
+    -fno-fast-math -ffp-contract=off -DSURFER_FRAME_OUTPUT_TESTING -DSURFER_SURFACE_STORE_TESTING \
+    -I "$repository/native" "$source" "$repository/native/surfer_frame_output_test.c" \
+    "$repository/native/surfer_surface_store.c" "$repository/native/surfer_raytracer.c" \
+    "$repository/native/surfer_vecmath.c" -lm -pthread -o "$destination"
+}
+compile_frame "$repository/native/surfer_frame_output.c" "$output/frame-test"
+"$output/frame-test" > "$output/test.txt" 2>&1
+cat "$output/test.txt"
+rg -x -F 'PASS copied native render pixels and failure preservation' "$output/test.txt"
+sed 's/return status; \/\* render failure.*/return SURFER_OK; \/\* compiled failure mutation \*\//' \
+  "$repository/native/surfer_frame_output.c" > "$output/failure-mutant.c"
+sed 's/flip_rows(pixels, (size_t)width, (size_t)height);/flip_rows(pixels, (size_t)width, 0);/' \
+  "$repository/native/surfer_frame_output.c" > "$output/rows-mutant.c"
+sed 's/SURFER_AA_QUINCUNX/SURFER_AA_OG_1X1/' \
+  "$repository/native/surfer_frame_output.c" > "$output/quality-mutant.c"
+for mutant in failure rows quality {
+  try { cmp -s "$repository/native/surfer_frame_output.c" "$output/$mutant-mutant.c" }
+  var source_status = _error.code
+  if (source_status !== 1) { echo "FAIL unchanged frame mutant or comparison error: $mutant" >&2; exit 1 }
+  compile_frame "$output/$mutant-mutant.c" "$output/$mutant-mutant"
+  try { "$output/$mutant-mutant" > "$output/$mutant-mutant.txt" 2>&1 }
+  var status = _error.code
+  cat "$output/$mutant-mutant.txt"
+  if (status !== 1) { echo "FAIL missing designated copied-frame mutation rejection: $mutant" >&2; exit 1 }
+}
+rg -x -F 'FAIL copied render pixels: numerical refusal preserves prior frame: got0 expected2' "$output/failure-mutant.txt"
+rg -x -F 'FAIL copied render pixels: exact Android row reversal' "$output/rows-mutant.txt"
+rg -x -F 'FAIL copied render pixels: exact Android row reversal' "$output/quality-mutant.txt"
+"$compiler" -fno-link-libatomic -std=c17 -Wall -Wextra -Werror -pedantic -O1 -g \
+  -fno-fast-math -ffp-contract=off -DSURFER_FRAME_OUTPUT_TESTING -DSURFER_SURFACE_STORE_TESTING \
+  -fsanitize=address,undefined -fno-omit-frame-pointer \
+  "$repository/native/surfer_frame_output.c" "$repository/native/surfer_frame_output_test.c" \
+  "$repository/native/surfer_surface_store.c" "$repository/native/surfer_raytracer.c" \
+  "$repository/native/surfer_vecmath.c" -lm -pthread -o "$output/frame-sanitized-test"
+env ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 \
+  "$output/frame-sanitized-test" > "$output/sanitized-test.txt" 2>&1
+cat "$output/sanitized-test.txt"
+rg -x -F 'PASS copied native render pixels and failure preservation' "$output/sanitized-test.txt"
+sha256sum "$output/frame-test" "$output/failure-mutant" "$output/rows-mutant" "$output/quality-mutant" \
+  "$output/frame-sanitized-test" > "$output/binaries.sha256"
+printf 'copied_render_frame_host\tPASS\noriginal_quality_mapping\tPASS\ninvalid_quality_refused\tPASS\ncompiled_failure_mutant_rejected\tPASS\ncompiled_row_mutant_rejected\tPASS\ncompiled_quality_mutant_rejected\tPASS\nASAN_UBSAN_leaks\tPASS\nJNI_ART\tNOT_RUN\nBitmap\tNOT_RUN\nphysical_device\tNOT_RUN\n' > "$output/result.tsv"
+printf '\033[32mPASS\033[0m copied native render pixels, refusal preservation, row flip and compiled mutations\n'

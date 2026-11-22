@@ -1,0 +1,76 @@
+module RenderedBitmap
+
+import PreparedSurfaceTransfer
+import public RenderQuality
+import Data.Text
+
+public export
+data RenderedBitmap : Type where [external]
+
+data PixelBuffer : Type where [external]
+data PixelOutput : Type where [external]
+data BitmapFormat : Type where [external]
+
+public export
+record RenderSettings where
+  constructor RenderWith
+  width : Int32
+  height : Int32
+  quality : RenderQuality
+  camera_height : Double
+  yaw : Double
+  pitch : Double
+  zoom : Double
+
+%foreign "dex:static:Ljava/nio/IntBuffer;:allocate:(I)Ljava/nio/IntBuffer;"
+allocate_pixels : Int32 → PrimIO PixelBuffer
+
+%foreign "dex:virtual:Ljava/nio/IntBuffer;:array:()[I"
+pixel_array : PixelBuffer → PrimIO PixelOutput
+
+%foreign "C:ave_render_prepared_surface,libave"
+render_pixels : Int64 → Int32 → Int32 → Int32 → Double → Double → Double → Double →
+  PixelOutput → PrimIO Int32
+
+%foreign "dex:static:Landroid/graphics/Bitmap$Config;:valueOf:(Ljava/lang/String;)Landroid/graphics/Bitmap$Config;"
+bitmap_format : Text → PrimIO BitmapFormat
+
+%foreign "dex:static:Landroid/graphics/Bitmap;:createBitmap:([IIILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;"
+bitmap_from_pixels : PixelOutput → Int32 → Int32 → BitmapFormat → PrimIO RenderedBitmap
+
+checked_pixel_count : RenderSettings → Either Text Int32
+checked_pixel_count settings =
+  if settings.width < 2 || settings.height < 2 then Left "render dimensions must be at least two" else
+  let count : Integer = cast settings.width × cast settings.height
+  in if count > 2147483647 then Left "render dimensions exceed primitive-array length range"
+     else Right (cast count)
+
+quality_selector : RenderQuality → Int32
+quality_selector Interactive = 0
+quality_selector Final = 1
+
+render_failure : Int32 → Maybe Text
+render_failure 0 = Nothing
+render_failure 2 = Just "native render rejected invalid input"
+render_failure 3 = Just "native render allocation failed"
+render_failure _ = Just "native render returned an invalid frame status"
+
+-- This operation creates a fresh Bitmap only after a complete native frame.
+-- It never receives or mutates the caller's previous Bitmap. JVM allocation
+-- exceptions propagate; the caller can retain its previous frame on failure.
+export
+render_native_bitmap : NativeSurface → RenderSettings → IO (Either Text RenderedBitmap)
+render_native_bitmap surface settings = case checked_pixel_count settings of
+  Left reason ⇒ pure (Left reason)
+  Right count ⇒ do
+    buffer ← primIO (allocate_pixels count)
+    pixels ← primIO (pixel_array buffer)
+    status ← primIO (render_pixels (native_surface_handle surface) settings.width settings.height
+      (quality_selector settings.quality)
+      settings.camera_height settings.yaw settings.pitch settings.zoom pixels)
+    case render_failure status of
+      Just reason ⇒ pure (Left reason)
+      Nothing ⇒ do
+        format ← primIO (bitmap_format "ARGB_8888")
+        bitmap ← primIO (bitmap_from_pixels pixels settings.width settings.height format)
+        pure (Right bitmap)

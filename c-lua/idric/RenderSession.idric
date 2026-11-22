@@ -1,0 +1,89 @@
+module RenderSession
+
+import Data.Text
+
+%foreign "C:ave_create_render_session,libave"
+create_native_session : PrimIO Int64
+
+%foreign "C:ave_begin_render_epoch,libave"
+begin_native_epoch : Int64 → PrimIO Int64
+
+%foreign "C:ave_is_render_epoch_current,libave"
+native_epoch_current : Int64 → Int64 → PrimIO Int32
+
+%foreign "C:ave_cancel_render_session,libave"
+cancel_native_session : Int64 → PrimIO Int32
+
+%foreign "C:ave_release_render_session,libave"
+release_native_session : Int64 → PrimIO Int32
+
+-- Opaque semantic identities, never counters calculated by source code.
+export
+data RenderSession = NativeRenderSession Int64
+
+export
+data RenderEpoch = NativeRenderEpoch RenderSession Int64
+
+export
+render_session_handle : RenderSession → Int64
+render_session_handle (NativeRenderSession handle) = handle
+
+export
+render_epoch_session_handle : RenderEpoch → Int64
+render_epoch_session_handle (NativeRenderEpoch session _) = render_session_handle session
+
+export
+render_epoch_handle : RenderEpoch → Int64
+render_epoch_handle (NativeRenderEpoch _ epoch) = epoch
+
+-- Identity equality is permitted; currentness still requires the native query.
+export
+same_render_epoch : RenderEpoch → RenderEpoch → Bool
+same_render_epoch left right =
+  render_epoch_session_handle left ≟ render_epoch_session_handle right &&
+  render_epoch_handle left ≟ render_epoch_handle right
+
+session_identity : Int64 → Either Text Int64
+session_identity handle =
+  if handle > 0 then Right handle else
+  if handle ≟ (-2) then Left "render session is invalid or closed" else
+  if handle ≟ (-3) then Left "render session allocation failed" else
+  Left "render session returned an invalid identity"
+
+session_status : Int32 → Either Text ()
+session_status 0 = Right ()
+session_status 2 = Left "render session is invalid or already released"
+session_status 3 = Left "render session allocation failed"
+session_status _ = Left "render session operation failed"
+
+export
+create_render_session : IO (Either Text RenderSession)
+create_render_session = do
+  handle ← primIO create_native_session
+  pure (map NativeRenderSession (session_identity handle))
+
+export
+begin_render_epoch : RenderSession → IO (Either Text RenderEpoch)
+begin_render_epoch session = do
+  epoch ← primIO (begin_native_epoch (render_session_handle session))
+  pure (map (NativeRenderEpoch session) (session_identity epoch))
+
+-- Repeat on the UI thread when completion is delivered; an epoch may cease to
+-- be current after rendering but before that callback is dispatched.
+export
+render_epoch_is_current : RenderEpoch → IO Bool
+render_epoch_is_current epoch = do
+  current ← primIO (native_epoch_current (render_epoch_session_handle epoch) (render_epoch_handle epoch))
+  pure (current ≟ 1)
+
+export
+cancel_render_session : RenderSession → IO (Either Text ())
+cancel_render_session session = do
+  status ← primIO (cancel_native_session (render_session_handle session))
+  pure (session_status status)
+
+export
+release_render_session : RenderSession → IO (Either Text ())
+release_render_session session = do
+  status ← primIO (release_native_session (render_session_handle session))
+  pure (session_status status)

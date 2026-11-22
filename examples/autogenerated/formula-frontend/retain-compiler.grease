@@ -1,0 +1,41 @@
+#!/usr/bin/env grease
+# Diagnostic build-host tools, never a phone/tablet package or fallback compiler.
+if (len(ARGV) !== 3) { echo 'usage: grease retain-compiler.grease REPOSITORY FRESH_OUTPUT QUALIFIED_ICK_STAGE' >&2; exit 2 }
+var repository = ARGV[0]
+var output = ARGV[1]
+var ick_stage = ARGV[2]
+if (repository[0] !== '/' or output[0] !== '/' or ick_stage[0] !== '/') { echo 'FAIL absolute paths required' >&2; exit 2 }
+if test -e "$output" { echo 'FAIL refusing reused compiler output' >&2; exit 1 }
+test -d "$ick_stage"
+mkdir -p "$output"
+cd "$repository"
+printf 'explorer\t%s\nfrontend\t%s\nbackend\t%s\n' \
+  $(git rev-parse HEAD) $(git -C .tools/Idric rev-parse HEAD) \
+  $(git -C .tools/android-NDK rev-parse HEAD) > "$output/sources.tsv"
+sha256sum .tools/Idric/_/build/exec/idris2_app/idris2.so \
+  .tools/Idric/_/build/exec/idris2_app/libidris2_support.so \
+  .tools/android-NDK/dex/idric/build/exec/idric-dex_app/idric-dex.so \
+  .tools/Idric/_/.tools/chez-10.4.1/bin/scheme > "$output/executables.sha256"
+tar -czf "$output/compiler.tar.gz" \
+  .tools/Idric/_/.tools/bin .tools/Idric/_/.tools/chez-10.4.1 \
+  .tools/Idric/_/bootstrap-build .tools/Idric/_/build/exec \
+  .tools/android-NDK/dex/idric/build/exec .tools/android-NDK/dex/idric/build/ttc \
+  .tools/runtime/.build/grease/bin
+tar --exclude-vcs -czf "$output/grease-runtime.tar.gz" \
+  .tools/runtime/grease/source .tools/runtime/.build/grease/python2 \
+  .tools/runtime/.build/grease/bin
+tar -czf "$output/ick-host-stage.tar.gz" -C "$ick_stage" .
+cd "$output"
+sha256sum compiler.tar.gz > compiler.sha256
+sha256sum grease-runtime.tar.gz > grease-runtime.sha256
+sha256sum ick-host-stage.tar.gz > ick-host-stage.sha256
+# Keep each downloadable artifact below the provider's 512 MiB limit.
+split -b 256m -d -a 2 ick-host-stage.tar.gz ick-host-stage.part-
+test ! -e ick-host-stage.part-03
+printf '' > ick-host-stage.parts.sha256
+for part in 00 01 02 {
+  if test -e "ick-host-stage.part-$part" {
+    sha256sum "ick-host-stage.part-$part" >> ick-host-stage.parts.sha256
+  }
+}
+printf '\033[32mPASS\033[0m exact build-host compiler/driver retained for diagnostic replay\n'

@@ -1,0 +1,5 @@
+module RenderQuality
+
+-- Shared application meaning for interaction, queued requests and rendering.
+public export
+data RenderQuality = Interactive | Final

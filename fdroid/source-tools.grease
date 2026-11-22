@@ -1,0 +1,102 @@
+#!/usr/bin/env grease
+set -eu -o pipefail
+if (len(ARGV) !== 10) {
+  echo 'usage: grease source-tools.grease REPOSITORY FRONTEND BACKEND CROSS_ICK OWNED_HOST_ICK SDK BOOTSTRAP_OUTPUT VERIFIED_CHEZ_SOURCE BAKSMALI SMALI' >&2
+  exit 2
+}
+var repository = ARGV[0]
+var frontend = ARGV[1]
+var backend = ARGV[2]
+var cross = ARGV[3]
+var host = ARGV[4]
+var sdk = ARGV[5]
+var output = ARGV[6]
+var chez_source = ARGV[7]
+var baksmali = ARGV[8]
+var smali = ARGV[9]
+for path in (ARGV) { printf '%s\n' "$path" | rg -x '/[A-Za-z0-9_./+-]+' }
+test $(git -C "$frontend" rev-parse HEAD) = 740bbf2b1d9e811fd00c719c3473eede17ceea3b
+test $(git -C "$backend" rev-parse HEAD) = dfcf2cb22c0ebcc4ce999189cc2f066593bf3689
+test $(git -C "$cross" rev-parse HEAD) = c61e448251744a2f40ad743ebef1a027bdcd2f9d
+test -x "$host"
+test $("$host" -dumpmachine) = x86_64-pc-linux-gnu
+test -s "$output/host-stage/host-runtime-packages.tsv"
+test -s "$output/host-stage/host-runtime.sha256"
+make -f "$repository/fdroid/Makefile" verify-chez-source CHEZ_SOURCE="$chez_source"
+test ! -e "$repository/.build/fdroid-inputs/chez.tar.gz"
+cp "$chez_source.files.sha256" "$chez_source.entries.txt" "$chez_source.provenance.tsv" \
+  "$chez_source.original-files.sha256" "$chez_source.original-entries.txt" "$output/"
+printf '%s  %s\n' 37ae4a41a8886e15c20b8362fa4250f96bbdb55e1a608199ad8b5dff068b588f "$baksmali" | sha256sum -c -
+printf '%s  %s\n' 32fa0e88a6c397b3922201adf5f3e534fbaed5a663c71d0c558c3ddce0af844a "$smali" | sha256sum -c -
+test -s "$sdk/platforms/android-35/android.jar"
+rg '^Pkg.Revision[[:space:]]*=[[:space:]]*29\.0\.14206865$' "$sdk/ndk/29.0.14206865/source.properties"
+var gcc_revision = $(git -C "$cross/gcc" rev-parse HEAD)
+test -s "$cross/gcc/configure"
+if test -e "$output/cross" { echo 'FAIL refusing reused cross-compiler output' >&2; exit 1 }
+mkdir -p "$output/cross"
+
+# The pinned Idriç bootstrap accepts an already built threaded Scheme at this
+# exact prefix. Build it from the verified, scanner-visible source tree, using
+# the same version and configure profile as its unchanged ensure-chez script.
+var chez_tools = "$frontend/_/.tools"
+var chez_prefix = "$chez_tools/chez-10.4.1"
+var chez_build = "$output/chez-build"
+if test -e "$chez_prefix" { echo 'FAIL refusing an inherited Chez installation' >&2; exit 1 }
+if test -e "$chez_tools/bin/scheme" { echo 'FAIL refusing an inherited Scheme launcher' >&2; exit 1 }
+mkdir -p "$chez_build" "$chez_tools/bin"
+printf '\033[36mACTION\033[0m build exact Chez10.4.1 from verified unpacked source through owned ICK\n'
+cd "$chez_build"
+env CC="$host -fno-link-libatomic" "$chez_source/configure" \
+  --threads --disable-x11 --disable-curses --as-is --installprefix="$chez_prefix"
+make -j2 CC="$host -fno-link-libatomic"
+make install CC="$host -fno-link-libatomic"
+setglobal ENV.SCHEMEHEAPDIRS = "$chez_prefix/lib/csv10.4.1/ta6le"
+test -s "$chez_prefix/lib/csv10.4.1/ta6le/scheme.boot"
+test $("$chez_prefix/bin/scheme" --version) = 10.4.1
+printf '(display (threaded?))\n(newline)\n' | "$chez_prefix/bin/scheme" --quiet > "$output/chez-threaded.txt"
+test $(tail -n 1 "$output/chez-threaded.txt") = '#t'
+ln -s ../chez-10.4.1/bin/scheme "$chez_tools/bin/scheme"
+cd "$repository"
+make -f "$repository/fdroid/Makefile" verify-chez-source CHEZ_SOURCE="$chez_source"
+sha256sum "$chez_prefix/bin/scheme" "$chez_source/boot/pb/petite.boot" \
+  "$chez_source/boot/pb/scheme.boot" > "$output/chez-toolchain.sha256"
+
+# These are local object-database clones of F-Droid's fetched srclib. No source
+# is fetched over the network during bootstrap or the application build.
+proc cross_compiler(abi, gnu, binutils) {
+  var checkout = "$output/cross/$abi"
+  git clone --shared --no-checkout "$cross" "$checkout"
+  git -C "$checkout" checkout --detach c61e448251744a2f40ad743ebef1a027bdcd2f9d
+  git clone --shared --no-checkout "$cross/gcc" "$checkout/gcc"
+  git -C "$checkout/gcc" checkout --detach "$gcc_revision"
+  sh "$checkout/ick/materialize.sh" "$checkout/gcc" "$checkout/source"
+  mkdir -p "$checkout/build" "$checkout/stage"
+  cd "$checkout/build"
+  "$checkout/source/configure" --target="$gnu" --prefix="$checkout/stage" \
+    --with-as="$(command -v "$binutils-as")" --with-ld="$(command -v "$binutils-ld")" \
+    --enable-languages=c --disable-bootstrap --disable-multilib --disable-nls \
+    --disable-shared --disable-threads --without-headers --disable-libatomic \
+    --disable-libgomp --disable-libquadmath --disable-libssp --disable-libvtv
+  make -j2 all-gcc
+  make install-gcc
+  test $("$checkout/stage/bin/$gnu-gcc" -dumpmachine) = "$gnu"
+  cd "$repository"
+}
+printf '\033[36mACTION\033[0m source-build the three owned Android C compilers\n'
+cross_compiler arm64-v8a aarch64-linux-gnu aarch64-linux-gnu
+cross_compiler armeabi-v7a arm-linux-gnueabi arm-linux-gnueabi
+cross_compiler x86_64 x86_64-linux-gnu x86_64-linux-gnu
+printf '\033[36mACTION\033[0m bootstrap checked Idriç and pinned Chez through owned host ICK\n'
+setglobal ENV.CC = host ++ ' -fno-link-libatomic'
+setglobal ENV.CHEZ_ARCHIVE = ''
+setglobal ENV.EDRIC_TOOLCHAIN_DIR = chez_tools
+setglobal ENV.JOBS = '2'
+"$frontend/edric" bootstrap
+sha256sum "$frontend/_/build/exec/idris2_app/idris2.so" \
+  "$frontend/_/build/exec/idris2_app/libidris2_support.so" \
+  "$frontend/_/.tools/chez-10.4.1/bin/scheme" > "$output/frontend.sha256"
+mkdir -p "$output/oracles"
+cp "$baksmali" "$output/oracles/baksmali.jar"
+cp "$smali" "$output/oracles/smali.jar"
+printf 'host_ICK_source_build\tPASS\npinned_Grease_source_build\tPASS\nthree_cross_compiler_source_builds\tPASS\nfrontend_source_bootstrap\tPASS\napplication_build\tNOT_RUN\nF_Droid_scanner\tNOT_RUN\n' > "$output/result.tsv"
+printf '\033[32mPASS\033[0m source-built application compiler prerequisites; application and scanner checks follow\n'

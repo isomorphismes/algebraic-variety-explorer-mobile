@@ -1,0 +1,61 @@
+module InteractionCheck
+
+import AVEInteraction
+import Data.Text
+import System
+
+require : Text → Bool → IO ()
+require _ True = pure ()
+require message False = do
+  putStrLn ("FAIL Explorer interaction: " ++ message)
+  exitFailure
+
+emitted : Maybe ViewChange → Bool
+emitted Nothing = False
+emitted (Just _) = True
+
+final_change : Maybe ViewChange → Bool
+final_change (Just (ChangedView _ Final True)) = True
+final_change _ = False
+
+interactive_change : Maybe ViewChange → Bool
+interactive_change (Just (ChangedView _ Interactive False)) = True
+interactive_change _ = False
+
+main : IO ()
+main = do
+  let initial = initial_interaction
+  require "initial camera" (initial.camera.yaw ≟ 0.55 &&
+    initial.camera.pitch ≟ (-0.35) && initial.camera.zoom ≟ 1.0)
+  require "quality limits" (maximum_dimension Interactive ≟ 144 && maximum_dimension Final ≟ 384)
+  require "initial timestamp" (initial.last_interactive_render_at ≟ 0)
+  let (state69, change69) = notify_view_changed True False 69 initial
+  require "before 70ms" (not (emitted change69) && state69.last_interactive_render_at ≟ 0)
+  let (state70, change70) = notify_view_changed True False 70 state69
+  require "at 70ms" (interactive_change change70 && state70.last_interactive_render_at ≟ 70)
+  let (state139, change139) = notify_view_changed True False 139 state70
+  require "suppressed update preserves timestamp" (not (emitted change139) && state139.last_interactive_render_at ≟ 70)
+  let (state140, change140) = notify_view_changed True False 140 state139
+  require "second 70ms interval" (interactive_change change140 && state140.last_interactive_render_at ≟ 140)
+  let (state141, change141) = notify_view_changed True True 141 state140
+  require "final bypass and timestamp" (final_change change141 && state141.last_interactive_render_at ≟ 141)
+  let (same_final, same_change) = notify_view_changed True True 141 state141
+  require "repeated final" (final_change same_change && same_final.last_interactive_render_at ≟ 141)
+  let (state210, change210) = notify_view_changed True False 210 state141
+  require "interactive throttle starts at final" (not (emitted change210) && state210.last_interactive_render_at ≟ 141)
+  let (state211, change211) = notify_view_changed True False 211 state210
+  require "interactive after final interval" (interactive_change change211 && state211.last_interactive_render_at ≟ 211)
+  let (absent, absent_change) = notify_view_changed False True 100 initial
+  require "absent listener leaves timestamp" (not (emitted absent_change) && absent.last_interactive_render_at ≟ 0)
+  let (installed, installed_change) = notify_view_changed True False 101 absent
+  require "installed listener uses previous delivered time" (interactive_change installed_change && installed.last_interactive_render_at ≟ 101)
+  let changed = ViewInteraction (CameraOrientation 2.0 1.0 3.0) Nothing 211
+  let (suppressed, suppressed_change) = notify_view_changed True False 220 changed
+  require "suppression keeps camera" (not (emitted suppressed_change) &&
+    suppressed.camera.yaw ≟ 2.0 && suppressed.camera.pitch ≟ 1.0 && suppressed.camera.zoom ≟ 3.0)
+  let reset = reset_view changed
+  require "reset camera and timestamp" (reset.camera.yaw ≟ 0.55 &&
+    reset.camera.pitch ≟ (-0.35) && reset.camera.zoom ≟ 1.0 && reset.last_interactive_render_at ≟ 211)
+  let (reset_final, reset_change) = notify_view_changed True True 212 reset
+  require "reset final" (final_change reset_change && reset_final.last_interactive_render_at ≟ 212)
+  putStrLn "PASS Explorer interaction source state, throttle and quality selection"

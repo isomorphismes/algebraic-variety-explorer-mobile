@@ -1,0 +1,15 @@
+module PauseLifecycle
+
+data ActivityReference : Type where [external]
+%foreign "dex:virtual:Landroid/app/Activity;:setTitle:(Ljava/lang/CharSequence;)V"
+set_title : ActivityReference → Text → PrimIO ()
+
+%cg dex extends Landroid/app/Activity;
+%cg dex override onPause ()V receive_pause
+
+%export "dex:receive_pause"
+receive_pause : ActivityReference → IO ()
+receive_pause activity = primIO (set_title activity "Paused")
+
+main : IO ()
+main = pure ()

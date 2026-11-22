@@ -1,0 +1,57 @@
+module ExpansionExports
+
+import PolynomialQualification
+import CoefficientValue
+import PreparedFormula
+import OrderedExpansion
+import Data.Text
+
+-- Observation only: the real managed producer remains typed, not textual.
+%foreign "dex:static:Ljava/lang/Double;:doubleToLongBits:(D)J"
+canonical_bits : Coefficient → Int64
+
+%foreign "dex:static:Ljava/lang/Long;:toHexString:(J)Ljava/lang/String;"
+hexadecimal_bits : Int64 → Text
+
+term_report : ExpandedTerm → Text
+term_report term = cast term.x_exponent ++ "," ++ cast term.y_exponent ++ "," ++
+  cast term.z_exponent ++ ":" ++ hexadecimal_bits (canonical_bits term.coefficient)
+
+terms_report : List ExpandedTerm → Text
+terms_report [] = ""
+terms_report [term] = term_report term
+terms_report (term :: remaining) = term_report term ++ "|" ++ terms_report remaining
+
+surface_report : ExpandedSurface → Text
+surface_report prepared =
+  "family=" ++ cast prepared.family_degree ++
+  ";surface=" ++ terms_report prepared.surface.terms ++
+  ";dx=" ++ terms_report prepared.gradient_x.terms ++
+  ";dy=" ++ terms_report prepared.gradient_y.terms ++
+  ";dz=" ++ terms_report prepared.gradient_z.terms
+
+observe_expansion : ExpansionLimits → (Text → Maybe Coefficient) → Text → Text
+observe_expansion limits bindings source = case prepare_formula bindings source of
+  Left reason ⇒ "error: " ++ reason
+  Right prepared ⇒ case expand_prepared_formula limits prepared of
+    Left reason ⇒ "error: " ++ expansion_error reason
+    Right expanded ⇒ surface_report expanded
+
+%export "dex:actual_expansion"
+actual_expansion : Text → Text
+actual_expansion = observe_expansion (BoundedExpansion 4096 262144) (\name ⇒ Nothing)
+
+%export "dex:actual_expansion_with_radius"
+actual_expansion_with_radius : Text → Text
+actual_expansion_with_radius = observe_expansion (BoundedExpansion 4096 262144)
+  (\name ⇒ if name ≟ "radius" then Just 2.0 else Nothing)
+
+%export "dex:expansion_budget_probe"
+expansion_budget_probe : Text → Text
+expansion_budget_probe "terms" = observe_expansion (BoundedExpansion 1 16) (\name ⇒ Nothing) "x+y"
+expansion_budget_probe "products" = observe_expansion (BoundedExpansion 16 1) (\name ⇒ Nothing) "(x+y)*(x+y)"
+expansion_budget_probe "invalid" = observe_expansion (BoundedExpansion 0 16) (\name ⇒ Nothing) "x"
+expansion_budget_probe source = actual_expansion source
+
+main : IO ()
+main = pure ()

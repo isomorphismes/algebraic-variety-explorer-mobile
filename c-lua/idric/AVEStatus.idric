@@ -1,0 +1,54 @@
+module AVEStatus
+
+import AVEPlatform
+
+data FormatArguments : Type where [external]
+data ArgumentList : Type where [external]
+data BoxedInteger : Type where [external]
+data BoxedLong : Type where [external]
+
+%foreign "dex:construct:Ljava/util/ArrayList;:<init>:()V"
+new_arguments : PrimIO ArgumentList
+%foreign "dex:virtual:Ljava/util/ArrayList;:add:(Ljava/lang/Object;)Z"
+add_argument : ArgumentList → ObjectReference → PrimIO Int32
+%foreign "dex:virtual:Ljava/util/ArrayList;:toArray:()[Ljava/lang/Object;"
+argument_array : ArgumentList → PrimIO FormatArguments
+%foreign "dex:static:Ljava/lang/Integer;:valueOf:(I)Ljava/lang/Integer;"
+box_integer : Int32 → BoxedInteger
+%foreign "dex:static:Ljava/lang/Long;:valueOf:(J)Ljava/lang/Long;"
+box_long : Int64 → BoxedLong
+%foreign "dex:cast:Ljava/lang/Integer;:Ljava/lang/Object;"
+integer_object : BoxedInteger → ObjectReference
+%foreign "dex:cast:Ljava/lang/Long;:Ljava/lang/Object;"
+long_object : BoxedLong → ObjectReference
+%foreign "dex:cast:Ljava/lang/String;:Ljava/lang/Object;"
+text_object : Text → ObjectReference
+%foreign "dex:virtual:Landroid/content/res/Resources;:getString:(I[Ljava/lang/Object;)Ljava/lang/String;"
+format_resource : ResourcesReference → Int32 → FormatArguments → PrimIO Text
+
+format_values : ResourcesReference → Int32 → List ObjectReference → IO Text
+format_values resources identifier values = do
+  arguments ← primIO new_arguments
+  fill arguments values
+  array ← primIO (argument_array arguments)
+  primIO (format_resource resources identifier array)
+  where
+    fill : ArgumentList → List ObjectReference → IO ()
+    fill _ [] = pure ()
+    fill arguments (value :: remaining) = do
+      _ ← primIO (add_argument arguments value)
+      fill arguments remaining
+
+export
+rendering_status : ResourcesReference → Int32 → Int32 → Int32 → IO Text
+rendering_status resources identifier width height =
+  format_values resources identifier [integer_object (box_integer width), integer_object (box_integer height)]
+
+export
+complete_status : ResourcesReference → Int32 → Int32 → Int64 → IO Text
+complete_status resources identifier degree elapsed =
+  format_values resources identifier [integer_object (box_integer degree), long_object (box_long elapsed)]
+
+export
+error_status : ResourcesReference → Int32 → Text → IO Text
+error_status resources identifier reason = format_values resources identifier [text_object reason]

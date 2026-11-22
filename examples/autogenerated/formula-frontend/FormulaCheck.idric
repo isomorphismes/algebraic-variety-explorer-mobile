@@ -1,0 +1,41 @@
+module FormulaCheck
+
+import AlgebraicExpression
+import Data.Text
+import System
+
+check : Text → Text → Text → IO ()
+check name source expected =
+  if formula_shape source ≟ expected then putStrLn ("PASS " ++ name) else do
+    putStrLn ("FAIL " ++ name ++ ": " ++ formula_shape source)
+    exitFailure
+
+reject : Text → IO ()
+reject source = case parse_formula source of
+  Left _ ⇒ pure ()
+  Right _ ⇒ do
+    putStrLn ("FAIL accepted malformed formula: " ++ source)
+    exitFailure
+
+main : IO ()
+main = do
+  check "right-associated power" "x^2^3"
+    "pow(name[x],pow(decimal[2],decimal[3]))"
+  check "negation below power" "-x^2"
+    "neg(pow(name[x],decimal[2]))"
+  check "grouped negative" "(-x)^2"
+    "pow(group(neg(name[x])),decimal[2])"
+  check "scientific coefficient lexeme" "1.25e-3*x"
+    "mul(float[1.25e-3],name[x])"
+  check "unary constant function" "sqrt(.25)+x"
+    "add(call[sqrt](float[.25]),name[x])"
+  check "decimal trailing point" "1.*x" "mul(float[1.],name[x])"
+  check "left-associated division" "x/2/3"
+    "div(div(name[x],decimal[2]),decimal[3])"
+  check "Madore cubic" "x^2+x*z^2+y^3"
+    "add(add(pow(name[x],decimal[2]),mul(name[x],pow(name[z],decimal[2]))),pow(name[y],decimal[3]))"
+  check "quartic" "x^4-x*y^3-z^4+z"
+    "add(sub(sub(pow(name[x],decimal[4]),mul(name[x],pow(name[y],decimal[3]))),pow(name[z],decimal[4])),name[z])"
+  traverse_ reject ["", "x+", "x y", "x$", "01", ".", "1e", "1e+",
+    "x^-2", "--x", "(x", "x)", "sin()", "sin(x,y)", "x=0"]
+  putStrLn "PASS Explorer Idriç source parser"

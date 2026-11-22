@@ -1,0 +1,54 @@
+#!/usr/bin/env grease
+if (len(ARGV) !== 5) { echo 'usage: grease observe.grease ADB SERIAL EVIDENCE RUNNER ORIGINAL_DEX' >&2; exit 2 }
+var adb = ARGV[0]
+var serial = ARGV[1]
+var evidence = ARGV[2]
+var runner = ARGV[3]
+var original = ARGV[4]
+if (adb[0] !== '/' or evidence[0] !== '/' or runner[0] !== '/' or original[0] !== '/') {
+  echo 'FAIL absolute paths required' >&2; exit 2
+}
+var remote = '/data/local/tmp/ave-semantic-preparation'
+"$adb" -s "$serial" shell rm -rf "$remote"
+"$adb" -s "$serial" shell mkdir "$remote"
+"$adb" -s "$serial" push "$runner" "$remote/runner.dex"
+"$adb" -s "$serial" push "$original" "$remote/original.dex"
+"$adb" -s "$serial" push "$evidence/positive/candidate.dex" "$remote/positive.dex"
+"$adb" -s "$serial" push "$evidence/mutant-fold/candidate.dex" "$remote/mutant-fold.dex"
+"$adb" -s "$serial" push "$evidence/mutant-derivative/candidate.dex" "$remote/mutant-derivative.dex"
+"$adb" -s "$serial" shell chmod 444 "$remote/runner.dex" "$remote/original.dex" \
+  "$remote/positive.dex" "$remote/mutant-fold.dex" "$remote/mutant-derivative.dex"
+"$adb" -s "$serial" pull "$remote/runner.dex" "$evidence/runner-received.dex"
+"$adb" -s "$serial" pull "$remote/original.dex" "$evidence/original-received.dex"
+"$adb" -s "$serial" pull "$remote/positive.dex" "$evidence/positive-received.dex"
+"$adb" -s "$serial" pull "$remote/mutant-fold.dex" "$evidence/mutant-fold-received.dex"
+"$adb" -s "$serial" pull "$remote/mutant-derivative.dex" "$evidence/mutant-derivative-received.dex"
+cmp "$runner" "$evidence/runner-received.dex"
+cmp "$original" "$evidence/original-received.dex"
+cmp "$evidence/positive/candidate.dex" "$evidence/positive-received.dex"
+cmp "$evidence/mutant-fold/candidate.dex" "$evidence/mutant-fold-received.dex"
+cmp "$evidence/mutant-derivative/candidate.dex" "$evidence/mutant-derivative-received.dex"
+"$adb" -s "$serial" shell "CLASSPATH=$remote/positive.dex:$remote/original.dex:$remote/runner.dex app_process /system/bin PreparationRunner" \
+  > "$evidence/art-positive.txt" 2>&1
+cat "$evidence/art-positive.txt"
+rg -x -F 'PASS Explorer semantic preparation on ART' "$evidence/art-positive.txt"
+try {
+  "$adb" -s "$serial" shell "CLASSPATH=$remote/mutant-fold.dex:$remote/original.dex:$remote/runner.dex app_process /system/bin PreparationRunner" \
+    > "$evidence/art-mutant-fold.txt" 2>&1
+}
+var fold_status = _error.code
+cat "$evidence/art-mutant-fold.txt"
+if (fold_status !== 77) { echo 'FAIL missing designated eager-fold mutant rejection' >&2; exit 1 }
+rg -x -F 'FAIL Explorer semantic preparation' "$evidence/art-mutant-fold.txt"
+try {
+  "$adb" -s "$serial" shell "CLASSPATH=$remote/mutant-derivative.dex:$remote/original.dex:$remote/runner.dex app_process /system/bin PreparationRunner" \
+    > "$evidence/art-mutant-derivative.txt" 2>&1
+}
+var derivative_status = _error.code
+cat "$evidence/art-mutant-derivative.txt"
+if (derivative_status !== 77) { echo 'FAIL missing designated product-rule mutant rejection' >&2; exit 1 }
+rg -x -F 'FAIL Explorer semantic preparation' "$evidence/art-mutant-derivative.txt"
+"$adb" -s "$serial" shell getprop ro.build.version.sdk > "$evidence/art-sdk.txt"
+"$adb" -s "$serial" shell getprop ro.product.cpu.abi > "$evidence/art-abi.txt"
+printf 'semantic_preparation_ART\tPASS\noriginal_jsurf_structures_and_bits\tPASS\ncompiled_eager_fold_mutant_rejected\tPASS\ncompiled_product_rule_mutant_rejected\tPASS\nexpansion\tNOT_RUN\nJNI\tNOT_RUN\nAPK\tNOT_RUN\nphysical_C67\tNOT_RUN\nphysical_A1\tNOT_RUN\n' > "$evidence/art-result.tsv"
+printf '\033[32mPASS\033[0m semantic preparation, original-jsurf structures/bits and compiled mutants on ART\n'
