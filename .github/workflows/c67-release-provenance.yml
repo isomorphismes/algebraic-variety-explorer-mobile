@@ -1,0 +1,35 @@
+name: Explorer C67 release provenance checks
+
+on:
+  push:
+    branches:
+      - surfer
+      - release/c67-source-bound-intake-20261122
+    paths:
+      - 'ci/c67-release-record.sh'
+      - 'ci/test-c67-release-record.sh'
+      - '.github/workflows/c67-release-provenance.yml'
+  pull_request:
+    paths:
+      - 'ci/c67-release-record.sh'
+      - 'ci/test-c67-release-record.sh'
+      - '.github/workflows/c67-release-provenance.yml'
+      - '.github/workflows/c67-release-candidate.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  source-bound-record:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Parse and run source-bound C67 record fixtures
+        shell: bash
+        run: |
+          bash -n ci/c67-release-record.sh ci/test-c67-release-record.sh
+          bash ci/test-c67-release-record.sh
