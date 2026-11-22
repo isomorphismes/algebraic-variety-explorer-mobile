@@ -14,8 +14,4 @@ There is no published APK on [GitHub Releases](https://github.com/isomorphismes/
 
 To build a development APK on a computer, install JDK 17, Android SDK Platform 35 and Build Tools 35.0.1. With Bash, curl, zip and unzip available, set `ANDROID_SDK_ROOT` to the SDK directory and run `./build.sh` from this checkout. The signed APK is written to `.build/`.
 
-## Source
-
-[MainActivity.java](MainActivity.java) connects the formula field, buttons and touch controls. [SurfaceRenderController.java](SurfaceRenderController.java) schedules each render. [RendererEngine.java](RendererEngine.java) passes the polynomial and camera settings to [Stussak’s ray tracer](CPUAlgebraicSurfaceRenderer.java).
-
-[Build commands](build.sh) · [F-Droid packaging](fdroid.README.md) · [License](LICENSE) · [Credits](NOTICE) · [Third-party licenses](THIRD_PARTY_LICENSES.md)
+[Build instructions, source guide, example surfaces and credits](docs/README.md)
