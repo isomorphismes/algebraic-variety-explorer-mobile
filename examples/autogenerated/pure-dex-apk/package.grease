@@ -1,7 +1,7 @@
 #!/usr/bin/env grease
 set -eu -o pipefail
-if (len(ARGV) !== 6) {
-  echo 'usage: grease package.grease EXPLORER SDK NDK ACTIVITY_EVIDENCE NATIVE_EVIDENCE_ROOT FRESH_OUTPUT' >&2
+if (len(ARGV) !== 6 and len(ARGV) !== 7) {
+  echo 'usage: grease package.grease EXPLORER SDK NDK ACTIVITY_EVIDENCE NATIVE_EVIDENCE_ROOT FRESH_OUTPUT [c67]' >&2
   exit 2
 }
 var repository = ARGV[0]
@@ -10,7 +10,16 @@ var ndk = ARGV[2]
 var activity = ARGV[3]
 var native = ARGV[4]
 var output = ARGV[5]
-for path in (ARGV) { if (path[0] !== '/') { echo 'FAIL absolute packaging paths required' >&2; exit 2 } }
+for path in (ARGV[:6]) { if (path[0] !== '/') { echo 'FAIL absolute packaging paths required' >&2; exit 2 } }
+var profile = 'universal'
+var abis = ['arm64-v8a', 'armeabi-v7a', 'x86_64']
+var apk_suffix = ''
+if (len(ARGV) === 7) {
+  if (ARGV[6] !== 'c67') { echo 'FAIL unknown APK packaging profile' >&2; exit 2 }
+  setvar profile = 'c67'
+  setvar abis = ['arm64-v8a']
+  setvar apk_suffix = '-C67'
+}
 if test -e "$output" { echo 'FAIL refusing reused unsigned APK output' >&2; exit 1 }
 proc constant(name) {
   test $(awk -F '\t' -v name="$name" '$1 == name { count++ } END { print count+0 }' "$repository/build-values.tsv") = 1
@@ -99,7 +108,8 @@ cp "$repository/native/licenses/vecmath-GPL-2-CE.txt" "$output/payload/assets/li
 sha256sum "$repository/LICENSE" "$repository/NOTICE" "$repository/THIRD_PARTY_LICENSES.md" \
   "$repository/native/licenses/vecmath-GPL-2-CE.txt" > "$output/evidence/licenses.sha256"
 cp "$activity/candidate.dex" "$output/payload/classes.dex"
-for abi in arm64-v8a armeabi-v7a x86_64 {
+var native_entries = []
+for abi in (abis) {
   var built = "$native/$abi"
   var library = "$built/libave.so"
   test -s "$library"
@@ -147,12 +157,9 @@ for abi in arm64-v8a armeabi-v7a x86_64 {
   try { rg -v ' Java_org_algebraicvarietyexplorer_AVEActivity_(copyPreparedSurface|replacePreparedSurface|releasePreparedSurface|renderPreparedSurface|createRenderSession|beginRenderEpoch|isRenderEpochCurrent|cancelRenderSession|releaseRenderSession|renderSessionSurface)$' "$output/evidence/$abi/exports.txt" }
   if (_error.code !== 1) { echo 'FAIL production library dynamically exports a symbol outside declared JNI API or checker' >&2; exit 1 }
   cp "$library" "$output/payload/lib/$abi/libave.so"
+  call native_entries->append("lib/$abi/libave.so")
 }
 setglobal ENV.TZ = 'UTC'
-touch -t 198001010000.00 "$output/payload/classes.dex" \
-  "$output/payload/lib/arm64-v8a/libave.so" "$output/payload/lib/armeabi-v7a/libave.so" "$output/payload/lib/x86_64/libave.so" \
-  "$output/payload/assets/licenses/PROJECT-LICENSE" "$output/payload/assets/licenses/NOTICE" \
-  "$output/payload/assets/licenses/THIRD_PARTY_LICENSES.md" "$output/payload/assets/licenses/vecmath-GPL-2-CE.txt"
 printf '\033[36mACTION\033[0m package original resources with exact checked DEX and production JNI\n'
 "$aapt2" compile --dir "$output/res" -o "$output/resources.zip"
 "$aapt2" link -o "$output/resources.apk" --manifest "$output/AndroidManifest.xml" -I "$platform" \
@@ -160,22 +167,24 @@ printf '\033[36mACTION\033[0m package original resources with exact checked DEX 
   --version-code "$version_code" --version-name "$version_name" "$output/resources.zip"
 cp "$output/resources.apk" "$output/unaligned.apk"
 cd "$output/payload"
-zip -X -0 "$output/unaligned.apk" classes.dex lib/arm64-v8a/libave.so lib/armeabi-v7a/libave.so lib/x86_64/libave.so \
+touch -t 198001010000.00 classes.dex @native_entries \
   assets/licenses/PROJECT-LICENSE assets/licenses/NOTICE assets/licenses/THIRD_PARTY_LICENSES.md assets/licenses/vecmath-GPL-2-CE.txt
-var apk = "$output/Algebraic-Variety-Explorer-$version_name-unsigned.apk"
+zip -X -0 "$output/unaligned.apk" classes.dex @native_entries \
+  assets/licenses/PROJECT-LICENSE assets/licenses/NOTICE assets/licenses/THIRD_PARTY_LICENSES.md assets/licenses/vecmath-GPL-2-CE.txt
+var apk = "$output/Algebraic-Variety-Explorer-${version_name}${apk_suffix}-unsigned.apk"
 "$align" -P 16 -f -v 4 "$output/unaligned.apk" "$apk" > "$output/evidence/alignment.txt"
 "$align" -P 16 -c -v 4 "$apk" >> "$output/evidence/alignment.txt"
 unzip -t "$apk" > "$output/evidence/zip-test.txt"
 unzip -Z1 "$apk" > "$output/evidence/entries.txt"
 unzip -lv "$apk" > "$output/evidence/compression.txt"
-for entry in resources.arsc lib/arm64-v8a/libave.so lib/armeabi-v7a/libave.so lib/x86_64/libave.so {
+for entry in resources.arsc @native_entries {
   rg -F "$entry" "$output/evidence/compression.txt" | rg '[[:space:]]Stored[[:space:]]'
 }
 test $(rg -c '^classes[0-9]*\.dex$' "$output/evidence/entries.txt") = 1
-for entry in classes.dex lib/arm64-v8a/libave.so lib/armeabi-v7a/libave.so lib/x86_64/libave.so {
-  test $(rg -c -x -F "$entry" "$output/evidence/entries.txt") = 1
-}
-test $(rg -c '^lib/[^/]+/[^/]+$' "$output/evidence/entries.txt") = 3
+test $(rg -c -x -F classes.dex "$output/evidence/entries.txt") = 1
+printf '%s\n' @native_entries > "$output/evidence/expected-native-entries.txt"
+rg '^lib/' "$output/evidence/entries.txt" > "$output/evidence/native-entries.txt"
+cmp "$output/evidence/expected-native-entries.txt" "$output/evidence/native-entries.txt"
 for license in PROJECT-LICENSE NOTICE THIRD_PARTY_LICENSES.md vecmath-GPL-2-CE.txt {
   test $(rg -c -x -F "assets/licenses/$license" "$output/evidence/entries.txt") = 1
 }
@@ -185,7 +194,7 @@ if (_error.code !== 1) { echo 'FAIL signed or foreign candidate payload or check
 mkdir -p "$output/extracted"
 unzip -q "$apk" classes.dex 'lib/*' 'assets/licenses/*' -d "$output/extracted"
 cmp "$activity/candidate.dex" "$output/extracted/classes.dex"
-for abi in arm64-v8a armeabi-v7a x86_64 { cmp "$native/$abi/libave.so" "$output/extracted/lib/$abi/libave.so" }
+for abi in (abis) { cmp "$native/$abi/libave.so" "$output/extracted/lib/$abi/libave.so" }
 for license in PROJECT-LICENSE NOTICE THIRD_PARTY_LICENSES.md vecmath-GPL-2-CE.txt {
   cmp "$output/payload/assets/licenses/$license" "$output/extracted/assets/licenses/$license"
 }
@@ -203,6 +212,13 @@ if (unsigned_status === 0) { echo 'FAIL candidate unexpectedly signed' >&2; exit
 rg -F 'ERROR: Missing META-INF/MANIFEST.MF' "$output/evidence/unsigned-check.txt"
 sha256sum "$activity/candidate.dex" "$output/extracted/classes.dex" "$apk" > "$output/artifacts.sha256"
 printf '%s\n' "$apk" > "$output/apk-path.txt"
-basename "$apk" > "$output/apk-name.txt"
-printf 'unsigned_pure_DEX_APK\tPASS\noriginal_package_resources_version\tPASS\nexact_candidate_DEX_bytes\tPASS\nproduction_JNI_3ABIs\tPASS\nzipalign_4byte_16KiB\tPASS\nsigned_for_user\tNOT_RUN\ninstalled_emulator\tNOT_RUN\nproduction_update_identity\tNOT_RUN\nphysical_device\tNOT_RUN\n' > "$output/result.tsv"
+var apk_name = $(basename "$apk")
+printf '%s\n' "$apk_name" > "$output/apk-name.txt"
+cd "$output"
+sha256sum "$apk_name" > apk.sha256
+var native_result = 'production_JNI_3ABIs'
+if (profile === 'c67') { setvar native_result = 'production_JNI_arm64-v8a' }
+printf 'profile\t%s\n' "$profile" > "$output/profile.tsv"
+for abi in (abis) { printf 'abi\t%s\n' "$abi" >> "$output/profile.tsv" }
+printf 'unsigned_pure_DEX_APK\tPASS\noriginal_package_resources_version\tPASS\nexact_candidate_DEX_bytes\tPASS\n%s\tPASS\nzipalign_4byte_16KiB\tPASS\nsigned_for_user\tNOT_RUN\ninstalled_emulator\tNOT_RUN\nproduction_update_identity\tNOT_RUN\nphysical_device\tNOT_RUN\n' "$native_result" > "$output/result.tsv"
 printf '\033[32mPASS\033[0m unsigned checked-DEX AVE APK; signing, installed behavior and device acceptance separate\n'

@@ -27,6 +27,14 @@ identity, install on a phone, or turn host compilation into runtime acceptance.
 A persistent signer matching the installed package is still necessary for an
 update. Installed emulator checks and physical C67 acceptance are separate.
 
+The packaging job also invokes `package.grease` with the trailing profile
+`c67` on the same verified DEX and native build evidence. This produces the
+aligned unsigned C67 signing input with only `lib/arm64-v8a/libave.so`. The
+artifact `explorer-c67-unsigned-signing-input-<source-sha>` carries the
+profile, APK digest and ZIP entry evidence for the protected signer. Device
+delivery requires an authorized release signature and verification of the
+finished APK.
+
 ## Migration boundary
 
 `build.sh` is now only a compatibility entry into `build.grease`. The canonical
