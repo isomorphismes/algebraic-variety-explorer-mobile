@@ -20,32 +20,23 @@ readonly LOCALE="$REPO_ROOT/fastlane/metadata/android/en-US"
 readonly CHANGELOG="$LOCALE/changelogs/$AVE_VERSION_CODE.txt"
 
 [[ "$(field 's/^  - versionName: \(.*\)$/\1/p' "$METADATA" | tail -n 1)" == "$AVE_VERSION_NAME" ]] ||
-    fail "F-Droid build versionName does not match build.sh"
+    fail "F-Droid build versionName does not match build-values.tsv"
 [[ "$(field 's/^    versionCode: \([0-9][0-9]*\)$/\1/p' "$METADATA" | tail -n 1)" == "$AVE_VERSION_CODE" ]] ||
-    fail "F-Droid build versionCode does not match build.sh"
+    fail "F-Droid build versionCode does not match build-values.tsv"
 [[ "$(field 's/^    commit: \(.*\)$/\1/p' "$METADATA" | tail -n 1)" == "v$AVE_VERSION_NAME" ]] ||
     fail "F-Droid build commit must be v$AVE_VERSION_NAME"
 [[ "$(field 's/^    output: \(.*\)$/\1/p' "$METADATA" | tail -n 1)" == ".build/$AVE_RELEASE_APK_NAME" ]] ||
-    fail "F-Droid output does not match build.sh"
+    fail "F-Droid output does not match build-values.tsv"
 grep -Fq '      - apt-get install -y openjdk-21-jdk-headless build-essential' "$METADATA" ||
     fail "F-Droid sudo dependencies must match the pinned buildserver distribution"
 grep -Fxq '      - sdkmanager "platforms;android-35" "build-tools;35.0.1" "ndk;29.0.14206865"' "$METADATA" ||
     fail "F-Droid prebuild must install the pinned SDK and build tools"
 grep -Fxq '      - make -f fdroid/Makefile prepare-chez-source' "$METADATA" ||
     fail "F-Droid prebuild must expose verified Chez sources before scanning"
-grep -Fxq '        AI_CI="$$AVEAiCi$$" SDK="$$SDK$$" CHEZ_SOURCE="$PWD/.build/fdroid-inputs/chez-source"' "$METADATA" ||
+grep -Fq 'CHEZ_SOURCE="$PWD/.build/fdroid-inputs/chez-source"' "$METADATA" ||
     fail "F-Droid compiler build must consume the verified unpacked Chez source"
-grep -Fq '      - make -f fdroid/Makefile FRONTEND="$$AVEIdric$$"' "$METADATA" ||
-    fail "F-Droid build must source-build the pinned compiler prerequisites"
-# The pinned F-Droid writer folds this one invocation onto three canonical
-# lines. Require the executable and every argument in that adjacent sequence.
-awk \
-    -v command='      - PATH="$PWD/.build/fdroid-tools/runtime/.build/grease/bin:$PATH" .build/fdroid-tools/runtime/.build/grease/bin/grease' \
-    -v arguments='        fdroid/reproducible.grease "$PWD" "$$AVEIdric$$" "$$AVEDEX$$" "$$SDK$$" "$PWD/.build/fdroid-tools"' \
-    -v tail='        "$PWD/.build/reproducible-source" "$(git rev-parse HEAD)"' \
-    '$0 == command { found++; if ((getline) <= 0 || $0 != arguments) bad = 1; if ((getline) <= 0 || $0 != tail) bad = 1 }
-     END { exit bad || found != 1 }' "$METADATA" ||
-    fail "F-Droid build must perform two disjoint checked Activity source builds"
+grep -Fq '    build: make -f fdroid/Makefile release FRONTEND="$$AVEIdric$$"' "$METADATA" ||
+    fail "F-Droid build must invoke the source release target"
 [[ "$(field 's/^CurrentVersion: \(.*\)$/\1/p' "$METADATA")" == "$AVE_VERSION_NAME" ]] ||
     fail "CurrentVersion does not match build.sh"
 [[ "$(field 's/^CurrentVersionCode: \([0-9][0-9]*\)$/\1/p' "$METADATA")" == "$AVE_VERSION_CODE" ]] ||

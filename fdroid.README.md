@@ -9,6 +9,33 @@ libraries. Their companion definitions are in `fdroid/srclibs`; copy those
 definitions alongside the application metadata when submitting to fdroiddata.
 The actual pinned fdroiddata/buildserver qualification copies them itself.
 
+## Build entry point
+
+`make -f fdroid/Makefile release` is the release entry point for the F-Droid
+recipe and independent Linux x86-64 builders. On a fresh checkout, provision
+the Debian Trixie packages, Android SDK/NDK, source revisions and the three
+checksum-locked downloads listed in the recipe. Initialize the submodules
+declared in `fdroid/srclibs`, then run `prepare-chez-source` with the checked
+Chez archive before the release target.
+
+Pass these absolute paths as Make variables.
+
+| Variable | Input |
+| --- | --- |
+| `FRONTEND` | Idriç checkout |
+| `BACKEND` | android-NDK DEX backend checkout |
+| `HOST_ICK`, `CROSS_ICK` | The two pinned ICK checkouts |
+| `GREASE_SOURCE`, `CATFOOD`, `AI_CI` | The pinned Grease, Cat Food and ai-ci checkouts |
+| `SDK` | Android SDK containing the pinned platform, build tools and NDK |
+| `CHEZ_SOURCE` | Verified unpacked Chez source and its adjacent provenance files |
+| `BAKSMALI`, `SMALI` | The two pinned DEX inspection jars |
+
+The build stages work in `.build/fdroid-tools` and leave both APKs, their
+hashes, and stage evidence in `.build/reproducible-source`. The release
+target places the agreed unsigned APK at the metadata's `output` path.
+
+## Build stages
+
 Provisioning proceeds in distinct phases:
 
 1. F-Droid fetches the declared source revisions and recursive ICK/Grease
@@ -26,6 +53,12 @@ Provisioning proceeds in distinct phases:
    The resulting runtime package and byte receipts remain separate from the
    Ubuntu-hosted compiler evidence.
 3. The pinned Cat Food source bootstrap builds Grease through owned host ICK.
+   For Debian Trixie, the build applies
+   [one compatibility patch](fdroid/patches/python2-private-sinpi.patch)
+   to a fresh local copy of the pinned Grease submodule. The patch renames the
+   vendored Python 2 math module's private `sinpi` helper to avoid the name
+   now declared by glibc. It leaves the math implementation and the scanned
+   source checkout intact.
    `fdroid/source-tools.grease` builds the verified unpacked Chez10.4.1 sources
    through owned ICK, installs the threaded Scheme in Idriç's expected prefix,
    then builds three separate cross-compiler stages and bootstraps the unchanged
@@ -41,6 +74,7 @@ Provisioning proceeds in distinct phases:
    application builds; no prebuilt application artifact is consumed.
 5. The pinned fdroiddata/fdroidserver buildserver test runs the real metadata
    lint, schema, source scanner, build, APK scanner and independent APK policy.
+   It retains the unsigned APK and F-Droid's source tarball with their hashes.
 
 The two Smali jars are Apache-2.0 build-time inspectors, with exact hashes in
 the recipe and compiler qualifier. They never supply candidate DEX. The two
@@ -60,10 +94,11 @@ license. The separately compiled vecmath module retains Sun’s GPL-2.0 with
 Classpath exception, including its complete source notices and APK license
 asset. That obligation is not replaced by the metadata field.
 
-All new recipe/bootstrap/reproducibility/scanner results are **NOT_RUN** until
-the exact current source completes the hosted production-like buildserver
-gate. Earlier Java recipe success is historical evidence. Installed emulator
-behavior and C67 replacement/physical behavior remain separate acceptance.
+The production-like buildserver gate reports source scanning, compiler bootstrap,
+two independent application builds and final APK scanning. Installed emulator
+behavior, physical-device behavior, and signer compatibility have their own
+evidence. An F-Droid-signed package can update an installed build only if
+Android accepts the signing lineage for that installation.
 
 Do not tag or submit this version based only on source presence. Require the
 exact-head source, renderer, complete candidate APK/installed behavior and
