@@ -1,199 +1,21 @@
 # Algebraic Variety Explorer
 
-**Original rendering engine — Christian Stussak (2008).** This application
-**contains and runs Stussak's original Java `jsurf` algebraic-surface
-ray tracer**, created for [IMAGINARY's SURFER](https://www.imaginary.org/program/surfer)
-at the Mathematisches Forschungsinstitut Oberwolfach. See the
-[original `IMAGINARY/jsurf` source](https://github.com/IMAGINARY/jsurf),
-[official SURFER contributor credits](https://www.imaginary.org/program/surfer),
-and the inherited [copyright notice](NOTICE). The algebraic-surface renderer
-is **Stussak's implementation, not code newly authored for this app**.
+Type a polynomial in `x`, `y`, and `z` and see its surface on your Android phone. Drag to turn it, pinch to zoom, or save the view as a PNG. The app works offline.
 
-**What this project adds:** an experimental offline Android interface, touch
-rotation/zoom, APK build and packaging, and integration of the inherited
-renderer into a phone application. It is an independent adaptation and
-not an official release by IMAGINARY.
+![Algebraic Variety Explorer interaction demo](https://raw.githubusercontent.com/isomorphisms/isomorphisms/37d47af8bc67d10c922f2d5e791d57e347c2e611/media/algebraic-variety-explorer-demo-preview.gif)
 
-The app evaluates a polynomial in `x`, `y`, and `z`, then calls Stussak's
-`jsurf` to draw its real zero set inside a sphere.
+The app opens with `x^2+y^2+z^2-0.64`. The points where that expression is zero form a sphere of radius 0.8. Try changing `+z^2` to `-z^2` and tap **Render**. Now the surface widens above and below its waist, a hyperboloid of one sheet. You can also pick a torus or a Whitney umbrella from **Examples** and edit its formula. Use `^` for powers and `*` for multiplication.
 
-The Android adaptation and flat build were produced in conversation with
-ChatGPT 5.6. They have not received an independent code or mathematical review.
-This is experimental software, posted for people willing to test it rather than
-represented as a finished or verified tool. Known defects and proposed work
-belong in the
-[GitHub issues](https://github.com/isomorphisms/algebraic-variety-explorer-mobile/issues);
-an open issue is not silently being treated as finished functionality.
+This is an independent Android port of [IMAGINARY’s SURFER](https://www.imaginary.org/program/surfer). Christian Stussak wrote [jsurf](https://github.com/IMAGINARY/jsurf), the original ray tracer at the heart of the app, for the Mathematisches Forschungsinstitut Oberwolfach. The Android interface and build were made with ChatGPT 5.6 and have not had an independent code or mathematical review.
 
-## Madore's `E₆` cubic: video and source comparison
+## Getting the app
 
-The **Madore E6 cubic** example renders the exact real polynomial
-`x^2+x*z^2+y^3=0` with Christian Stussak's original SURFER/jsurf
-ray tracer. The formula comes from **David A. Madore's**
-[2006 *Cubic Surfaces DVD*](http://www.madore.org/cubic-dvd/),
-original scene `03s01a.pov`. We thank both authors, with their
-distinct public-domain and Apache-2.0 source terms preserved.
+There is no published APK on [GitHub Releases](https://github.com/isomorphismes/algebraic-variety-explorer-mobile/releases) yet.
 
-See the [cross-render mathematical note](notes/e6-madore-compare.md),
-[rotating SURFER movie](renders/madore-e6/madore-e6-surfer.mp4),
-[inline GIF](renders/madore-e6/madore-e6-surfer.gif),
-and the corresponding [original POV-Ray rendering in
-`resolution`](https://github.com/isomorphisms/resolution/tree/main/renders/madore-e6).
+To build a development APK on a computer, install JDK 17, Android SDK Platform 35 and Build Tools 35.0.1. With Bash, curl, zip and unzip available, set `ANDROID_SDK_ROOT` to the SDK directory and run `./build.sh` from this checkout. The signed APK is written to `.build/`.
 
-Reproduce and check the JSURF frames, MP4 and GIF:
-`bash tools/render-madore-e6.sh renders/madore-e6`.
+## Source
 
-![Verified SURFER/jsurf E6 surface rotation, rendered from the exact polynomial](renders/madore-e6/madore-e6-surfer.gif)
+[MainActivity.java](MainActivity.java) connects the formula field, buttons and touch controls. [SurfaceRenderController.java](SurfaceRenderController.java) schedules each render. [RendererEngine.java](RendererEngine.java) passes the polynomial and camera settings to [Stussak’s ray tracer](CPUAlgebraicSurfaceRenderer.java).
 
-## Features
-
-- Original polynomial parser and CPU ray tracer from jsurf
-- Drag to rotate and pinch to zoom
-- Sphere, torus, Cayley cubic, Whitney umbrella, Roman surface, and heart examples
-- PNG export through Android's system file picker
-- No internet permission, ads, analytics, account, or native libraries
-
-Use `^` for powers and write multiplication explicitly with `*`. For example:
-
-```text
-(x^2+y^2+z^2+0.4)^2-1.1*(x^2+y^2)
-```
-
-## Build
-
-There is no Gradle project and no generated directory hierarchy in the source
-tree. The build is an explicit sequence of Android command-line operations:
-resource compilation, Java compilation, conversion to DEX, APK assembly,
-alignment, and optional signing.
-
-Requirements:
-
-- Bash, curl, zip, and unzip
-- JDK 17
-- Android SDK platform 35
-- Android build tools 35.0.1
-
-Set `ANDROID_SDK_ROOT` to the SDK directory, then run:
-
-```sh
-./build.sh
-```
-
-That produces a signed development APK under `.build`. The first build creates
-a persistent local `.debug.keystore`; do not use that key for a published
-release.
-
-Other commands:
-
-```sh
-./build.sh release
-./build.sh diagnostic
-./build.sh test
-./build.sh preview
-./build.sh clean
-```
-
-`release` produces an aligned but unsigned APK for F-Droid or external signing.
-`diagnostic` uses the separate package
-`org.algebraicvarietyexplorer.local`, allowing it to install beside any
-remaining copy of the real application. It is only an installation diagnostic
-and must not be uploaded as the release.
-The exact external Java dependencies and SHA-256 hashes are recorded in
-`dependencies.lock`. They are downloaded into the ignored `.dependencies`
-directory unless `ANTLR_JAR`, `VECMATH_JAR`, `JUNIT_JAR`, or `HAMCREST_JAR`
-points to a supplied copy.
-
-R8 keeps all project classes and members unchanged. Its only shrinking job is
-to remove unreachable desktop-only classes from the old ANTLR and Vecmath
-dependency jars before they reach Android.
-
-## Read the source in this order
-
-The Android adaptation is small. Start with these files:
-
-1. `MainActivity.java` — the whole screen-level sequence: connect the views,
-   configure input and buttons, request renders, and save PNG files.
-2. `SurfaceRenderController.java` — runs one render at a time and returns the
-   newest result to the screen.
-3. `RendererEngine.java` — translates the app's formula, camera, material,
-   lighting, and quality choices into calls to jsurf.
-4. `AlgebraicSurfaceView.java` — displays the bitmap and turns drag/pinch
-   gestures into rotation and zoom.
-5. `RenderRequest.java`, `RenderResult.java`, and `RenderQuality.java` — the
-   plain data passed through the rendering boundary.
-6. `PngExporter.java` — writes a rendered bitmap.
-7. `SurfaceExample.java` and `SurfaceExamples.java` — the example list.
-
-The execution path is:
-
-```text
-MainActivity
-    → SurfaceRenderController
-        → RendererEngine
-            → CPUAlgebraicSurfaceRenderer
-```
-
-Files whose package begins `de.mfo.jsurf` are the inherited 2008 ray tracer and
-algebra library. They retain the original style because rewriting working
-numerical code merely to make it look newer would make this first port harder
-to verify.
-
-`AlgebraicExpression.g` and `AlgebraicExpressionWalker.g` are the readable
-grammar sources. `AlgebraicExpressionLexer.java`,
-`AlgebraicExpressionParser.java`, and `AlgebraicExpressionWalker.java` are
-checked-in ANTLR-generated output. They are required by the current standalone
-build but are not the files to read or edit when changing the grammar.
-
-## Flat source layout
-
-All maintained files are at repository root. Java package declarations remain
-unchanged; Java does not require source files to be stored in matching package
-directories when they are passed to the compiler explicitly.
-
-- `*.java` contains application and jsurf source.
-- `*.test.java` contains JVM tests and the visual smoke test.
-- `drawable.*.xml`, `layout.*.xml`, and `values.*.xml` are Android resources.
-- `*.g` contains the original ANTLR grammar.
-- `store.*.txt` contains F-Droid listing text.
-
-Android's resource compiler requires `drawable`, `layout`, and `values`
-directories. `build.sh` reconstructs those directories temporarily under
-`.build` and leaves the repository flat.
-
-The two original packages each had a file called `Helper.java`. The
-package-private CPU renderer file is stored as `CpuHelper.java`; its contents
-and class name are unchanged. The three generated ANTLR Java files remain
-checked in and are compiled directly, so building does not require the ANTLR
-generator.
-
-## F-Droid submission
-
-See `fdroid.README.md` and `org.algebraicvarietyexplorer.yml.template`.
-
-The repository has separate gates for source/renderer tests, signed emulator
-smoke tests on the minimum and target Android API levels, byte-identical clean
-unsigned builds, APK policy inspection, and a production-like F-Droid recipe
-run. These checks provide build evidence; they do not replace final testing of
-the exact candidate on real hardware or F-Droid's own review.
-
-## Attribution and license
-
-**Christian Stussak wrote the original Java `jsurf` ray tracer** (copyright
-2008) and its algebraic-surface rendering core, retained in this repository's
-`de.mfo.jsurf` classes. The original source is published at
-[IMAGINARY/jsurf](https://github.com/IMAGINARY/jsurf).
-This application depends directly on that implementation.
-
-The wider [SURFER project](https://www.imaginary.org/program/surfer) was
-developed by IMAGINARY with the Mathematisches Forschungsinstitut Oberwolfach
-and Martin Luther University Halle-Wittenberg. The project credits
-**Gert-Martin Greuel** (direction), **Christian Stussak** (Java renderer),
-**Maik Urbannek** (JavaFX), and **Henning Meyer** (previous version), with
-additional coordination, design, galleries, and text contributors recorded
-on the official project page. Do not attribute those contributions to the
-Android adaptation or to Stussak alone.
-
-The Android adaptation is independent and not an official IMAGINARY release.
-The original `jsurf` code and this adaptation are distributed under the
-Apache License 2.0. Preserve `LICENSE`, `NOTICE`, the per-file copyrights,
-and `THIRD_PARTY_LICENSES.md` when distributing or translating the work.
+[Build commands](build.sh) · [F-Droid packaging](fdroid.README.md) · [License](LICENSE) · [Credits](NOTICE) · [Third-party licenses](THIRD_PARTY_LICENSES.md)
