@@ -120,10 +120,12 @@ cd "$HOME_VAGRANT"
 ln -s "$DATA" "$HOME_VAGRANT/fdroiddata"
 run_fdroid fetchsrclibs "$BUILD_ID" --verbose
 rm "$HOME_VAGRANT/fdroiddata"
-(unset CI; run_fdroid build --verbose --test --refresh-scanner --on-server --no-tarball "$BUILD_ID")
+(unset CI; run_fdroid build --verbose --test --refresh-scanner --on-server "$BUILD_ID")
 
 readonly APK="$DATA/tmp/${APP_ID}_${AVE_VERSION_CODE}.apk"
+readonly SOURCE_TARBALL="$DATA/tmp/${APP_ID}_${AVE_VERSION_CODE}_src.tar.gz"
 test -s "$APK"
+test -s "$SOURCE_TARBALL"
 fdroid scanner --verbose --exit-code "$APK"
 readonly BUILT_SOURCE="$HOME_VAGRANT/build/$APP_ID"
 readonly BUILT_GREASE="$BUILT_SOURCE/.build/fdroid-tools/runtime/.build/grease/bin/grease"
@@ -139,7 +141,7 @@ fi
 cd "$DATA"
 tools/audit-gradle.py "$APP_ID"
 
-cp "$APK" "/output/${APP_ID}_${AVE_VERSION_CODE}.apk"
+cp "$APK" "$SOURCE_TARBALL" /output/
 mkdir -p /output/reproducible-source
 cp "$BUILT_SOURCE/.build/reproducible-source/"run-*.apk \
     "$BUILT_SOURCE/.build/reproducible-source/result.tsv" \
@@ -149,5 +151,7 @@ cp -R "$BUILT_SOURCE/.build/reproducible-source/build-2/package/evidence" /outpu
 cp "$BUILT_SOURCE/.build/fdroid-tools/result.tsv" /output/source-tools-result.tsv
 sha256sum "/output/${APP_ID}_${AVE_VERSION_CODE}.apk" \
     > "/output/${APP_ID}_${AVE_VERSION_CODE}.apk.sha256"
+sha256sum "/output/${APP_ID}_${AVE_VERSION_CODE}_src.tar.gz" \
+    > "/output/${APP_ID}_${AVE_VERSION_CODE}_src.tar.gz.sha256"
 printf 'fdroiddata: production-like build passed at %s / %s\n' \
     "$FDROIDDATA_REVISION" "$FDROIDSERVER_REVISION"

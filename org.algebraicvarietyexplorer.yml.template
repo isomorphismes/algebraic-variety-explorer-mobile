@@ -48,16 +48,10 @@ Builds:
     scanignore:
       - .build/fdroid-inputs/baksmali.jar
       - .build/fdroid-inputs/smali.jar
-    build:
-      - make -f fdroid/Makefile FRONTEND="$$AVEIdric$$" BACKEND="$$AVEDEX$$" HOST_ICK="$$AVEICKHost$$"
-        CROSS_ICK="$$AVEICKCross$$" GREASE_SOURCE="$$AVEGrease$$" CATFOOD="$$AVECatFood$$"
-        AI_CI="$$AVEAiCi$$" SDK="$$SDK$$" CHEZ_SOURCE="$PWD/.build/fdroid-inputs/chez-source"
-        BAKSMALI="$PWD/.build/fdroid-inputs/baksmali.jar" SMALI="$PWD/.build/fdroid-inputs/smali.jar"
-      - PATH="$PWD/.build/fdroid-tools/runtime/.build/grease/bin:$PATH" .build/fdroid-tools/runtime/.build/grease/bin/grease
-        fdroid/reproducible.grease "$PWD" "$$AVEIdric$$" "$$AVEDEX$$" "$$SDK$$" "$PWD/.build/fdroid-tools"
-        "$PWD/.build/reproducible-source" "$(git rev-parse HEAD)"
-      - cp .build/reproducible-source/Algebraic-Variety-Explorer-0.1.1-unsigned.apk
-        .build/Algebraic-Variety-Explorer-0.1.1-unsigned.apk
+    build: make -f fdroid/Makefile release FRONTEND="$$AVEIdric$$" BACKEND="$$AVEDEX$$"
+      HOST_ICK="$$AVEICKHost$$" CROSS_ICK="$$AVEICKCross$$" GREASE_SOURCE="$$AVEGrease$$"
+      CATFOOD="$$AVECatFood$$" AI_CI="$$AVEAiCi$$" SDK="$$SDK$$" CHEZ_SOURCE="$PWD/.build/fdroid-inputs/chez-source"
+      BAKSMALI="$PWD/.build/fdroid-inputs/baksmali.jar" SMALI="$PWD/.build/fdroid-inputs/smali.jar"
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags ^v[0-9]+\.[0-9]+\.[0-9]+$
